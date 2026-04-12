@@ -4,11 +4,11 @@ const DB_VERSION = 7;
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_uNge3ORs5F-ijF7o7nzczQ_vnKI5P0c';
-let supabase = null;
+let supabaseClient = null;
 
 try {
     if (window.supabase) {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
 } catch (err) {
     console.error("Supabase failed to initialize:", err);
@@ -51,33 +51,33 @@ class CoachDB {
 
     // Auth Methods
     async login(email, password) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         await this.syncRole();
         return data;
     }
 
     async signUp(email, password) {
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabaseClient.auth.signUp({ email, password });
         if (error) throw error;
         return data;
     }
 
     async logout() {
-        await supabase.auth.signOut();
+        await supabaseClient.auth.signOut();
         this.userRole = 'TECNICO';
         window.location.reload();
     }
 
     async getUser() {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabaseClient.auth.getUser();
         return user;
     }
 
     async syncRole() {
         const user = await this.getUser();
         if (user) {
-            const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+            const { data, error } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
             if (data) {
                 this.userRole = data.role;
                 console.log("Current User Role:", this.userRole);
@@ -88,9 +88,9 @@ class CoachDB {
     // Generic method to handle Supabase + IndexedDB Sync
     async getAll(storeName) {
         // Try Supabase first
-        if (supabase) {
+        if (supabaseClient) {
             try {
-                const { data, error } = await supabase.from(storeName).select('*');
+                const { data, error } = await supabaseClient.from(storeName).select('*');
                 if (!error && data) {
                     // Update local cache
                     await this.syncLocal(storeName, data);
@@ -124,11 +124,11 @@ class CoachDB {
         let savedData = data;
         
         // Try Supabase
-        if (supabase) {
+        if (supabaseClient) {
             try {
                 // Ensure id is not sent if it's new
                 const { id, ...dataToSync } = data;
-                const { data: remoteData, error } = await supabase.from(storeName).insert([dataToSync]).select();
+                const { data: remoteData, error } = await supabaseClient.from(storeName).insert([dataToSync]).select();
                 if (!error && remoteData) {
                     savedData = remoteData[0];
                 }
@@ -149,9 +149,9 @@ class CoachDB {
 
     async update(storeName, data) {
         // Try Supabase
-        if (supabase && data.id) {
+        if (supabaseClient && data.id) {
             try {
-                await supabase.from(storeName).update(data).eq('id', data.id);
+                await supabaseClient.from(storeName).update(data).eq('id', data.id);
             } catch (err) {
                 console.error(`Supabase update error for ${storeName}:`, err);
             }
@@ -168,13 +168,14 @@ class CoachDB {
 
     async delete(storeName, id) {
         // Try Supabase
-        if (supabase) {
+        if (supabaseClient) {
             try {
-                await supabase.from(storeName).delete().eq('id', id);
+                await supabaseClient.from(storeName).delete().eq('id', id);
             } catch (err) {
                 console.error(`Supabase delete error for ${storeName}:`, err);
             }
         }
+
 
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readwrite');

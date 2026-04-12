@@ -69,7 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const checkAuth = async () => {
         console.log("Checking authentication...");
-        if (!supabase) {
+        if (!supabaseClient) {
             console.warn("Supabase not initialized yet.");
             return;
         }
