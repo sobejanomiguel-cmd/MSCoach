@@ -68,35 +68,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isLogin = true;
 
     const checkAuth = async () => {
-        const user = await db.getUser();
-        if (user) {
-            await db.syncRole();
-            authScreen.classList.add('hidden');
-            appEl.classList.remove('hidden');
-            switchView('dashboard');
-            applyRoleRestrictions();
-        } else {
-            authScreen.classList.remove('hidden');
-            appEl.classList.add('hidden');
+        console.log("Checking authentication...");
+        if (!supabase) {
+            console.warn("Supabase not initialized yet.");
+            return;
+        }
+
+        try {
+            const user = await db.getUser();
+            if (user) {
+                console.log("User authenticated:", user.email);
+                await db.syncRole();
+                authScreen.classList.add('hidden');
+                appEl.classList.remove('hidden');
+                switchView('dashboard');
+                applyRoleRestrictions();
+            } else {
+                console.log("No active session.");
+                authScreen.classList.remove('hidden');
+                appEl.classList.add('hidden');
+            }
+        } catch (err) {
+            console.error("Auth check failed:", err);
         }
     };
 
     const applyRoleRestrictions = () => {
         const isTecnico = db.userRole === 'TECNICO';
-        // Hide CSV import buttons for TECNICO
         const secondaryBtn = document.getElementById('secondary-add-btn');
-        if (isTecnico && secondaryBtn) secondaryBtn.style.display = 'none';
-        
-        // Disable delete buttons globally for TECNICO
+        if (secondaryBtn) {
+            secondaryBtn.style.display = isTecnico ? 'none' : 'flex';
+        }
         document.body.classList.toggle('role-tecnico', isTecnico);
     };
 
-    toggleAuthBtn.onclick = () => {
-        isLogin = !isLogin;
-        authTitle.textContent = isLogin ? 'Acceso Entrenador' : 'Registro Nuevo';
-        authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
-        toggleAuthBtn.textContent = isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra';
-    };
+    if (toggleAuthBtn) {
+        toggleAuthBtn.onclick = () => {
+            isLogin = !isLogin;
+            console.log("Toggling Auth Mode. isLogin:", isLogin);
+            authTitle.textContent = isLogin ? 'Acceso Entrenador' : 'Registro Nuevo';
+            authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
+            toggleAuthBtn.textContent = isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra';
+        };
+    }
+
 
     authForm.onsubmit = async (e) => {
         e.preventDefault();

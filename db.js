@@ -4,7 +4,15 @@ const DB_VERSION = 7;
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_uNge3ORs5F-ijF7o7nzczQ_vnKI5P0c';
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+let supabase = null;
+
+try {
+    if (window.supabase) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+} catch (err) {
+    console.error("Supabase failed to initialize:", err);
+}
 
 class CoachDB {
     constructor() {
