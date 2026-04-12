@@ -1445,10 +1445,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 <form id="edit-player-form" class="space-y-6">
                     <input type="hidden" name="id" value="${player.id}">
-                    <div class="grid grid-cols-2 gap-6">
+                    <fieldset ${db.userRole === 'TECNICO' ? 'disabled' : ''} class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre Completo</label>
-                            <input name="nombre" value="${player.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" required>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre Completo</label>
+                             <input name="nombre" value="${player.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" required>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
@@ -1475,11 +1475,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Notas Técnicas / Scout</label>
                              <textarea name="notas" class="w-full p-4 border rounded-2xl h-32 outline-none focus:ring-2 ring-blue-100" placeholder="Añade comentarios sobre su rendimiento...">${player.notas || ''}</textarea>
                         </div>
-                    </div>
+                    </fieldset>
                     
                     <div class="flex gap-4">
-                        <button type="button" onclick="window.deletePlayer(${player.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"><i data-lucide="trash-2"></i></button>
-                        <button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>
+                        <button type="button" onclick="window.deletePlayer(${player.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all admin-only"><i data-lucide="trash-2"></i></button>
+                        ${db.userRole === 'ELITE' ? `<button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>` : ''}
                     </div>
                 </form>
             </div>
