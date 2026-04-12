@@ -127,22 +127,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 console.log("Calling Supabase signUp...");
                 const signUpResult = await db.signUp(email, password);
-                console.log("Supabase Response:", signUpResult);
+                console.log("Supabase Success:", signUpResult);
                 
-                window.customAlert('Registro exitoso', 'Cuenta creada. Por favor, verifica tu email (mira el SPAM) e inicia sesión.');
+                const msg = '¡Cuenta creada! Si has desactivado la confirmación por email, ya puedes entrar. Si no, revisa tu correo.';
+                if (window.customAlert) window.customAlert('Registro OK', msg);
+                else alert(msg);
+                
                 isLogin = true;
                 if (toggleAuthBtn) toggleAuthBtn.click();
             }
-            console.log("Post-Auth check...");
             await checkAuth();
         } catch (err) {
-            console.error("FATAL Auth Error:", err);
-            window.customAlert('Fallo de Conexión', `Detalle: ${err.message || 'Error de red o base de datos no configurada'}`);
+            console.error("DEBUG AUTH ERROR:", err);
+            const errorMsg = err.message || 'Error desconocido';
+            alert("ERROR DE ACCESO: " + errorMsg);
+            if (window.customAlert) window.customAlert('Error', errorMsg);
         } finally {
-            console.log("Process finished.");
             authSubmit.disabled = false;
             authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
         }
+
 
 
     };
