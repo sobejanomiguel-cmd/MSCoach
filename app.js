@@ -668,6 +668,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('') || '<div class="col-span-full py-20 text-center text-slate-400 italic">No hay tareas pendientes en la agenda.</div>'}
             </div>
         `;
+        lucide.createIcons();
     }
 
     window.viewEvento = async (id) => {
@@ -742,7 +743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <h4 class="font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">${t.name}</h4>
                             <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description}</p>
                             <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end">
-                                <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-slate-300 hover:text-red-500 transition-all">
+                                <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-slate-400 hover:text-red-500 transition-all">
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
                             </div>
@@ -751,6 +752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('')}
             </div>
         `;
+        lucide.createIcons();
     }
 
     window.viewTask = async (id) => {
@@ -881,6 +883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('') || '<div class="py-20 text-center text-slate-400">No hay sesiones creadas.</div>'}
             </div>
         `;
+        lucide.createIcons();
     }
 
     window.viewSession = async (id) => {
@@ -1132,7 +1135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 500);
     };
 
-    async function renderEquipos(container) {
+    async function renderEquipos(container) { // fix
         const teams = await db.getAll('equipos');
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1350,7 +1353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         lucide.createIcons();
     };
 
-    async function renderJugadores(container) {
+    async function renderJugadores(container) { // fix
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
         
@@ -1395,8 +1398,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </td>
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex justify-end gap-1">
-                                            <button class="p-2 text-slate-300 group-hover:text-blue-600 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-slate-300 hover:text-red-500 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            <button class="p-2 text-slate-400 group-hover:text-blue-600 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-slate-400 hover:text-red-500 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1521,7 +1524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <p class="text-xs font-bold text-slate-400 uppercase">Asistencia</p>
                                     <p class="text-lg font-black text-slate-800">${presentes}/${total}</p>
                                 </div>
-                                <i data-lucide="chevron-right" class="w-5 h-5 text-slate-300 group-hover:text-blue-600"></i>
+                                <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 group-hover:text-blue-600"></i>
                             </div>
                         </div>
                     `;
