@@ -167,7 +167,6 @@ class CoachDB {
     }
 
     async delete(storeName, id) {
-        // Try Supabase
         if (supabaseClient) {
             try {
                 await supabaseClient.from(storeName).delete().eq('id', id);
@@ -176,7 +175,6 @@ class CoachDB {
             }
         }
 
-
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readwrite');
             const store = transaction.objectStore(storeName);
@@ -184,7 +182,10 @@ class CoachDB {
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
+    }
+
     async clearLocal() {
+        if (!this.db) return;
         const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos'];
         const transaction = this.db.transaction(stores, 'readwrite');
         stores.forEach(s => transaction.objectStore(s).clear());
@@ -192,6 +193,7 @@ class CoachDB {
         window.location.reload();
     }
 }
+
 
 const db = new CoachDB();
 

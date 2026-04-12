@@ -62,31 +62,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     const appEl = document.getElementById('app');
     let isLogin = true;
 
-    // 1. Initial Auth Check (Before anything else)
+    // Initial Auth Check
     const checkAuth = async () => {
-        if (!supabaseClient) {
-            console.error("Supabase Error: No hay cliente");
-            return;
-        }
         try {
-            const { data: { user } } = await supabaseClient.auth.getUser();
+            if (!window.supabaseClient) return;
+            const { data: { user } } = await window.supabaseClient.auth.getUser();
             if (user) {
                 await db.syncRole();
                 authScreen.classList.add('hidden');
                 appEl.classList.remove('hidden');
                 applyRoleRestrictions();
-                switchView('dashboard');
+                if (typeof window.switchView === 'function') window.switchView('dashboard');
             } else {
                 authScreen.classList.remove('hidden');
                 appEl.classList.add('hidden');
             }
         } catch (e) {
-            console.error("Auth init error:", e);
+            console.error("Auth error:", e);
+            authScreen.classList.remove('hidden');
         }
     };
 
-    // Initialize DB then Check Auth
-    db.init().then(() => checkAuth()).catch(e => console.error("DB Init fail:", e));
+    db.init().then(() => checkAuth()).catch(e => {
+        console.error("DB fail:", e);
+        checkAuth(); // Try auth anyway
+    });
+
 
     const applyRoleRestrictions = () => {
         const isTecnico = db.userRole === 'TECNICO';
@@ -364,8 +365,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     dorsal: data['DORSAL'] || '',
                                     posicion: data['POSICION'] || 'PO',
                                     equipoConvenido: data['EQUIPO CONVENIDO'] || '',
-                                    anioNacimiento: data['AÑO NACIMIENTO'] || '',
-                                    fechaNacimiento: data['FECHA NACIMIENTO'] || ''
+                                    anionacimiento: data['AÑO NACIMIENTO'] || '',
+                                    fechanacimiento: data['FECHA NACIMIENTO'] || ''
                                 };
 
                                 if (newPlayer.nombre) {
@@ -511,7 +512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <p class="text-blue-100 text-sm flex items-center gap-2">
                                 <i data-lucide="calendar" class="w-4 h-4"></i> ${sessions[0].fecha} 
                                 <span class="opacity-30">|</span> 
-                                <i data-lucide="users" class="w-4 h-4"></i> ${sessions[0].equipoNombre || 'Equipo'}
+                                <i data-lucide="users" class="w-4 h-4"></i> ${sessions[0].equiponombre || 'Equipo'}
                              </p>
                          </div>
                          <i data-lucide="zap" class="absolute right-[-20px] bottom-[-20px] w-32 h-32 text-white/10 -rotate-12 group-hover:rotate-0 transition-transform duration-700"></i>
@@ -864,7 +865,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <span class="text-2xl font-black">${new Date(s.fecha).getDate()}</span>
                         </div>
                         <div class="flex-1">
-                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold uppercase">${s.equipoNombre}</span>
+                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold uppercase">${s.equiponombre}</span>
                             <h4 class="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">${s.titulo || 'Sesión de entrenamiento'}</h4>
                             <p class="text-sm text-slate-500">${s.hora} - ${s.lugar || 'Campo principal'}</p>
                         </div>
@@ -922,8 +923,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Tareas Vinculadas (Máx. 5)</label>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
                             ${tasks.map(t => `
-                                <label class="flex items-center gap-3 p-3 bg-white border ${session.taskIds && session.taskIds.includes(t.id.toString()) ? 'border-blue-400' : 'border-slate-100'} rounded-xl cursor-pointer hover:border-blue-300 transition-colors">
-                                    <input type="checkbox" name="taskIds" value="${t.id}" ${session.taskIds && session.taskIds.includes(t.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
+                                <label class="flex items-center gap-3 p-3 bg-white border ${session.taskids && session.taskids.includes(t.id.toString()) ? 'border-blue-400' : 'border-slate-100'} rounded-xl cursor-pointer hover:border-blue-300 transition-colors">
+                                    <input type="checkbox" name="taskids" value="${t.id}" ${session.taskids && session.taskids.includes(t.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
                                     <div class="flex-1">
                                         <p class="text-xs font-bold text-slate-800">${t.name}</p>
                                         <p class="text-[10px] text-slate-400 uppercase">${t.category}</p>
@@ -952,11 +953,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const playersList = document.getElementById('edit-session-players-list');
         
         const updatePlayers = () => {
-            const teamId = teamSelect.value;
-            const teamPlayers = players.filter(p => p.equipoid == teamId);
+            const equipoid = teamSelect.value;
+            const teamPlayers = players.filter(p => p.equipoid == equipoid);
             playersList.innerHTML = teamPlayers.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
-                    <input type="checkbox" name="playerIds" value="${p.id}" ${session.playerIds && session.playerIds.includes(p.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
+                    <input type="checkbox" name="playerids" value="${p.id}" ${session.playerids && session.playerids.includes(p.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
                     <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
                 </label>
             `).join('');
@@ -973,11 +974,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.id = parseInt(data.id);
-            data.taskIds = formData.getAll('taskIds');
-            data.playerIds = formData.getAll('playerIds');
+            data.taskids = formData.getAll('taskids');
+            data.playerids = formData.getAll('playerids');
             
             const team = teams.find(t => t.id == data.equipoid);
-            data.equipoNombre = team ? team.nombre : 'Equipo';
+            data.equiponombre = team ? team.nombre : 'Equipo';
             
             await db.update('sesiones', data);
             closeModal();
@@ -1007,8 +1008,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const currentTeam = teams.find(t => t.id == session.equipoid);
 
-        const sessionTasks = allTasks.filter(t => session.taskIds && session.taskIds.includes(t.id.toString()));
-        const sessionPlayers = allPlayers.filter(p => session.playerIds && session.playerIds.includes(p.id.toString()));
+        const sessionTasks = allTasks.filter(t => session.taskids && session.taskids.includes(t.id.toString()));
+        const sessionPlayers = allPlayers.filter(p => session.playerids && session.playerids.includes(p.id.toString()));
         
         const printDiv = document.createElement('div');
         printDiv.className = 'print-view bg-white p-12 fixed inset-0 z-[200] overflow-y-auto';
@@ -1043,7 +1044,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl">
                         <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Equipo</p>
-                        <p class="text-sm font-bold text-slate-800">${session.equipoNombre}</p>
+                        <p class="text-sm font-bold text-slate-800">${session.equiponombre}</p>
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-500">
                         <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Convocatoria</p>
@@ -1138,7 +1139,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             ${e.escudo ? `<img src="${e.escudo}" class="w-14 h-14 object-contain rounded-xl">` : `<div class="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
                             <div>
                                 <h4 class="font-bold text-slate-800">${e.nombre}</h4>
-                                <p class="text-xs text-slate-500">${e.anioNacimiento || 'Año no def.'}</p>
+                                <p class="text-xs text-slate-500">${e.anionacimiento || 'Año no def.'}</p>
                             </div>
                         </div>
                         <div class="space-y-4 mb-6">
@@ -1149,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.asistenciamedia || 0}%"></div></div>
                         </div>
                         <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-slate-50 p-3 rounded-xl"><p class="text-[10px] font-bold text-slate-400 uppercase">Plantilla</p><p class="text-lg font-bold">${e.jugadoresCount || 0}</p></div>
+                            <div class="bg-slate-50 p-3 rounded-xl"><p class="text-[10px] font-bold text-slate-400 uppercase">Plantilla</p><p class="text-lg font-bold">${e.jugadorescount || 0}</p></div>
                         </div>
                         <div class="flex gap-2 mt-6">
                             <button onclick="event.stopPropagation(); window.viewTeamPlayers(${e.id})" class="flex-1 py-3 border border-slate-100 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-blue-200 transition-all">
@@ -1195,9 +1196,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento (Categoría)</label>
-                             <select id="edit-team-year-input" name="anioNacimiento" class="w-full p-3 border rounded-xl bg-white" required>
+                             <select id="edit-team-year-input" name="anionacimiento" class="w-full p-3 border rounded-xl bg-white" required>
                                 <option value="">Seleccionar año...</option>
-                                ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}" ${team.anioNacimiento == y ? 'selected' : ''}>${y}</option>`).join('')}
+                                ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}" ${team.anionacimiento == y ? 'selected' : ''}>${y}</option>`).join('')}
                              </select>
                         </div>
                         <div class="col-span-2">
@@ -1226,7 +1227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const updatePlayerLinkage = () => {
             const year = yearInput.value;
-            const filtered = players.filter(p => !year || p.anioNacimiento == year);
+            const filtered = players.filter(p => !year || p.anionacimiento == year);
             listDiv.innerHTML = filtered.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
                     <input type="checkbox" name="linkedPlayerIds" value="${p.id}" ${p.equipoid == team.id ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
@@ -1273,7 +1274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             // Recalculate players count
-            data.jugadoresCount = linkedPlayerIds.length;
+            data.jugadorescount = linkedPlayerIds.length;
             
             await db.update('equipos', data);
             closeModal();
@@ -1281,17 +1282,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    window.viewTeamPlayers = async (teamId) => {
+    window.viewTeamPlayers = async (equipoid) => {
         const teams = await db.getAll('equipos');
-        const team = teams.find(t => t.id == teamId);
-        const players = (await db.getAll('jugadores')).filter(p => p.equipoid == teamId);
+        const team = teams.find(t => t.id == equipoid);
+        const players = (await db.getAll('jugadores')).filter(p => p.equipoid == equipoid);
         
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
                     <div>
                         <h3 class="text-2xl font-bold text-slate-800">${team.nombre}</h3>
-                        <p class="text-slate-500">${team.anioNacimiento || 'Año no def.'}</p>
+                        <p class="text-slate-500">${team.anionacimiento || 'Año no def.'}</p>
                     </div>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
@@ -1309,7 +1310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     `).join('') || '<p class="text-center py-10 text-slate-400 italic">No hay jugadores en este equipo.</p>'}
                 </div>
-                <button onclick="window.addPlayerToTeam(${teamId})" class="w-full mt-6 py-4 bg-blue-50 text-blue-600 font-bold rounded-2xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2">
+                <button onclick="window.addPlayerToTeam(${equipoid})" class="w-full mt-6 py-4 bg-blue-50 text-blue-600 font-bold rounded-2xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2">
                     <i data-lucide="plus-circle" class="w-5 h-5"></i>
                     Añadir Jugador
                 </button>
@@ -1319,12 +1320,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         lucide.createIcons();
     };
 
-    window.addPlayerToTeam = (teamId) => {
+    window.addPlayerToTeam = (equipoid) => {
         modalContainer.innerHTML = `
             <div class="p-8">
                 <h3 class="text-2xl font-bold mb-6 text-slate-800">Nuevo Jugador</h3>
                 <form id="new-player-form" class="space-y-4">
-                    <input type="hidden" name="equipoid" value="${teamId}">
+                    <input type="hidden" name="equipoid" value="${equipoid}">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2"><input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required></div>
                         <input name="dorsal" type="number" placeholder="Dorsal" class="w-full p-3 border rounded-xl">
@@ -1341,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const data = Object.fromEntries(new FormData(e.target).entries());
             await db.add('jugadores', data);
-            window.viewTeamPlayers(teamId);
+            window.viewTeamPlayers(equipoid);
         });
         lucide.createIcons();
     };
@@ -1497,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = `
             <div class="space-y-4">
                 ${reports.sort((a,b) => b.date.localeCompare(a.date)).map(r => {
-                    const team = teams.find(t => t.id == r.teamId);
+                    const team = teams.find(t => t.id == r.equipoid);
                     const presentes = Object.values(r.data).filter(s => s === 'presente').length;
                     const total = Object.keys(r.data).length;
                     
@@ -1552,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function renderAsistenciaForm(container, existingReport = null) {
         const teams = await db.getAll('equipos');
         const players = await db.getAll('jugadores');
-        let selectedTeamId = existingReport ? existingReport.teamId : (teams.length > 0 ? teams[0].id : null);
+        let selectedTeamId = existingReport ? existingReport.equipoid : (teams.length > 0 ? teams[0].id : null);
         let selectedDate = existingReport ? existingReport.date : new Date().toISOString().split('T')[0];
         
         attendanceData = existingReport ? existingReport.data : {};
@@ -1611,7 +1612,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setTimeout(() => {
             container.querySelector('#save-report').onclick = async () => {
-                const report = { id: existingReport ? existingReport.id : undefined, teamId: selectedTeamId, date: selectedDate, data: attendanceData };
+                const report = { id: existingReport ? existingReport.id : undefined, equipoid: selectedTeamId, date: selectedDate, data: attendanceData };
                 if (existingReport) await db.update('asistencia', report);
                 else await db.add('asistencia', report);
                 window.switchView('asistencia');
@@ -1750,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     ${tasks.map(t => `
                                         <div class="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4 hover:border-blue-200 transition-all">
                                             <label class="flex items-center gap-4 cursor-pointer">
-                                                <input type="checkbox" name="taskIds" value="${t.id}" onchange="document.getElementById('task-meta-${t.id}').classList.toggle('hidden', !this.checked)" class="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500">
+                                                <input type="checkbox" name="taskids" value="${t.id}" onchange="document.getElementById('task-meta-${t.id}').classList.toggle('hidden', !this.checked)" class="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500">
                                                 <div class="flex-1">
                                                     <p class="text-sm font-bold text-slate-800">${t.name}</p>
                                                     <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">${t.category}</p>
@@ -1799,13 +1800,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const playersList = document.getElementById('session-players-list');
                 
                 const updatePlayers = () => {
-                    const teamId = teamSelect.value;
-                    const teamPlayers = players.filter(p => p.equipoid == teamId);
+                    const equipoid = teamSelect.value;
+                    const teamPlayers = players.filter(p => p.equipoid == equipoid);
                     
                     // Main list
                     playersList.innerHTML = teamPlayers.map(p => `
                         <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
-                            <input type="checkbox" name="playerIds" value="${p.id}" checked class="w-4 h-4 rounded text-blue-600">
+                            <input type="checkbox" name="playerids" value="${p.id}" checked class="w-4 h-4 rounded text-blue-600">
                             <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
                         </label>
                     `).join('') || '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores en este equipo.</p>';
@@ -1854,7 +1855,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div class="col-span-2">
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento (Categoría)</label>
-                                <select id="new-team-year-input" name="anioNacimiento" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100" required>
+                                <select id="new-team-year-input" name="anionacimiento" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100" required>
                                     <option value="">Seleccionar año...</option>
                                     ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}">${y}</option>`).join('')}
                                 </select>
@@ -1881,7 +1882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const listDiv = document.getElementById('new-linked-players-list');
                 const update = () => {
                     const year = yearInput.value;
-                    const filtered = players.filter(p => !year || p.anioNacimiento == year);
+                    const filtered = players.filter(p => !year || p.anionacimiento == year);
                     listDiv.innerHTML = filtered.map(p => `
                         <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
                             <input type="checkbox" name="linkedPlayerIds" value="${p.id}" class="w-4 h-4 rounded text-blue-600">
@@ -1963,11 +1964,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento</label>
-                                <input name="anioNacimiento" type="number" placeholder="Ej: 2010" class="w-full p-3 border rounded-xl">
+                                <input name="anionacimiento" type="number" placeholder="Ej: 2010" class="w-full p-3 border rounded-xl">
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de Nacimiento</label>
-                                <input name="fechaNacimiento" type="date" class="w-full p-3 border rounded-xl">
+                                <input name="fechanacimiento" type="date" class="w-full p-3 border rounded-xl">
                             </div>
                         </div>
                         <button type="submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar en Directorio</button>
@@ -1995,15 +1996,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const data = Object.fromEntries(formData.entries());
             
             try {
-                // Handle multiple checkboxes (taskIds, playerIds)
+                // Handle multiple checkboxes (taskids, playerids)
                 if (viewId === 'sesiones') {
-                    data.taskIds = formData.getAll('taskIds');
-                    data.playerIds = formData.getAll('playerIds');
+                    data.taskids = formData.getAll('taskids');
+                    data.playerids = formData.getAll('playerids');
                     
                     const tasksMeta = {};
-                    data.taskIds.forEach(tid => {
+                    data.taskids.forEach(tid => {
                         const playerGroups = {};
-                        data.playerIds.forEach(pid => {
+                        data.playerids.forEach(pid => {
                             const g = formData.get(`taskPlayerGroup_${tid}_${pid}`);
                             if (g) playerGroups[pid] = g;
                         });
@@ -2038,7 +2039,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
 
                     const linkedPlayerIds = formData.getAll('linkedPlayerIds');
-                    data.jugadoresCount = linkedPlayerIds.length;
+                    data.jugadorescount = linkedPlayerIds.length;
                     
                     const id = await db.add('equipos', data);
                     
@@ -2062,7 +2063,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (viewId === 'sesiones') {
                     const teams = await db.getAll('equipos');
                     const t = teams.find(team => team.id == data.equipoid);
-                    data.equipoNombre = t ? t.nombre : 'Equipo';
+                    data.equiponombre = t ? t.nombre : 'Equipo';
                 }
 
                 await db.add(viewId, data);
@@ -2079,39 +2080,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.closeModal = () => modalOverlay.classList.remove('active');
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
 
-    // Seed Data
-    async function seed() {
-        if ((await db.getAll('tareas')).length === 0) {
-            await db.add('tareas', { name: 'Rondo 4x4 + 3', category: 'Ataque', duration: 15, description: 'Mejora de la circulación rápida y el juego interior.' });
-            await db.add('tareas', { name: 'Presión Alta', category: 'Defensa', duration: 20, description: 'Bloque alto y presión coordinada tras pérdida.' });
-            await db.add('tareas', { name: 'Finalización 1x1', category: 'Ataque', duration: 10, description: 'Duelos en área con portero.' });
-        }
-        
-        let firstTeamId;
-        if ((await db.getAll('equipos')).length === 0) {
-            firstTeamId = await db.add('equipos', { nombre: 'Juvenil A', categoria: 'División de Honor', jugadoresCount: 18, asistenciamedia: 94 });
-            await db.add('equipos', { nombre: 'Primer Equipo', categoria: '3ª RFEF', jugadoresCount: 22, asistenciamedia: 98 });
-        } else {
-            const teams = await db.getAll('equipos');
-            firstTeamId = teams[0].id;
-        }
-
-        if ((await db.getAll('jugadores')).length === 0 && firstTeamId) {
-            const players = [
-                { nombre: 'Dani García', dorsal: 1, equipoid: firstTeamId },
-                { nombre: 'Hugo López', dorsal: 4, equipoid: firstTeamId },
-                { nombre: 'Marc Soler', dorsal: 7, equipoid: firstTeamId },
-                { nombre: 'Erik Martínez', dorsal: 9, equipoid: firstTeamId },
-                { nombre: 'Alvaro Sanz', dorsal: 10, equipoid: firstTeamId }
-            ];
-            for (const p of players) await db.add('jugadores', p);
-        }
-        if ((await db.getAll('eventos')).length === 0) {
-            await db.add('eventos', { nombre: 'Preparar Equipación', categoria: 'Otro', fecha: new Date().toISOString().split('T')[0], hora: '09:00', completada: false });
-            await db.add('eventos', { nombre: 'Reunión Coordinadores', categoria: 'Reunión', fecha: new Date().toISOString().split('T')[0], hora: '12:00', completada: false });
-        }
-    }
-
-    await seed();
-    switchView('dashboard');
 });
+
