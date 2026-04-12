@@ -13,7 +13,7 @@ window.customAlert = (title, message) => {
         </div>
     `;
     document.body.appendChild(alertModal);
-    if (window.lucide) lucide.createIcons();
+    if (window.lucide) 
     alertModal.querySelector('#close-alert').onclick = () => {
         alertModal.classList.add('fade-out');
         setTimeout(() => document.body.removeChild(alertModal), 300);
@@ -412,7 +412,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentView = viewId;
         contentContainer.innerHTML = '';
         await renderView(viewId);
-        lucide.createIcons();
+        
     }
 
     window.renderView = async (viewId) => {
@@ -431,12 +431,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'usuarios': await renderUsuarios(wrapper); break;
         }
         
-        contentContainer.innerHTML = ''; // Ensure container is empty before appending new view
+        contentContainer.innerHTML = '';
         contentContainer.appendChild(wrapper);
         
-        // El chispazo final: activar iconos cuando ya están en el DOM
+        // El chispazo maestro: activar todos los iconos de la nueva vista
         if (window.lucide) {
-            setTimeout(() => lucide.createIcons(), 50);
+            setTimeout(() => {
+                lucide.createIcons();
+                // Refuerzo extra: si hay algún botón de borrar, nos aseguramos de que se vea
+                console.log("Iconos de Lucide refrescados");
+            }, 100);
         }
     }
 
@@ -651,7 +655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 selectedCalendarDate = new Date(y, m, d);
                 renderCalendario(container);
             };
-            lucide.createIcons();
+            
         } catch (err) {
             console.error(err);
             container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-2xl">Error cargando calendario: ${err.message}</div>`;
@@ -687,13 +691,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end gap-2">
                             <button onclick="window.viewEvento(${e.id})" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-red-400 hover:text-red-600 transition-all"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                         </div>
                     </div>
                 `).join('') || '<div class="col-span-full py-20 text-center text-slate-400 italic">No hay tareas pendientes en la agenda.</div>'}
             </div>
         `;
-        lucide.createIcons();
+        
     }
 
     window.viewEvento = async (id) => {
@@ -728,8 +732,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </form>
             </div>
         `;
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
         
         document.getElementById('edit-evento-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -768,8 +772,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <h4 class="font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">${t.name}</h4>
                             <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description}</p>
                             <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end">
-                                <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-slate-400 hover:text-red-500 transition-all">
-                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-red-400 hover:text-red-600 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                                 </button>
                             </div>
                         </div>
@@ -777,7 +781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('')}
             </div>
         `;
-        lucide.createIcons();
+        
     }
 
     window.viewTask = async (id) => {
@@ -833,8 +837,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
         
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
         
         // Handle input change for preview
         const input = document.getElementById('edit-task-image-input');
@@ -908,7 +912,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('') || '<div class="py-20 text-center text-slate-400">No hay sesiones creadas.</div>'}
             </div>
         `;
-        lucide.createIcons();
+        
     }
 
     window.viewSession = async (id) => {
@@ -997,8 +1001,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         teamSelect.addEventListener('change', updatePlayers);
         updatePlayers();
         
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
         
         document.getElementById('edit-session-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1152,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         
         document.body.appendChild(printDiv);
-        lucide.createIcons();
+        
         
         setTimeout(() => {
             window.print();
@@ -1270,8 +1274,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         yearInput.addEventListener('change', updatePlayerLinkage);
         updatePlayerLinkage();
         
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
 
         document.getElementById('edit-team-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1347,8 +1351,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </button>
             </div>
         `;
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
     };
 
     window.addPlayerToTeam = (equipoid) => {
@@ -1375,7 +1379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             await db.add('jugadores', data);
             window.viewTeamPlayers(equipoid);
         });
-        lucide.createIcons();
+        
     };
 
     async function renderJugadores(container) { // fix
@@ -1424,7 +1428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex justify-end gap-1">
                                             <button class="p-2 text-slate-400 group-hover:text-blue-600 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-slate-400 hover:text-red-500 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-400 hover:text-red-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1496,8 +1500,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
         
-        modalOverlay.classList.add('active');
-        lucide.createIcons();
+        lucide.createIcons(); modalOverlay.classList.add('active');
+        
         
         document.getElementById('edit-player-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1567,7 +1571,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderAsistenciaForm(wrapper);
         contentContainer.innerHTML = '';
         contentContainer.appendChild(wrapper);
-        lucide.createIcons();
+        
     };
 
     window.viewAsistenciaReport = async (id) => {
@@ -1578,7 +1582,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await renderAsistenciaForm(wrapper, report);
         contentContainer.innerHTML = '';
         contentContainer.appendChild(wrapper);
-        lucide.createIcons();
+        
     };
 
     async function renderAsistenciaForm(container, existingReport = null) {
@@ -1651,7 +1655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.querySelector('#team-sel').onchange = (e) => { selectedTeamId = e.target.value; updateBoard(); };
             container.querySelector('#date-sel').onchange = (e) => { selectedDate = e.target.value; };
             updateBoard();
-            lucide.createIcons();
+            
         }, 0);
     }
 
@@ -2011,10 +2015,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (modalHtml) {
             modalContainer.innerHTML = modalHtml;
-            modalOverlay.classList.add('active');
+            lucide.createIcons(); modalOverlay.classList.add('active');
             attachFormSubmit(currentView);
         } else if (currentView === 'sesiones') {
-            modalOverlay.classList.add('active');
+            lucide.createIcons(); modalOverlay.classList.add('active');
         }
     });
 
