@@ -53,9 +53,6 @@ window.customConfirm = (title, message, onConfirm) => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Referencia global de Supabase
-    const supabaseClient = window.supabaseClient;
-    
     // Auth Elements
     const authScreen = document.getElementById('auth-screen');
     const authForm = document.getElementById('auth-form');
@@ -68,8 +65,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initial Auth Check
     const checkAuth = async () => {
         try {
-            if (!window.supabaseClient) return;
-            const { data: { user } } = await window.supabaseClient.auth.getUser();
+            if (typeof supabaseClient === 'undefined' || !supabaseClient) {
+                console.error("Supabase Client not ready");
+                return;
+            }
+            const { data: { user } } = await supabaseClient.auth.getUser();
             if (user) {
                 await db.syncRole();
                 authScreen.classList.add('hidden');
@@ -82,9 +82,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (e) {
             console.error("Auth error:", e);
-            authScreen.classList.remove('hidden');
         }
     };
+
 
     db.init().then(() => checkAuth()).catch(e => {
         console.error("DB fail:", e);
