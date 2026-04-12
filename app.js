@@ -155,9 +155,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalContainer = document.getElementById('modal-container');
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
+    const logoutBtn = document.getElementById('logout-btn');
 
-
-    // Sidebar Toggle Logic for Mobile
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            const { error } = await supabaseClient.auth.signOut();
+            if (error) alert(error.message);
+            else window.location.reload(); // Recargar limpia el estado y vuelve al login
+        });
+    }
     if (mobileMenuBtn && sidebar) {
         mobileMenuBtn.addEventListener('click', () => {
             sidebar.classList.toggle('-translate-x-full');
