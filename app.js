@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Initial Auth Check
     const checkAuth = async () => {
+        const preloader = document.getElementById('preloader');
         try {
             if (typeof supabaseClient === 'undefined' || !supabaseClient) {
                 console.error("Supabase Client not ready");
@@ -82,6 +83,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (e) {
             console.error("Auth error:", e);
+        } finally {
+            if (preloader) {
+                preloader.style.opacity = '0';
+                setTimeout(() => preloader.classList.add('hidden'), 300);
+            }
         }
     };
 
