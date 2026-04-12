@@ -53,6 +53,9 @@ window.customConfirm = (title, message, onConfirm) => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Referencia global de Supabase
+    const supabaseClient = window.supabaseClient;
+    
     // Auth Elements
     const authScreen = document.getElementById('auth-screen');
     const authForm = document.getElementById('auth-form');
