@@ -95,6 +95,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const applyRoleRestrictions = () => {
         const isTecnico = db.userRole === 'TECNICO';
         document.body.classList.toggle('role-tecnico', isTecnico);
+        
+        // Hide Admin Sections
+        document.querySelectorAll('.admin-only').forEach(el => {
+            el.style.display = isTecnico ? 'none' : 'block';
+        });
+
         const secondaryBtn = document.getElementById('secondary-add-btn');
         if (secondaryBtn) secondaryBtn.style.display = isTecnico ? 'none' : 'flex';
     };
@@ -209,7 +215,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'sesiones': { title: 'Sesiones de Entrenamiento', subtitle: 'Planificación y calendario.', addButtonLabel: 'Nueva Sesión', addButtonEnabled: true },
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
-        'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true }
+        'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true },
+        'usuarios': { title: 'Gestión de Staff', subtitle: 'Controla los accesos y roles de tu equipo técnico.', addButtonEnabled: false }
     };
 
     window.switchView = async (viewId) => {
@@ -409,6 +416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'equipos': await renderEquipos(wrapper); break;
             case 'jugadores': await renderJugadores(wrapper); break;
             case 'asistencia': await renderAsistencia(wrapper); break;
+            case 'usuarios': await renderUsuarios(wrapper); break;
         }
         
         contentContainer.innerHTML = ''; // Ensure container is empty before appending new view
@@ -2082,6 +2090,53 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
+
+    async function renderUsuarios(container) {
+        const { data: profiles, error } = await supabaseClient.from('profiles').select('*');
+        if (error) {
+            container.innerHTML = `<p class="p-10 text-red-500">Error cargando usuarios: ${error.message}</p>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-slate-50 text-left border-b border-slate-100">
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email Entrenador</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol Actual</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${profiles.map(u => `
+                            <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                <td class="px-6 py-4 font-bold text-slate-800">${u.email}</td>
+                                <td class="px-6 py-4">
+                                    <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
+                                        ${u.role}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <button onclick="window.toggleUserRole('${u.id}', '${u.role}')" class="px-4 py-2 bg-slate-50 text-slate-600 text-xs font-bold rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                                        Cambiar a ${u.role === 'ELITE' ? 'TÉCNICO' : 'ELITE'}
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-6 text-xs text-slate-400 italic px-6">* Solo los usuarios con rol ELITE pueden importar datos masivos y borrar registros globales.</p>
+        `;
+    }
+
+    window.toggleUserRole = async (userId, currentRole) => {
+        const newRole = currentRole === 'ELITE' ? 'TECNICO' : 'ELITE';
+        const { error } = await supabaseClient.from('profiles').update({ role: newRole }).eq('id', userId);
+        if (error) alert("Error: " + error.message);
+        else renderView('usuarios');
+    };
 
     window.closeModal = () => modalOverlay.classList.remove('active');
     modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
