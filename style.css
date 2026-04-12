@@ -216,3 +216,18 @@ input:focus, select:focus, textarea:focus {
 }
 
 .print-header { display: none; }
+
+/* Role Based Restrictions */
+body.role-tecnico button[onclick*="delete"],
+body.role-tecnico button[onclick*="trash"],
+body.role-tecnico .text-red-500,
+body.role-tecnico #secondary-add-btn {
+    display: none !important;
+}
+
+body.role-tecnico .nav-link[data-view="equipos"],
+body.role-tecnico .nav-link[data-view="jugadores"] {
+    opacity: 0.7;
+    pointer-events: none;
+}
+

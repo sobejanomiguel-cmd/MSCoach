@@ -1,9 +1,15 @@
 const DB_NAME = 'MSCoachDB';
 const DB_VERSION = 7;
 
+// Supabase Configuration
+const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_uNge3ORs5F-ijF7o7nzczQ_vnKI5P0c';
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
 class CoachDB {
     constructor() {
         this.db = null;
+        this.userRole = 'TECNICO'; // Default
     }
 
     async init() {
@@ -13,35 +19,12 @@ class CoachDB {
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
 
-                // Tareas Store
-                if (!db.objectStoreNames.contains('tareas')) {
-                    db.createObjectStore('tareas', { keyPath: 'id', autoIncrement: true });
-                }
-
-                // Sesiones Store
-                if (!db.objectStoreNames.contains('sesiones')) {
-                    db.createObjectStore('sesiones', { keyPath: 'id', autoIncrement: true });
-                }
-
-                // Equipos Store
-                if (!db.objectStoreNames.contains('equipos')) {
-                    db.createObjectStore('equipos', { keyPath: 'id', autoIncrement: true });
-                }
-
-                // Jugadores Store
-                if (!db.objectStoreNames.contains('jugadores')) {
-                    db.createObjectStore('jugadores', { keyPath: 'id', autoIncrement: true });
-                }
-
-                // Asistencia Store
-                if (!db.objectStoreNames.contains('asistencia')) {
-                    db.createObjectStore('asistencia', { keyPath: 'id', autoIncrement: true });
-                }
-
-                // Eventos Store
-                if (!db.objectStoreNames.contains('eventos')) {
-                    db.createObjectStore('eventos', { keyPath: 'id', autoIncrement: true });
-                }
+                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos'];
+                stores.forEach(store => {
+                    if (!db.objectStoreNames.contains(store)) {
+                        db.createObjectStore(store, { keyPath: 'id', autoIncrement: true });
+                    }
+                });
             };
 
             request.onsuccess = (event) => {
@@ -58,7 +41,59 @@ class CoachDB {
         });
     }
 
+    // Auth Methods
+    async login(email, password) {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        await this.syncRole();
+        return data;
+    }
+
+    async signUp(email, password) {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        return data;
+    }
+
+    async logout() {
+        await supabase.auth.signOut();
+        this.userRole = 'TECNICO';
+        window.location.reload();
+    }
+
+    async getUser() {
+        const { data: { user } } = await supabase.auth.getUser();
+        return user;
+    }
+
+    async syncRole() {
+        const user = await this.getUser();
+        if (user) {
+            const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).single();
+            if (data) {
+                this.userRole = data.role;
+                console.log("Current User Role:", this.userRole);
+            }
+        }
+    }
+
+    // Generic method to handle Supabase + IndexedDB Sync
     async getAll(storeName) {
+        // Try Supabase first
+        if (supabase) {
+            try {
+                const { data, error } = await supabase.from(storeName).select('*');
+                if (!error && data) {
+                    // Update local cache
+                    await this.syncLocal(storeName, data);
+                    return data;
+                }
+            } catch (err) {
+                console.warn(`Supabase fetch failed for ${storeName}, falling back to IndexedDB:`, err);
+            }
+        }
+
+        // Fallback to IndexedDB
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readonly');
             const store = transaction.objectStore(storeName);
@@ -68,17 +103,52 @@ class CoachDB {
         });
     }
 
+    async syncLocal(storeName, remoteData) {
+        const transaction = this.db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        store.clear();
+        remoteData.forEach(item => {
+            store.put(item);
+        });
+    }
+
     async add(storeName, data) {
+        let savedData = data;
+        
+        // Try Supabase
+        if (supabase) {
+            try {
+                // Ensure id is not sent if it's new
+                const { id, ...dataToSync } = data;
+                const { data: remoteData, error } = await supabase.from(storeName).insert([dataToSync]).select();
+                if (!error && remoteData) {
+                    savedData = remoteData[0];
+                }
+            } catch (err) {
+                console.error(`Supabase insert error for ${storeName}:`, err);
+            }
+        }
+
+        // Always save to IndexedDB as well
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readwrite');
             const store = transaction.objectStore(storeName);
-            const request = store.add(data);
+            const request = store.put(savedData); // use put so it updates if already has ID from supabase
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
     }
 
     async update(storeName, data) {
+        // Try Supabase
+        if (supabase && data.id) {
+            try {
+                await supabase.from(storeName).update(data).eq('id', data.id);
+            } catch (err) {
+                console.error(`Supabase update error for ${storeName}:`, err);
+            }
+        }
+
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readwrite');
             const store = transaction.objectStore(storeName);
@@ -89,6 +159,15 @@ class CoachDB {
     }
 
     async delete(storeName, id) {
+        // Try Supabase
+        if (supabase) {
+            try {
+                await supabase.from(storeName).delete().eq('id', id);
+            } catch (err) {
+                console.error(`Supabase delete error for ${storeName}:`, err);
+            }
+        }
+
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction(storeName, 'readwrite');
             const store = transaction.objectStore(storeName);
@@ -100,3 +179,4 @@ class CoachDB {
 }
 
 const db = new CoachDB();
+

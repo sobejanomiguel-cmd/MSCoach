@@ -57,6 +57,83 @@ document.addEventListener('DOMContentLoaded', async () => {
     await db.init().catch(err => {
         if(err !== 'blocked') window.customAlert('Error de base de datos', err);
     });
+
+    // Auth Logic
+    const authScreen = document.getElementById('auth-screen');
+    const authForm = document.getElementById('auth-form');
+    const authTitle = document.getElementById('auth-title');
+    const authSubmit = document.getElementById('auth-submit');
+    const toggleAuthBtn = document.getElementById('toggle-auth');
+    const appEl = document.getElementById('app');
+    let isLogin = true;
+
+    const checkAuth = async () => {
+        const user = await db.getUser();
+        if (user) {
+            await db.syncRole();
+            authScreen.classList.add('hidden');
+            appEl.classList.remove('hidden');
+            switchView('dashboard');
+            applyRoleRestrictions();
+        } else {
+            authScreen.classList.remove('hidden');
+            appEl.classList.add('hidden');
+        }
+    };
+
+    const applyRoleRestrictions = () => {
+        const isTecnico = db.userRole === 'TECNICO';
+        // Hide CSV import buttons for TECNICO
+        const secondaryBtn = document.getElementById('secondary-add-btn');
+        if (isTecnico && secondaryBtn) secondaryBtn.style.display = 'none';
+        
+        // Disable delete buttons globally for TECNICO
+        document.body.classList.toggle('role-tecnico', isTecnico);
+    };
+
+    toggleAuthBtn.onclick = () => {
+        isLogin = !isLogin;
+        authTitle.textContent = isLogin ? 'Acceso Entrenador' : 'Registro Nuevo';
+        authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
+        toggleAuthBtn.textContent = isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra';
+    };
+
+    authForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('auth-email').value;
+        const password = document.getElementById('auth-password').value;
+        authSubmit.disabled = true;
+        authSubmit.textContent = 'Procesando...';
+
+        try {
+            if (isLogin) {
+                await db.login(email, password);
+            } else {
+                await db.signUp(email, password);
+                window.customAlert('Registro exitoso', 'Por favor, verifica tu email si es necesario e inicia sesión.');
+                isLogin = true;
+                toggleAuthBtn.click();
+            }
+            await checkAuth();
+        } catch (err) {
+            window.customAlert('Error', err.message);
+        } finally {
+            authSubmit.disabled = false;
+            authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
+        }
+    };
+
+    // Logout logic
+    const logoutBtn = document.querySelector('button i[data-lucide="log-out"]')?.parentElement;
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => {
+            window.customConfirm('¿Cerrar Sesión?', 'Saldrás de tu panel de control.', async () => {
+                await db.logout();
+            });
+        };
+    }
+
+    await checkAuth();
     
     // UI Elements
     const navLinks = document.querySelectorAll('.nav-link');
@@ -69,6 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalContainer = document.getElementById('modal-container');
     const mobileMenuBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
+
 
     // Sidebar Toggle Logic for Mobile
     if (mobileMenuBtn && sidebar) {

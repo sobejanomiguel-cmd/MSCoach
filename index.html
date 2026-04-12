@@ -28,10 +28,37 @@
     </script>
     <!-- Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-gray-50 text-slate-900 font-inter">
-    <div id="app" class="flex h-screen overflow-hidden flex-col md:flex-row">
+    <div id="auth-screen" class="fixed inset-0 bg-slate-900 z-[200] flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-[2rem] p-10 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
+            <div class="text-center mb-10">
+                <img src="logo.png" alt="MS Coach" class="h-10 mx-auto mb-6">
+                <h2 id="auth-title" class="text-2xl font-black text-slate-800 uppercase tracking-tight">Acceso Entrenador</h2>
+                <p id="auth-subtitle" class="text-slate-500 text-sm font-medium">Gestiona tu equipo profesionalmente</p>
+            </div>
+            <form id="auth-form" class="space-y-5">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Profesional</label>
+                    <input type="email" id="auth-email" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 transition-all" placeholder="tuejemplo@club.com" required>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña</label>
+                    <input type="password" id="auth-password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 transition-all" placeholder="••••••••" required>
+                </div>
+                <button type="submit" id="auth-submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4">Entrar al Panel</button>
+                <div class="text-center pt-4">
+                    <button type="button" id="toggle-auth" class="text-[11px] text-slate-400 font-bold uppercase tracking-widest hover:text-blue-600 transition-colors">¿No tienes cuenta? Regístrate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="app" class="flex h-screen overflow-hidden flex-col md:flex-row hidden">
         <!-- Mobile Header (Visible only on mobile) -->
         <div class="md:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
             <img src="RS.png" alt="Logo" class="h-8 object-contain">
