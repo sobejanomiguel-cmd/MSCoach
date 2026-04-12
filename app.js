@@ -433,6 +433,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         contentContainer.innerHTML = ''; // Ensure container is empty before appending new view
         contentContainer.appendChild(wrapper);
+        
+        // El chispazo final: activar iconos cuando ya están en el DOM
+        if (window.lucide) {
+            setTimeout(() => lucide.createIcons(), 50);
+        }
     }
 
     // View Renderers
@@ -682,7 +687,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end gap-2">
                             <button onclick="window.viewEvento(${e.id})" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                            <button onclick="window.deleteEvento(${e.id})" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </div>
                     </div>
                 `).join('') || '<div class="col-span-full py-20 text-center text-slate-400 italic">No hay tareas pendientes en la agenda.</div>'}
@@ -968,7 +973,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
 
                     <div class="flex gap-4">
-                        <button type="button" onclick="window.deleteSession(${session.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"><i data-lucide="trash-2"></i></button>
+                        <button type="button" onclick="event.stopPropagation(); window.deleteSession(${session.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"><i data-lucide="trash-2"></i></button>
                         <button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
                     </div>
                 </form>
@@ -1484,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </fieldset>
                     
                     <div class="flex gap-4">
-                        <button type="button" onclick="window.deletePlayer(${player.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all admin-only"><i data-lucide="trash-2"></i></button>
+                        <button type="button" onclick="event.stopPropagation(); window.deletePlayer(${player.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all admin-only"><i data-lucide="trash-2"></i></button>
                         ${db.userRole === 'ELITE' ? `<button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>` : ''}
                     </div>
                 </form>
