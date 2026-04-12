@@ -1,0 +1,218 @@
+:root {
+    --primary: #2563eb;
+    --primary-dark: #1e40af;
+    --primary-light: #60a5fa;
+    --primary-extra-light: #dbeafe;
+    --secondary: #64748b;
+    --bg-main: #f8fafc;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --radius-xl: 1.5rem;
+    --radius-lg: 1rem;
+    --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-blue: 0 10px 15px -3px rgba(37, 99, 235, 0.2);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    background-color: var(--bg-main);
+}
+
+.font-outfit { font-family: 'Outfit', sans-serif; }
+.font-inter { font-family: 'Inter', sans-serif; }
+
+/* Sidebar */
+.sidebar {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-link {
+    color: var(--text-muted);
+}
+
+.nav-link.active {
+    background-color: var(--primary-extra-light);
+    color: var(--primary);
+}
+
+.nav-link:hover:not(.active) {
+    background-color: #f1f5f9;
+    color: var(--text-main);
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Animations */
+.animate-in {
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Cards */
+.stat-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.05);
+}
+
+/* Form Elements */
+input, select, textarea {
+    outline: none;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+input:focus, select:focus, textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-extra-light);
+}
+
+/* Modal */
+#modal-overlay.active {
+    opacity: 1;
+    display: flex;
+}
+
+#modal-overlay.active #modal-container {
+    transform: scale(1);
+}
+
+/* Tareas Grid */
+.task-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.task-card {
+    background: white;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    transition: all 0.3s;
+}
+
+.task-card:hover {
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+    border-color: var(--primary-light);
+}
+
+.task-img-placeholder {
+    height: 160px;
+    background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+}
+
+/* Attendance Table */
+.attendance-table th {
+    text-align: left;
+    padding: 1rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+}
+
+.attendance-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-presente { background: #dcfce7; color: #166534; }
+.status-falta { background: #fee2e2; color: #991b1b; }
+.status-justificada { background: #fef9c3; color: #854d0e; }
+
+/* Attendance Charts */
+.attendance-bar-bg {
+    width: 100%;
+    height: 8px;
+    background: #f1f5f9;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.attendance-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.5s ease-out;
+}
+
+/* Print Styles */
+@media print {
+    .sidebar, header, #add-btn, .nav-link, button {
+        display: none !important;
+    }
+    
+    body, #app, main {
+        background: white !important;
+        overflow: visible !important;
+        height: auto !important;
+    }
+    
+    #content-container {
+        padding: 0 !important;
+        overflow: visible !important;
+    }
+    
+    .print-header {
+        display: block !important;
+        text-align: center;
+        margin-bottom: 2rem;
+        border-bottom: 2px solid #2563eb;
+        padding-bottom: 1rem;
+    }
+    
+    .view {
+        animation: none !important;
+    }
+}
+
+.print-header { display: none; }

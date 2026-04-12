@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MS Coach | Football Management Professional</title>
+    <meta name="description" content="Plataforma profesional para entrenadores de fútbol. Gestión de tareas, sesiones y control de asistencia.">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              inter: ['Inter', 'sans-serif'],
+              outfit: ['Outfit', 'sans-serif'],
+            },
+            colors: {
+              primary: '#2563eb',
+            }
+          }
+        }
+      }
+    </script>
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 text-slate-900 font-inter">
+    <div id="app" class="flex h-screen overflow-hidden flex-col md:flex-row">
+        <!-- Mobile Header (Visible only on mobile) -->
+        <div class="md:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+            <img src="RS.png" alt="Logo" class="h-8 object-contain">
+            <div class="flex items-center gap-2">
+                <button id="mobile-menu-btn" class="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    <i data-lucide="menu" class="w-6 h-6"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Sidebar (Desktop only) -->
+        <aside id="sidebar" class="sidebar hidden md:flex w-72 bg-white border-r border-slate-200 flex flex-col z-50 fixed inset-y-0 left-0 transform -translate-x-full md:translate-x-0 md:relative transition-transform duration-300">
+            <div class="pt-2 pb-6 px-6 flex flex-col items-center border-b border-slate-50">
+                <img src="logo.png" alt="MS Coach Logo" class="w-full max-w-[200px] h-auto object-contain">
+            </div>
+
+            <nav class="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
+                <a href="#" data-view="dashboard" class="nav-link active flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="home" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Dashboard</span>
+                </a>
+                <a href="#" data-view="calendario" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="calendar-days" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Calendario</span>
+                </a>
+                <a href="#" data-view="eventos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="alarm-clock" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Eventos / Agenda</span>
+                </a>
+
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Entrenamiento</div>
+                <a href="#" data-view="tareas" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="clipboard-list" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Tareas</span>
+                </a>
+                <a href="#" data-view="sesiones" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="calendar" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Sesiones</span>
+                </a>
+
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Club</div>
+                <a href="#" data-view="equipos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="users" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Equipos</span>
+                </a>
+                <a href="#" data-view="jugadores" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="contact" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Jugadores</span>
+                </a>
+                <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="check-square" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Asistencia</span>
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-slate-100">
+                <button class="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-red-600 rounded-xl transition-all duration-200">
+                    <i data-lucide="log-out" class="w-5 h-5"></i>
+                    <span class="font-medium">Cerrar Sesión</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden relative">
+            <!-- Header (Desktop version hidden on mobile) -->
+            <header class="hidden md:flex h-20 bg-white border-b border-slate-200 items-center justify-between px-8 sticky top-0 z-40">
+                <div>
+                    <h2 id="view-title" class="text-2xl font-outfit font-bold text-slate-800">Dashboard</h2>
+                    <p id="view-subtitle" class="text-sm text-slate-500 tracking-tight">Bienvenido de nuevo, Entrenador.</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button id="secondary-add-btn" class="hidden flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-2.5 rounded-xl font-semibold border border-slate-200 transition-all duration-300">
+                        <i data-lucide="file-up" class="w-5 h-5"></i>
+                        <span>Importar CSV</span>
+                    </button>
+                    <button id="add-btn" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-blue-500/20 transition-all duration-300">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
+                        <span class="btn-text">Nuevo Registro</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Mobile Action Bar (Sticky floating buttons on mobile) -->
+            <div class="md:hidden flex items-center justify-between p-4 bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40">
+                <div>
+                    <h2 id="view-title-mobile" class="text-lg font-outfit font-black text-slate-800 uppercase tracking-tight">Dashboard</h2>
+                </div>
+                <div class="flex gap-2">
+                    <button id="add-btn-mobile" class="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div id="content-container" class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24 md:pb-8">
+                <!-- VIEWS WILL BE INJECTED HERE -->
+            </div>
+
+            <!-- Bottom Navigation (Mobile Only) -->
+            <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+                <a href="#" data-view="dashboard" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="home" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Inicio</span>
+                </a>
+                <a href="#" data-view="calendario" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="calendar" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Agenda</span>
+                </a>
+                <a href="#" data-view="tareas" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="clipboard-list" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Tareas</span>
+                </a>
+                <a href="#" data-view="sesiones" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="play-circle" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Sesión</span>
+                </a>
+                <a href="#" data-view="jugadores" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="users" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Club</span>
+                </a>
+            </nav>
+        </main>
+    </div>
+
+    <!-- Modals Container -->
+    <div id="modal-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div id="modal-container" class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden transform scale-95 transition-transform duration-300">
+            <!-- Dynamic Modal Content -->
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="db.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
