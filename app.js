@@ -53,12 +53,7 @@ window.customConfirm = (title, message, onConfirm) => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize DB
-    await db.init().catch(err => {
-        if(err !== 'blocked') window.customAlert('Error de base de datos', err);
-    });
-
-    // Auth Logic
+    // Auth Elements
     const authScreen = document.getElementById('auth-screen');
     const authForm = document.getElementById('auth-form');
     const authTitle = document.getElementById('auth-title');
@@ -67,101 +62,77 @@ document.addEventListener('DOMContentLoaded', async () => {
     const appEl = document.getElementById('app');
     let isLogin = true;
 
+    // 1. Initial Auth Check (Before anything else)
     const checkAuth = async () => {
-        console.log("Checking authentication...");
         if (!supabaseClient) {
-            console.warn("Supabase not initialized yet.");
+            console.error("Supabase Error: No hay cliente");
             return;
         }
-
         try {
-            const user = await db.getUser();
+            const { data: { user } } = await supabaseClient.auth.getUser();
             if (user) {
-                console.log("User authenticated:", user.email);
                 await db.syncRole();
                 authScreen.classList.add('hidden');
                 appEl.classList.remove('hidden');
-                switchView('dashboard');
                 applyRoleRestrictions();
+                switchView('dashboard');
             } else {
-                console.log("No active session.");
                 authScreen.classList.remove('hidden');
                 appEl.classList.add('hidden');
             }
-        } catch (err) {
-            console.error("Auth check failed:", err);
+        } catch (e) {
+            console.error("Auth init error:", e);
         }
     };
 
+    // Initialize DB then Check Auth
+    db.init().then(() => checkAuth()).catch(e => console.error("DB Init fail:", e));
+
     const applyRoleRestrictions = () => {
         const isTecnico = db.userRole === 'TECNICO';
-        const secondaryBtn = document.getElementById('secondary-add-btn');
-        if (secondaryBtn) {
-            secondaryBtn.style.display = isTecnico ? 'none' : 'flex';
-        }
         document.body.classList.toggle('role-tecnico', isTecnico);
+        const secondaryBtn = document.getElementById('secondary-add-btn');
+        if (secondaryBtn) secondaryBtn.style.display = isTecnico ? 'none' : 'flex';
     };
 
     if (toggleAuthBtn) {
         toggleAuthBtn.onclick = () => {
             isLogin = !isLogin;
-            console.log("Toggling Auth Mode. isLogin:", isLogin);
             authTitle.textContent = isLogin ? 'Acceso Entrenador' : 'Registro Nuevo';
             authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
             toggleAuthBtn.textContent = isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra';
         };
     }
 
+    if (authForm) {
+        authForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            
+            authSubmit.disabled = true;
+            authSubmit.textContent = 'Procesando...';
 
-    authForm.onsubmit = async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('auth-email').value;
-        const password = document.getElementById('auth-password').value;
-        authSubmit.disabled = true;
-        authSubmit.textContent = 'Procesando...';
-
-        try {
-            console.log(`Starting ${isLogin ? 'Login' : 'Sign Up'} process for: ${email}`);
-            if (isLogin) {
-                await db.login(email, password);
-            } else {
-                console.log("Calling Supabase signUp...");
-                const signUpResult = await db.signUp(email, password);
-                console.log("Supabase Success:", signUpResult);
-                
-                const msg = '¡Cuenta creada! Si has desactivado la confirmación por email, ya puedes entrar. Si no, revisa tu correo.';
-                if (window.customAlert) window.customAlert('Registro OK', msg);
-                else alert(msg);
-                
-                isLogin = true;
-                if (toggleAuthBtn) toggleAuthBtn.click();
+            try {
+                if (isLogin) {
+                    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                } else {
+                    const { data, error } = await supabaseClient.auth.signUp({ email, password });
+                    if (error) throw error;
+                    alert("¡Registro enviado! Revisa tu email para confirmar la cuenta (mira en SPAM).");
+                }
+                await checkAuth();
+            } catch (err) {
+                alert("ERROR: " + err.message);
+                console.error(err);
+            } finally {
+                authSubmit.disabled = false;
+                authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
             }
-            await checkAuth();
-        } catch (err) {
-            console.error("DEBUG AUTH ERROR:", err);
-            const errorMsg = err.message || 'Error desconocido';
-            alert("ERROR DE ACCESO: " + errorMsg);
-            if (window.customAlert) window.customAlert('Error', errorMsg);
-        } finally {
-            authSubmit.disabled = false;
-            authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
-        }
-
-
-
-    };
-
-    // Logout logic
-    const logoutBtn = document.querySelector('button i[data-lucide="log-out"]')?.parentElement;
-    if (logoutBtn) {
-        logoutBtn.onclick = async () => {
-            window.customConfirm('¿Cerrar Sesión?', 'Saldrás de tu panel de control.', async () => {
-                await db.logout();
-            });
         };
     }
 
-    await checkAuth();
     
     // UI Elements
     const navLinks = document.querySelectorAll('.nav-link');
