@@ -1,9 +1,9 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 7;
+const DB_VERSION = 8; // Incrementado por cambios de esquema
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_uNge3ORs5F-ijF7o7nzczQ_vnKI5P0c';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvcGVuY3lnaWxhZWV2dnZ4a3Z1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMDI3NDIsImV4cCI6MjA5MTU3ODc0Mn0.ccOeebsqB7bmAskFUBfYg4hruzAmdmod7F8--8GEGAY';
 let supabaseClient = null;
 
 try {
@@ -17,7 +17,7 @@ try {
 class CoachDB {
     constructor() {
         this.db = null;
-        this.userRole = 'TECNICO'; // Default
+        this.userRole = 'TECNICO'; 
     }
 
     async init() {
@@ -26,8 +26,7 @@ class CoachDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-
-                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos'];
+                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias'];
                 stores.forEach(store => {
                     if (!db.objectStoreNames.contains(store)) {
                         db.createObjectStore(store, { keyPath: 'id', autoIncrement: true });
@@ -41,35 +40,11 @@ class CoachDB {
             };
 
             request.onerror = (event) => reject(event.target.error);
-            request.onblocked = () => {
-                if (window.customAlert) window.customAlert('Base de datos bloqueada', 'Por favor, cierra otras pestañas de MS Coach.');
-                else alert('Base de datos bloqueada: cierra otras pestañas de MS Coach.');
-                reject('blocked');
-            };
         });
     }
 
-    // Auth Methods
-    async login(email, password) {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        await this.syncRole();
-        return data;
-    }
-
-    async signUp(email, password) {
-        const { data, error } = await supabaseClient.auth.signUp({ email, password });
-        if (error) throw error;
-        return data;
-    }
-
-    async logout() {
-        await supabaseClient.auth.signOut();
-        this.userRole = 'TECNICO';
-        window.location.reload();
-    }
-
     async getUser() {
+        if (!supabaseClient) return null;
         const { data: { user } } = await supabaseClient.auth.getUser();
         return user;
     }
@@ -80,90 +55,90 @@ class CoachDB {
             const { data, error } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
             if (data) {
                 this.userRole = data.role;
-                console.log("Current User Role:", this.userRole);
             }
         }
     }
 
-    // Generic method to handle Supabase + IndexedDB Sync
     async getAll(storeName) {
-        // Try Supabase first
         if (supabaseClient) {
             try {
-                const { data, error } = await supabaseClient.from(storeName).select('*');
+                const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
                 if (!error && data) {
-                    // Update local cache
+                    // Sincronizamos SIEMPRE que la respuesta sea exitosa (incluso si viene vacío [])
                     await this.syncLocal(storeName, data);
                     return data;
                 }
+                if (error) {
+                    console.error(`Supabase error (${storeName}):`, error);
+                }
             } catch (err) {
-                console.warn(`Supabase fetch failed for ${storeName}, falling back to IndexedDB:`, err);
+                console.warn(`Supabase offline for ${storeName}, using local cache.`);
             }
         }
 
-        // Fallback to IndexedDB
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(storeName, 'readonly');
-            const store = transaction.objectStore(storeName);
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
             const request = store.getAll();
             request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
         });
     }
 
     async syncLocal(storeName, remoteData) {
-        const transaction = this.db.transaction(storeName, 'readwrite');
-        const store = transaction.objectStore(storeName);
+        if (!this.db) return;
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
         store.clear();
-        remoteData.forEach(item => {
-            store.put(item);
-        });
+        if (remoteData && remoteData.length > 0) {
+            remoteData.forEach(item => store.put(item));
+        }
     }
 
     async add(storeName, data) {
-        let savedData = data;
-        
-        // Try Supabase
         if (supabaseClient) {
             try {
-                // Ensure id is not sent if it's new
-                const { id, ...dataToSync } = data;
-                const { data: remoteData, error } = await supabaseClient.from(storeName).insert([dataToSync]).select();
-                if (!error && remoteData) {
-                    savedData = remoteData[0];
+                const { id, ...toInsert } = data;
+                const { data: remote, error } = await supabaseClient.from(storeName).insert([toInsert]).select();
+                
+                if (error) {
+                    console.error("Error en Supabase:", error);
+                    window.customAlert('Error de Sincronización', `Supabase ha rechazado los datos: ${error.message}. Revisa si el RLS está desactivado.`);
+                    throw error;
+                }
+
+                if (remote && remote.length > 0) {
+                    const saved = remote[0];
+                    await this.saveLocal(storeName, saved);
+                    return saved;
                 }
             } catch (err) {
-                console.error(`Supabase insert error for ${storeName}:`, err);
+                console.error("Cloud save failed:", err);
+                // No guardamos en local si falló la nube para evitar inconsistencias graves
+                throw err;
             }
         }
+        return this.saveLocal(storeName, data);
+    }
 
-        // Always save to IndexedDB as well
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.put(savedData); // use put so it updates if already has ID from supabase
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+    async saveLocal(storeName, data) {
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+            const request = store.put(data);
+            request.onsuccess = () => resolve(data);
         });
     }
 
     async update(storeName, data) {
-        // Try Supabase
         if (supabaseClient && data.id) {
             try {
-                await supabaseClient.from(storeName).update(data).eq('id', data.id);
+                const { error } = await supabaseClient.from(storeName).update(data).eq('id', data.id);
+                if (error) throw error;
             } catch (err) {
-                console.error(`Supabase update error for ${storeName}:`, err);
+                console.error("Cloud update failed:", err);
             }
         }
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.put(data);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
+        return this.saveLocal(storeName, data);
     }
 
     async delete(storeName, id) {
@@ -171,29 +146,55 @@ class CoachDB {
             try {
                 await supabaseClient.from(storeName).delete().eq('id', id);
             } catch (err) {
-                console.error(`Supabase delete error for ${storeName}:`, err);
+                console.error("Cloud delete failed:", err);
             }
         }
-
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction(storeName, 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.delete(id);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readwrite');
+            storeName && tx.objectStore(storeName).delete(id);
+            tx.oncomplete = () => resolve();
         });
     }
 
-    async clearLocal() {
-        if (!this.db) return;
-        const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos'];
-        const transaction = this.db.transaction(stores, 'readwrite');
-        stores.forEach(s => transaction.objectStore(s).clear());
-        console.log("Local IndexedDB cleared successfully.");
-        window.location.reload();
+    async uploadImage(file) {
+        if (!supabaseClient) return null;
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+            const filePath = `tasks/${fileName}`;
+
+            const { data, error } = await supabaseClient.storage
+                .from('tareas')
+                .upload(filePath, file);
+
+            if (error) throw error;
+
+            const { data: { publicUrl } } = supabaseClient.storage
+                .from('tareas')
+                .getPublicUrl(filePath);
+
+            return publicUrl;
+        } catch (err) {
+            console.error("Error subiendo imagen a Storage:", err);
+            return null;
+        }
+    }
+
+    async deleteAll(storeName) {
+        if (supabaseClient) {
+            try {
+                await supabaseClient.from(storeName).delete().neq('id', 0);
+            } catch (err) {
+                console.error("Cloud bulk delete failed:", err);
+            }
+        }
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).clear();
+            tx.oncomplete = () => resolve();
+        });
     }
 }
-
 
 const db = new CoachDB();
 

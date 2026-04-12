@@ -1,0 +1,128 @@
+        } else if (currentView === 'sesiones') {
+            Promise.all([db.getAll('equipos'), db.getAll('tareas'), db.getAll('jugadores')]).then(([teams, tasks, players]) => {
+                modalContainer.innerHTML = `
+                    <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                        <h3 class="text-2xl font-bold mb-6 text-slate-800">Planificar Nueva Sesión</h3>
+                        <form id="modal-form" class="space-y-6">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Objetivo de la Sesión</label>
+                                    <input name="titulo" placeholder="Ej: Transiciones ofensivas rápidas" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
+                                    <select name="equipoid" id="session-team-select" class="w-full p-3 border rounded-xl bg-white">
+                                        ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
+                                        <input name="fecha" type="date" class="w-full p-3 border rounded-xl" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
+                                        <input name="hora" type="time" class="w-full p-3 border rounded-xl" required>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <div class="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                    ${tasks.map(t => `
+                                        <div class="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4 hover:border-blue-200 transition-all">
+                                            <label class="flex items-center gap-4 cursor-pointer">
+                                                <input type="checkbox" name="taskids" value="${t.id}" onchange="document.getElementById('task-meta-${t.id}').classList.toggle('hidden', !this.checked)" class="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500">
+                                                <div class="flex-1">
+                                                    <p class="text-sm font-bold text-slate-800">${t.name}</p>
+                                                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">${t.category}</p>
+                                                </div>
+                                            </label>
+                                            <div id="task-meta-${t.id}" class="hidden space-y-4 pt-4 border-t border-slate-50 animate-in slide-in-from-top-2 duration-200">
+                                                <div class="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Tiempo de trabajo</label>
+                                                        <div class="flex items-center gap-2">
+                                                            <input name="taskTime_${t.id}" type="number" value="${t.duration}" class="w-full p-2 text-xs border border-slate-200 rounded-xl bg-slate-50 font-bold focus:bg-white transition-all">
+                                                            <span class="text-[9px] font-black text-slate-400">MIN</span>
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Espacio de trabajo</label>
+                                                        <input name="taskSpace_${t.id}" type="text" placeholder="Ej: Medio campo" class="w-full p-2 text-xs border border-slate-200 rounded-xl bg-slate-50 font-bold focus:bg-white transition-all">
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-[9px] font-black text-slate-400 uppercase mb-2">Asignación de Grupos (Jugadores)</label>
+                                                    <div class="task-players-assignment-${t.id} grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
+                                                        <p class="text-[9px] text-slate-400 italic col-span-full">Selecciona un equipo para asignar grupos</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Jugadores Disponibles</label>
+                                <div id="session-players-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Selecciona un equipo para cargar jugadores</p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4 mt-8">
+                                <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                                <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Planificación</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+                
+                // Logic to filter players by team
+                const teamSelect = document.getElementById('session-team-select');
+                const playersList = document.getElementById('session-players-list');
+                
+                const updatePlayers = () => {
+                    const equipoid = teamSelect.value;
+                    const teamPlayers = players.filter(p => p.equipoid == equipoid);
+                    
+                    // Main list
+                    playersList.innerHTML = teamPlayers.map(p => `
+                        <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
+                            <input type="checkbox" name="playerids" value="${p.id}" checked class="w-4 h-4 rounded text-blue-600">
+                            <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
+                        </label>
+                    `).join('') || '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores en este equipo.</p>';
+
+                    // Per-task group assignment
+                    tasks.forEach(t => {
+                        const target = document.querySelector(`.task-players-assignment-${t.id}`);
+                        if (target) {
+                            target.innerHTML = teamPlayers.map(p => `
+                                <div class="flex items-center gap-3 bg-white px-2 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+                                    <span class="text-[9px] font-bold text-slate-600 truncate flex-1">${p.nombre}</span>
+                                    <div class="flex gap-1.5">
+                                        <label class="cursor-pointer group/color">
+                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Azul" class="hidden peer">
+                                            <div class="w-5 h-5 rounded-md bg-blue-500 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
+                                        </label>
+                                        <label class="cursor-pointer group/color">
+                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Rojo" class="hidden peer">
+                                            <div class="w-5 h-5 rounded-md bg-red-500 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
+                                        </label>
+                                        <label class="cursor-pointer group/color">
+                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Amarillo" class="hidden peer">
+                                            <div class="w-5 h-5 rounded-md bg-yellow-400 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
+                                        </label>
+                                    </div>
+                                </div>
+                            `).join('') || '<p class="text-[9px] text-slate-400 italic col-span-full">Sin jugadores</p>';
+                        }
+                    });
+                };
+                
+                teamSelect.addEventListener('change', updatePlayers);
+                updatePlayers();
+                attachFormSubmit('sesiones');
+            });

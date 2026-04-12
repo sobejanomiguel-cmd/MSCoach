@@ -1,21 +1,33 @@
-window.customAlert = (title, message) => {
+window.customAlert = (title, message, type = 'info') => {
+    const colors = {
+        success: 'bg-emerald-500',
+        error: 'bg-red-500',
+        info: 'bg-blue-600'
+    };
+    const icons = {
+        success: 'check',
+        error: 'alert-circle',
+        info: 'info'
+    };
+    
     const alertModal = document.createElement('div');
     alertModal.className = 'fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300';
     alertModal.innerHTML = `
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
-        <div class="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl scale-in-center">
-            <div class="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mb-6 mx-auto">
-                <i data-lucide="info" class="w-8 h-8"></i>
+        <div class="bg-white rounded-[2.5rem] p-10 max-w-sm w-full relative shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform animate-in zoom-in duration-300 text-center">
+            <div class="w-20 h-20 ${colors[type] || colors.info} text-white rounded-[2rem] flex items-center justify-center mb-8 mx-auto shadow-2xl">
+                <i data-lucide="${icons[type] || 'info'}" class="w-10 h-10"></i>
             </div>
-            <h4 class="text-xl font-bold text-slate-800 text-center mb-2">${title}</h4>
-            <p class="text-slate-500 text-center text-sm mb-8 leading-relaxed">${message}</p>
-            <button id="close-alert" class="w-full py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Entendido</button>
+            <h4 class="text-2xl font-black text-slate-800 uppercase tracking-tight mb-3">${title}</h4>
+            <p class="text-slate-500 text-sm mb-10 leading-relaxed">${message}</p>
+            <button id="close-alert" class="w-full py-5 bg-slate-900 text-white font-bold rounded-2xl shadow-xl hover:bg-slate-800 transition-all active:scale-95">CONTINUAR</button>
         </div>
     `;
     document.body.appendChild(alertModal);
-    if (window.lucide) 
+    if (window.lucide) lucide.createIcons();
+    
     alertModal.querySelector('#close-alert').onclick = () => {
-        alertModal.classList.add('fade-out');
+        alertModal.classList.add('animate-out', 'fade-out', 'zoom-out');
         setTimeout(() => document.body.removeChild(alertModal), 300);
     };
 };
@@ -25,15 +37,15 @@ window.customConfirm = (title, message, onConfirm) => {
     confirmModal.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300';
     confirmModal.innerHTML = `
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"></div>
-        <div class="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl scale-in-center">
-            <div class="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-6 mx-auto">
-                <i data-lucide="alert-triangle" class="w-8 h-8"></i>
+        <div class="bg-white rounded-[2.5rem] p-10 max-w-sm w-full relative shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform animate-in zoom-in duration-300 text-center">
+            <div class="w-20 h-20 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center mb-8 mx-auto shadow-2xl">
+                <i data-lucide="help-circle" class="w-10 h-10"></i>
             </div>
-            <h4 class="text-xl font-bold text-slate-800 text-center mb-2">${title}</h4>
-            <p class="text-slate-500 text-center text-sm mb-8 leading-relaxed">${message}</p>
-            <div class="flex gap-3">
-                <button id="cancel-confirm" class="flex-1 py-3 bg-slate-50 text-slate-500 font-bold rounded-xl hover:bg-slate-100 transition-all">Cancelar</button>
-                <button id="exec-confirm" class="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg shadow-red-500/20 hover:bg-red-700 transition-all">Confirmar</button>
+            <h4 class="text-2xl font-black text-slate-800 uppercase tracking-tight mb-3">${title}</h4>
+            <p class="text-slate-500 text-sm mb-10 leading-relaxed">${message}</p>
+            <div class="grid grid-cols-2 gap-4">
+                <button id="cancel-confirm" class="py-5 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">NO</button>
+                <button id="exec-confirm" class="py-5 bg-blue-600 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95">SÍ, ADELANTE</button>
             </div>
         </div>
     `;
@@ -41,13 +53,13 @@ window.customConfirm = (title, message, onConfirm) => {
     if (window.lucide) lucide.createIcons();
 
     const close = () => {
-        confirmModal.classList.add('fade-out');
+        confirmModal.classList.add('animate-out', 'fade-out', 'zoom-out');
         setTimeout(() => document.body.removeChild(confirmModal), 300);
     };
 
     confirmModal.querySelector('#cancel-confirm').onclick = close;
-    confirmModal.querySelector('#exec-confirm').onclick = () => {
-        onConfirm();
+    confirmModal.querySelector('#exec-confirm').onclick = async () => {
+        await onConfirm();
         close();
     };
 };
@@ -176,11 +188,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             sidebar.classList.toggle('active-mobile');
         });
         
-        // Close sidebar when clicking outside on mobile
+        // Close sidebar and multiselect menus when clicking outside
         document.addEventListener('click', (e) => {
             if (window.innerWidth < 768 && !sidebar.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
                 sidebar.classList.add('-translate-x-full');
             }
+            
+            // Close Campograma Multiselect Menus
+            const menus = document.querySelectorAll('[id$="-menu"]');
+            menus.forEach(menu => {
+                if (!menu.classList.contains('hidden')) {
+                    const btn = menu.previousElementSibling;
+                    if (!menu.contains(e.target) && !btn.contains(e.target)) {
+                        menu.classList.add('hidden');
+                    }
+                }
+            });
         });
     }
 
@@ -219,15 +242,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     let attendanceData = {};
     const DB_VERSION = 7;
 
+    const TASK_TYPES = [
+        "ABP", "ACCIONES COMBINADAS", "EVOLUCIONES", "JUEGO DE FÚTBOL", 
+        "JUEGO DE POSICIÓN", "JUEGO LÚDICO", "POSESIÓN", "RONDO", 
+        "TÉCNICA COLECTIVA", "TÉCNICA INDIVIDUAL", "FÚTBOL", "PORTEROS", "MOVIMIENTOS"
+    ];
+
+    const TASK_CATEGORIES = [
+        "SENIOR", "JUVENIL", "CADETE", "INFANTIL", "ALEVIN", "BENJAMIN"
+    ];
+
+    const TASK_OBJECTIVES = [
+        "1x1", "ABP", "AMPLITUD", "ATAQUE RAPIDO", "BASCULACIONES", "BLOCAJES", 
+        "BUSCAR SUPERIORIDADES", "CAIDAS", "CAMBIOS DE ORIENTACIÓN", "CENTRO Y REMATE", 
+        "COBERTURAS", "COOPERACIÓN", "CONCENTRACIÓN", "CONDUCCIÓN", "CONTROL", 
+        "CONTROL ORIENTADO", "COORDINACIÓN", "CREAR LÍNEA DE PASE", "DEJAR DE CARA", 
+        "DEFENSA 1x1", "DEFENSA CENTROS LATERALES", "DEFENSA DE PARED", "DESMARQUES DE APOYO", 
+        "DESMARQUES DE RUPTURA", "DESPEJES", "DESPLAZAMIENTO", "DESVIOS", "DIVERSIÓN", 
+        "ENTRENAMIENTO COMPETITIVO", "ESTIRAMIENTOS", "FIJAR RIVAL", "FINALIZAR", 
+        "GOLPEO DE CABEZA", "INTERCEPTACIÓN", "JUEGO AEREO", "JUEGO DE ESPALDAS", 
+        "JUEGO DE PIES", "JUGAR CON ALEJADO", "LATERALIDAD", "LECTURA DEFENSIVA", 
+        "MANTENER", "MECANISMOS DE EJECUCIÓN", "PAREDES", "PASE", "PASE LARGO", 
+        "POSESIÓN", "PRESIÓN", "PROFUNDIDAD", "PROGRESAR", "PROLONGACIONES", 
+        "PROPIOCEPCION", "PROTECCIÓN", "REGATE", "REPLIEGUE", "SAQUE CON LA MANO", 
+        "SAQUE DE BANDA", "SALIDA DE BALÓN", "SUPERAR LINEAS", "TAPAR LÍNEA DE PASE", 
+        "TOMA DE DECISION", "TRANSICIONES DEFENSIVAS", "VELOCIDAD", "VELOCIDAD DESPLAZAMIENTO", 
+        "VELOCIDAD REACCIÓN", "VERTICALIDAD", "VISIÓN PERIFÉRICA"
+    ];
+
+    const TASK_MATERIALS = [
+        "AROS", "BALONES", "CHINOS", "CONOS", "PETOS", "PICAS", "PORTERIA PEQUEÑA", 
+        "PORTERIA REGLAMENTARIA", "ESCALERA COORDINACION", "VALLAS", "CINTA", 
+        "BANCO", "FITBALL", "PELOTAS TENIS", "PALA PADEL"
+    ];
+
+    const TASK_SPACES = [
+        "1/2 CAMPO", "3/4 CAMPO", "CAMPO ENTERO", "DOBLE AREA", "AREA GRANDE", 
+        "CIRCULO CENTRAL", "PORTERÍA COMPETICIÓN", "10 M", "20", "5X5", "6X6", "7X7", 
+        "8X8", "10X5", "10X8", "10X10", "10X20", "10X25", "10X40", "12X12", "14X10", 
+        "15X5", "15X7", "15X10", "15X15", "15X45", "20X5", "20X10", "20X15", "20X20", 
+        "20X30", "20X40", "25X10", "25X12", "25X15", "25X20", "25X25", "30X10", "30X15", 
+        "30X20", "30X30", "35X15", "35X20", "35X35", "40X15", "40X20", "40X25", "40X30", 
+        "40X40", "40X50", "45X25", "50X25", "50X30", "60X40", 
+        "ESPACIO GRANDE (15X15) / ESPACIO PEQUEÑO (5X5)", "7X7 / 15X15", "25X20 - 20X10", 
+        "15X15 - 20X20", "25X20 - 10X10", "5X5 - 20X20", "30X30 (10X10)", 
+        "RONDO GRANDE 10X10 / RONDO PEQUEÑO 7X7", "IR VARIANDO CONFORME SE VAN ELIMINANDO JUGADORES"
+    ];
+
+
+
     const viewMeta = {
         'dashboard': { title: 'MS Coach', subtitle: 'Resumen general de tu actividad.', addButtonEnabled: false },
         'calendario': { title: 'Calendario Maestro', subtitle: 'Planificación de sesiones y tareas diarias.', addButtonEnabled: false },
+        'campograma': { title: 'Campograma Táctico', subtitle: 'Análisis de profundidad por sistema y posición.', addButtonEnabled: false },
         'eventos': { title: 'Agenda y Tareas', subtitle: 'Listado de tareas de gestión y recordatorios.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true },
         'tareas': { title: 'Directorio de Tareas', subtitle: 'Biblioteca de ejercicios de entrenamiento.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'sesiones': { title: 'Sesiones de Entrenamiento', subtitle: 'Planificación y calendario.', addButtonLabel: 'Nueva Sesión', addButtonEnabled: true },
-        'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true },
+        'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true },
+        'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Controla los accesos y roles de tu equipo técnico.', addButtonEnabled: false }
     };
 
@@ -260,6 +334,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Button logic
         const secondaryAddBtn = document.getElementById('secondary-add-btn');
+        const tertiaryAddBtn = document.getElementById('tertiary-add-btn');
+        const cleanTasksBtn = document.getElementById('clean-tasks-btn');
+
         if (meta.addButtonEnabled) {
             addBtn.classList.remove('hidden');
             const btnText = addBtn.querySelector('.btn-text');
@@ -288,11 +365,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         reader.onload = async (re) => {
                             const text = re.target.result;
                             const lines = text.split('\n').filter(line => line.trim() !== '');
-                            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+                            if (lines.length < 1) return;
+
+                            // Detect delimiter: , or ;
+                            const firstLine = lines[0];
+                            const delimiter = firstLine.includes(';') ? ';' : ',';
                             
-                            const startIndex = headers.indexOf('TAREA');
+                            const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
+                            
+                            const startIndex = headers.findIndex(h => h === 'TAREA' || h === 'NOMBRE' || h === 'TASK');
                             if (startIndex === -1) {
-                                window.customAlert('CSV Inválido', 'No se ha encontrado la columna "TAREA". Asegúrate de que el formato sea el correcto.', 'error');
+                                window.customAlert('CSV Inválido', 'No se ha encontrado la columna "TAREA" o "NOMBRE". Revisa el formato.', 'error');
                                 return;
                             }
 
@@ -301,10 +384,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                             
                             let importedCount = 0;
                             let skippedCount = 0;
+                            const tasksToImport = [];
+
+                            // Aviso inicial
+                            const loadingAlert = document.createElement('div');
+                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                            loadingAlert.innerHTML = `
+                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando con Supabase...</p>
+                                    <p class="text-slate-500 text-[10px] lowercase italic">Estamos subiendo tus ${lines.length - 1} tareas</p>
+                                </div>
+                            `;
+                            document.body.appendChild(loadingAlert);
 
                             for (let i = 1; i < lines.length; i++) {
-                                // Simple CSV line parser (handles some quotes)
-                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                const row = lines[i].split(new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
 
                                 const taskData = {};
@@ -312,35 +407,46 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     taskData[h] = row[idx];
                                 });
 
-                                const name = taskData['TAREA'];
+                                const name = taskData['TAREA'] || taskData['NOMBRE'] || taskData['TASK'] || taskData['TITLE'];
                                 if (!name || existingNames.has(name.toLowerCase())) {
                                     skippedCount++;
                                     continue;
                                 }
 
-                                const newTask = {
+                                tasksToImport.push({
                                     name: name,
-                                    category: taskData['TIPO DE TAREA'] || 'Ataque',
-                                    description: taskData['DESCRIPCIÓN'] || '',
-                                    variantes: taskData['VARIANTES'] || '',
-                                    objetivo: taskData['OBJETIVO'] || '',
-                                    espacio: taskData['ESPACIO'] || '',
-                                    duration: parseInt(taskData['TIEMPO TOTAL']) || 15,
+                                    type: taskData['TIPO DE TAREA'] || taskData['TIPO'] || taskData['TYPE'] || 'FÚTBOL',
+                                    categoria: taskData['CATEGORIA'] || taskData['ETAPA'] || taskData['STAGE'] || 'SENIOR',
+                                    description: taskData['DESCRIPCIÓN'] || taskData['DESCRIPTION'] || '',
+                                    variantes: taskData['VARIANTES'] || taskData['VARIANTS'] || '',
+                                    objetivo: taskData['OBJETIVO'] || taskData['OBJECTIVE'] || '',
+                                    espacio: taskData['ESPACIO'] || taskData['SPACE'] || '',
+                                    duration: parseInt(taskData['TIEMPO TOTAL'] || taskData['TIME'] || taskData['DURATION']) || 15,
                                     material: taskData['MATERIAL'] || '',
-                                    video: taskData['VIDEO_DRIVE'] || '',
-                                    rangoCategorias: taskData['CATEGORIA'] || '',
+                                    video: taskData['VIDEO_DRIVE'] || taskData['VIDEO'] || '',
                                     series: taskData['SERIES'] || '',
-                                    tiempoSeries: taskData['TIEMPO SERIES'] || ''
-                                };
-
-                                await db.add('tareas', newTask);
+                                    tiempoSeries: taskData['TIEMPO SERIES'] || taskData['TIME SERIES'] || ''
+                                });
                                 existingNames.add(name.toLowerCase());
-                                importedCount++;
                             }
 
+                            if (tasksToImport.length > 0) {
+                                try {
+                                    const { error } = await supabaseClient.from('tareas').insert(tasksToImport);
+                                    if (error) throw error;
+                                    importedCount = tasksToImport.length;
+                                } catch (e) {
+                                    loadingAlert.remove();
+                                    console.error("Error en Bulk Insert:", e);
+                                    window.customAlert('Error Crítico', 'Fallo al subir el bloque: ' + e.message, 'error');
+                                    return;
+                                }
+                            }
+
+                            loadingAlert.remove();
                             window.customAlert('Importación Completada', 
-                                `Se han importado ${importedCount} tareas nuevas. ` + 
-                                (skippedCount > 0 ? `${skippedCount} tareas saltadas por estar ya registradas.` : ''), 
+                                `Se han importado ${importedCount} tareas nuevas a la nube. ` + 
+                                (skippedCount > 0 ? `${skippedCount} tareas saltadas por duplicidad.` : ''), 
                                 'success');
                             window.switchView('tareas');
                         };
@@ -348,10 +454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     fileInput.click();
                 };
-            }
-
-            // CSV Import Logic for Jugadores
-            if (viewId === 'jugadores') {
+            } else if (viewId === 'jugadores') {
                 secondaryAddBtn.onclick = () => {
                     const fileInput = document.createElement('input');
                     fileInput.type = 'file';
@@ -386,9 +489,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     equipoid: team ? team.id : '',
                                     dorsal: data['DORSAL'] || '',
                                     posicion: data['POSICION'] || 'PO',
-                                    equipoConvenido: data['EQUIPO CONVENIDO'] || '',
+                                    equipoConvenido: data['CLUB CONVENIDO'] || data['EQUIPO CONVENIDO'] || '',
                                     anionacimiento: data['AÑO NACIMIENTO'] || '',
-                                    fechanacimiento: data['FECHA NACIMIENTO'] || ''
+                                    fechanacimiento: data['FECHA NACIMIENTO'] || '',
+                                    nivel: data['NIVEL'] || 3
                                 };
 
                                 if (newPlayer.nombre) {
@@ -404,10 +508,132 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     fileInput.click();
                 };
+            } else if (viewId === 'convocatorias') {
+                secondaryAddBtn.onclick = () => {
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = '.csv';
+                    fileInput.onchange = async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        
+                        const reader = new FileReader();
+                        reader.onload = async (re) => {
+                            const text = re.target.result;
+                            const lines = text.split('\n').filter(line => line.trim() !== '');
+                            if (lines.length < 2) return;
+
+                            const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            const teams = await db.getAll('equipos');
+                            const players = await db.getAll('jugadores');
+
+                            let importedCount = 0;
+                            for (let i = 1; i < lines.length; i++) {
+                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                if (row.length < headers.length) continue;
+
+                                const data = {};
+                                headers.forEach((h, idx) => data[h] = row[idx]);
+
+                                // Buscar el equipo por nombre
+                                const teamName = data['EQUIPO'];
+                                const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
+
+                                // Buscar jugadores por nombre (separados por ;)
+                                const playerNames = (data['JUGADORES'] || '').split(';').map(n => n.trim().toLowerCase());
+                                const foundPlayerIds = players
+                                    .filter(p => playerNames.includes(p.nombre.toLowerCase()))
+                                    .map(p => p.id.toString());
+
+                                const convData = {
+                                    nombre: data['NOMBRE'],
+                                    tipo: data['TIPO'] || 'Ciclo',
+                                    fecha: data['FECHA'],
+                                    hora: data['HORA'],
+                                    lugar: data['LUGAR'],
+                                    equipoid: team ? team.id : null,
+                                    playerids: foundPlayerIds
+                                };
+
+                                if (convData.nombre) {
+                                    await supabaseClient.from('convocatorias').insert(convData);
+                                    importedCount++;
+                                }
+                            }
+
+                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias correctamente.`, 'success');
+                            window.switchView('convocatorias');
+                        };
+                        reader.readAsText(file);
+                    };
+                    fileInput.click();
+                };
+            } else if (viewId === 'equipos') {
+                secondaryAddBtn.onclick = () => {
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = '.csv';
+                    fileInput.onchange = async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (re) => {
+                            const text = re.target.result;
+                            const lines = text.split('\n').filter(line => line.trim() !== '');
+                            if (lines.length < 2) return;
+                            const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            let importedCount = 0;
+                            for (let i = 1; i < lines.length; i++) {
+                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                if (row.length < headers.length) continue;
+                                const data = {};
+                                headers.forEach((h, idx) => data[h] = row[idx]);
+                                const newTeam = {
+                                    nombre: data['NOMBRE'],
+                                    categoria: data['CATEGORIA'] || 'Sénior',
+                                    escudo: null,
+                                    jugadorescount: 0
+                                };
+                                if (newTeam.nombre) {
+                                    await db.add('equipos', newTeam);
+                                    importedCount++;
+                                }
+                            }
+                            window.customAlert('Importación Exitosa', `${importedCount} equipos creados.`, 'success');
+                            window.switchView('equipos');
+                        };
+                        reader.readAsText(file);
+                    };
+                    fileInput.click();
+                };
             }
         } else {
             secondaryAddBtn.classList.add('hidden');
         }
+
+        // Tertiary & Quaternary Button Logic (Task specific)
+        if (viewId === 'tareas') {
+            if (tertiaryAddBtn) {
+                tertiaryAddBtn.classList.remove('hidden');
+                tertiaryAddBtn.onclick = () => {
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = 'image/*';
+                    fileInput.multiple = true;
+                    fileInput.onchange = (e) => window.linkTaskImages(e.target);
+                    fileInput.click();
+                };
+            }
+            if (cleanTasksBtn) {
+                cleanTasksBtn.classList.remove('hidden');
+                cleanTasksBtn.onclick = () => window.clearAllTasks();
+            }
+        } else {
+            if (tertiaryAddBtn) tertiaryAddBtn.classList.add('hidden');
+            if (cleanTasksBtn) cleanTasksBtn.classList.add('hidden');
+        }
+
+        if (window.lucide) lucide.createIcons();
 
         currentView = viewId;
         contentContainer.innerHTML = '';
@@ -422,12 +648,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         switch(viewId) {
             case 'dashboard': await renderDashboard(wrapper); break;
             case 'calendario': await renderCalendario(wrapper); break;
+            case 'campograma': await renderCampograma(wrapper); break;
             case 'eventos': await renderEventos(wrapper); break;
             case 'tareas': await renderTareas(wrapper); break;
             case 'sesiones': await renderSesiones(wrapper); break;
             case 'equipos': await renderEquipos(wrapper); break;
             case 'jugadores': await renderJugadores(wrapper); break;
             case 'asistencia': await renderAsistencia(wrapper); break;
+            case 'convocatorias': await renderConvocatorias(wrapper); break;
             case 'usuarios': await renderUsuarios(wrapper); break;
         }
         
@@ -728,7 +956,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                          <input name="lugar" value="${evento.lugar || ''}" placeholder="Lugar" class="w-full p-3 border rounded-xl">
                          <textarea name="notas" class="col-span-2 w-full p-3 border rounded-xl h-24" placeholder="Notas...">${evento.notas || ''}</textarea>
                     </div>
-                    <button type="submit" class="w-full py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar Evento</button>
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all">Guardar Evento</button>
+                    </div>
                 </form>
             </div>
         `;
@@ -752,25 +983,119 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
+    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS' };
+    let tasksPerPage = 12;
+    let currentTaskPage = 1;
+
     async function renderTareas(container) {
-        const tasks = await db.getAll('tareas');
+        let tasks = await db.getAll('tareas');
+        
         container.innerHTML = `
-            <div class="task-grid">
-                ${tasks.map(t => `
-                    <div onclick="window.viewTask(${t.id})" class="task-card flex flex-col h-full cursor-pointer group">
+            <div class="mb-8 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <div class="flex-1 relative">
+                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Buscar por nombre de tarea..." class="w-full pl-11 pr-4 py-3 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 ring-blue-50 transition-all text-sm">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 md:w-[400px]">
+                        <select id="task-type-filter" class="px-4 py-3 bg-slate-50 border-transparent rounded-2xl text-xs font-bold text-slate-600 outline-none focus:bg-white transition-all">
+                            <option value="TODOS">TODOS LOS TIPOS</option>
+                            ${TASK_TYPES.map(t => `<option value="${t}" ${taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                        <select id="task-cat-filter" class="px-4 py-3 bg-slate-50 border-transparent rounded-2xl text-xs font-bold text-slate-600 outline-none focus:bg-white transition-all">
+                            <option value="TODAS">TODAS ETAPAS</option>
+                            ${TASK_CATEGORIES.map(c => `<option value="${c}" ${taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="task-grid" id="main-task-grid"></div>
+            
+            <div id="load-more-container" class="mt-12 text-center hidden">
+                <button id="load-more-tasks-btn" class="px-8 py-4 bg-white border border-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-50 transition-all shadow-sm">
+                    Cargar más ejercicios
+                </button>
+            </div>
+        `;
+
+        // Listeners para los filtros
+        const searchInput = document.getElementById('task-search-input');
+        const typeFilter = document.getElementById('task-type-filter');
+        const catFilter = document.getElementById('task-cat-filter');
+
+        let searchTimer;
+        if (searchInput) {
+            searchInput.oninput = (e) => {
+                taskFilters.search = e.target.value;
+                currentTaskPage = 1;
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => {
+                    updateTaskGrid(container);
+                }, 250);
+            };
+        }
+        
+        if (typeFilter) {
+            typeFilter.onchange = (e) => {
+                taskFilters.type = e.target.value;
+                currentTaskPage = 1;
+                window.renderView('tareas');
+            };
+        }
+
+        if (catFilter) {
+            catFilter.onchange = (e) => {
+                taskFilters.categoria = e.target.value;
+                currentTaskPage = 1;
+                window.renderView('tareas');
+            };
+        }
+
+        lucide.createIcons();
+        currentTaskPage = 1;
+        updateTaskGrid(container);
+    }
+
+    let isUpdatingGrid = false;
+    async function updateTaskGrid(container) {
+        if (isUpdatingGrid) return;
+        isUpdatingGrid = true;
+        
+        try {
+            let tasks = await db.getAll('tareas');
+            let filteredTasks = tasks.filter(t => {
+                const matchesSearch = !taskFilters.search || t.name.toLowerCase().includes(taskFilters.search.toLowerCase());
+                const matchesType = taskFilters.type === 'TODOS' || t.type === taskFilters.type;
+                const matchesCat = taskFilters.categoria === 'TODAS' || t.categoria === taskFilters.categoria;
+                return matchesSearch && matchesType && matchesCat;
+            });
+
+            const grid = container.querySelector('#main-task-grid');
+            const loadMoreContainer = document.getElementById('load-more-container');
+            
+            if (grid) {
+                const start = 0;
+                const end = currentTaskPage * tasksPerPage;
+                const pageTasks = filteredTasks.slice(start, end);
+                const hasMore = end < filteredTasks.length;
+
+                const html = pageTasks.map(t => `
+                    <div onclick="window.viewTask(${t.id})" class="task-card flex flex-col h-full cursor-pointer group fade-in">
                         <div class="h-44 bg-slate-100 overflow-hidden flex items-center justify-center border-b border-slate-100 relative">
-                            ${t.image ? `<img src="${t.image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : `<i data-lucide="image" class="text-slate-300 w-12 h-12"></i>`}
+                            ${t.image ? `<img src="${t.image}" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">` : `<i data-lucide="image" class="text-slate-300 w-12 h-12"></i>`}
                             <div class="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-colors flex items-center justify-center">
                                 <i data-lucide="edit-2" class="text-white w-8 h-8 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all"></i>
                             </div>
                         </div>
                         <div class="p-5 flex-1 flex flex-col">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">${t.category}</span>
-                                <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">${t.duration} min</span>
+                            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-tighter">${t.type || 'FÚTBOL'}</span>
+                                <span class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase tracking-tighter">${t.categoria || 'ETAPA'}</span>
+                                <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded tracking-tighter">${t.duration} min</span>
                             </div>
                             <h4 class="font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">${t.name}</h4>
-                            <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description}</p>
+                            <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description || ''}</p>
                             <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end">
                                 <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-red-400 hover:text-red-600 transition-all">
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
@@ -778,10 +1103,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                     </div>
-                `).join('')}
-            </div>
-        `;
-        
+                `).join('');
+
+                grid.innerHTML = html;
+                if (window.lucide) lucide.createIcons();
+
+                if (loadMoreContainer) {
+                    if (hasMore) {
+                        loadMoreContainer.classList.remove('hidden');
+                        const btn = document.getElementById('load-more-tasks-btn');
+                        btn.onclick = () => {
+                            currentTaskPage++;
+                            updateTaskGrid(container);
+                        };
+                    } else {
+                        loadMoreContainer.classList.add('hidden');
+                    }
+                }
+            }
+            isUpdatingGrid = false;
+        } catch (err) {
+            console.error("Grid update fail:", err);
+            isUpdatingGrid = false;
+        }
     }
 
     window.viewTask = async (id) => {
@@ -796,24 +1140,61 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <form id="edit-task-form" class="space-y-4">
                     <input type="hidden" name="id" value="${task.id}">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2">
+                    <div class="space-y-4">
+                        <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre de la Tarea</label>
                             <input name="name" value="${task.name}" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Categoría</label>
-                            <select name="category" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option ${task.category === 'Ataque' ? 'selected' : ''}>Ataque</option>
-                                <option ${task.category === 'Defensa' ? 'selected' : ''}>Defensa</option>
-                                <option ${task.category === 'Transición' ? 'selected' : ''}>Transición</option>
-                                <option ${task.category === 'Físico' ? 'selected' : ''}>Físico</option>
-                                <option ${task.category === 'Porteros' ? 'selected' : ''}>Porteros</option>
-                            </select>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Tipo</label>
+                                <select name="type" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                    ${TASK_TYPES.map(t => `<option ${task.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Categoría</label>
+                                <select name="categoria" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                    ${TASK_CATEGORIES.map(c => `<option ${task.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Objetivo</label>
+                                <select name="objetivo" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                    <option value="">Seleccionar...</option>
+                                    ${TASK_OBJECTIVES.map(obj => `<option ${task.objetivo === obj ? 'selected' : ''}>${obj}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Espacio</label>
+                                <select name="espacio" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                    <option value="">Seleccionar...</option>
+                                    ${TASK_SPACES.map(s => `<option ${task.espacio === s ? 'selected' : ''}>${s}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Tiempo (min)</label>
+                                <input name="duration" type="number" value="${task.duration}" class="w-full p-3 border rounded-xl outline-none" required>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Material</label>
+                                <select name="material" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                    <option value="">Seleccionar...</option>
+                                    ${TASK_MATERIALS.map(m => `<option ${task.material === m ? 'selected' : ''}>${m}</option>`).join('')}
+                                </select>
+                            </div>
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Duración (min)</label>
-                            <input name="duration" type="number" value="${task.duration}" class="w-full p-3 border rounded-xl outline-none" required>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Descripción Técnica</label>
+                             <textarea name="description" class="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-blue-100">${task.description}</textarea>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Variantes (Opcional)</label>
+                             <textarea name="variantes" class="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-blue-100">${task.variantes || ''}</textarea>
                         </div>
                         <div class="col-span-2 text-center p-6 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50 group hover:border-blue-200 transition-all cursor-pointer relative overflow-hidden">
                              <input type="file" id="edit-task-image-input" accept="image/*" class="hidden">
@@ -824,14 +1205,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                  </div>
                              </label>
                         </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Descripción Técnica</label>
-                            <textarea name="description" class="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-blue-100">${task.description}</textarea>
-                        </div>
                     </div>
                     <div class="flex gap-4 mt-6">
-                        <button type="button" onclick="window.deleteTask(${task.id})" class="p-4 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"><i data-lucide="trash-2"></i></button>
-                        <button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
                     </div>
                 </form>
             </div>
@@ -858,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.id = parseInt(data.id);
+
             
             const imgInput = document.getElementById('edit-task-image-input');
             if (imgInput && imgInput.files[0]) {
@@ -874,6 +1252,79 @@ document.addEventListener('DOMContentLoaded', async () => {
             closeModal();
             window.switchView('tareas');
         });
+    };
+
+    window.clearAllTasks = async () => {
+        window.customConfirm(
+            '¡Atención: Borrado Total!',
+            '¿Estás seguro de que quieres borrar TODA tu biblioteca de tareas? Esta acción no se puede deshacer.',
+            async () => {
+                await db.deleteAll('tareas');
+                window.customAlert('Biblioteca Limpia', 'Se han borrado todas las tareas correctamente.', 'success');
+                window.switchView('tareas');
+            }
+        );
+    };
+
+    window.linkTaskImages = async (input) => {
+        const files = Array.from(input.files);
+        if (files.length === 0) return;
+
+        const tasks = await db.getAll('tareas');
+        
+        window.customConfirm(
+            'Vincular Imágenes',
+            `¿Deseas intentar vincular ${files.length} imágenes con las tareas por coincidencia de nombre?`,
+            async () => {
+                let linkedCount = 0;
+                
+                // Mostrar un pequeño indicador de que estamos trabajando
+                const loading = document.createElement('div');
+                loading.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                loading.innerHTML = '<div class="bg-white p-8 rounded-3xl flex flex-col items-center gap-4"><div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div><p class="font-bold text-xs uppercase tracking-widest">Procesando imágenes...</p></div>';
+                document.body.appendChild(loading);
+
+                try {
+                    const normalize = (str) => {
+                        if (!str) return "";
+                        return str.toString()
+                            .normalize("NFD")
+                            .replace(/[\u0300-\u036f]/g, "") // Quitar acentos
+                            .replace(/[^a-zA-Z0-9]/g, "")    // Quitar TODO lo que no sea letra o número (espacios, guiones, puntos...)
+                            .trim()
+                            .toUpperCase();
+                    };
+
+                    for (const file of files) {
+                        const originalName = file.name.split('.').slice(0, -1).join('.');
+                        const fileName = normalize(originalName);
+                        
+                        const match = tasks.find(t => normalize(t.name) === fileName);
+                        
+                        if (match) {
+                            console.log(`Vinculando: ${originalName} -> ${match.name}`);
+                            const publicUrl = await db.uploadImage(file);
+                            
+                            if (publicUrl) {
+                                match.image = publicUrl;
+                                await db.update('tareas', match);
+                                linkedCount++;
+                            }
+                        } else {
+                            console.warn(`No se encontró tarea para: ${originalName} (Buscado como: ${fileName})`);
+                        }
+                    }
+                    loading.remove();
+                    window.customAlert('Proceso Finalizado', `Se han vinculado ${linkedCount} imágenes automáticamente.`, 'success');
+                    window.switchView('tareas');
+                } catch (err) {
+                    loading.remove();
+                    console.error(err);
+                    window.customAlert('Error', 'Hubo un problema vinculando las imágenes.', 'error');
+                }
+            }
+        );
+        input.value = ''; 
     };
 
     window.deleteTask = async (id) => {
@@ -915,30 +1366,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         
     }
 
-    window.viewSession = async (id) => {
-        const sessions = await db.getAll('sesiones');
-        const session = sessions.find(s => s.id == id);
+    window.renderSessionModal = async (sessionData = null) => {
         const teams = await db.getAll('equipos');
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
         
+        const isEdit = sessionData !== null;
+        const session = sessionData || {
+            id: null,
+            titulo: '',
+            equipoid: '',
+            fecha: new Date().toISOString().split('T')[0],
+            hora: '19:00',
+            taskids: [],
+            playerids: []
+        };
+
         modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-bold text-slate-800">Editar Planificación</h3>
+                    <h3 class="text-2xl font-bold text-slate-800">${isEdit ? 'Editar Planificación' : 'Nueva Planificación'}</h3>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 
-                <form id="edit-session-form" class="space-y-6">
-                    <input type="hidden" name="id" value="${session.id}">
+                <form id="session-modal-form" class="space-y-6">
+                    ${isEdit ? `<input type="hidden" name="id" value="${session.id}">` : ''}
                     <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Objetivo de la Sesión</label>
-                            <input name="titulo" value="${session.titulo || ''}" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
+                            <input name="titulo" value="${session.titulo || ''}" placeholder="Ej: Transiciones ofensivas rápidas" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                            <select name="equipoid" id="edit-session-team-select" class="w-full p-3 border rounded-xl bg-white">
+                            <select name="equipoid" id="session-modal-team-select" class="w-full p-3 border rounded-xl bg-white">
+                                <option value="">Seleccionar equipo...</option>
                                 ${teams.map(t => `<option value="${t.id}" ${session.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                             </select>
                         </div>
@@ -954,71 +1415,110 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
                     
-                    <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Tareas Vinculadas (Máx. 5)</label>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                            ${tasks.map(t => `
-                                <label class="flex items-center gap-3 p-3 bg-white border ${session.taskids && session.taskids.includes(t.id.toString()) ? 'border-blue-400' : 'border-slate-100'} rounded-xl cursor-pointer hover:border-blue-300 transition-colors">
-                                    <input type="checkbox" name="taskids" value="${t.id}" ${session.taskids && session.taskids.includes(t.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
-                                    <div class="flex-1">
-                                        <p class="text-xs font-bold text-slate-800">${t.name}</p>
-                                        <p class="text-[10px] text-slate-400 uppercase">${t.category}</p>
+                    <div class="space-y-6">
+                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Estructura de la Sesión (Orden Cronológico)</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${[1, 2, 3, 4, 5, 6].map(num => `
+                                <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100 flex flex-col gap-3">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase tracking-widest">Tarea ${num}</span>
+                                        <button type="button" onclick="window.clearSessionSlot(${num})" class="text-[9px] font-bold text-slate-400 hover:text-red-500 uppercase transition-colors">Limpiar</button>
                                     </div>
-                                </label>
+                                    <div class="relative">
+                                        <select id="slot-type-${num}" class="w-full p-2 text-[10px] border-none bg-white rounded-xl shadow-sm outline-none mb-2">
+                                            <option value="TODOS">TODOS LOS TIPOS</option>
+                                            ${TASK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                                        </select>
+                                        <select name="task-slot-${num}" id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
+                                            <option value="">Seleccionar ejercicio...</option>
+                                            ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num-1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                </div>
                             `).join('')}
                         </div>
                     </div>
 
                     <div>
                         <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Convocatoria de Jugadores</label>
-                        <div id="edit-session-players-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                            <!-- Players will be loaded here -->
+                        <div id="session-modal-players-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                            <p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Selecciona un equipo para cargar jugadores</p>
                         </div>
                     </div>
 
-                    <div class="flex gap-4">
-                        <button type="button" onclick="event.stopPropagation(); window.deleteSession(${session.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all"><i data-lucide="trash-2"></i></button>
-                        <button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
+                    <div class="flex gap-4 mt-8">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">${isEdit ? 'Guardar Cambios' : 'Crear Sesión'}</button>
                     </div>
                 </form>
             </div>
         `;
-        
-        const teamSelect = document.getElementById('edit-session-team-select');
-        const playersList = document.getElementById('edit-session-players-list');
-        
+
+        const teamSelect = document.getElementById('session-modal-team-select');
+        const playersList = document.getElementById('session-modal-players-list');
+
+        // Filtros slots
+        [1,2,3,4,5,6].forEach(num => {
+            const typeSel = document.getElementById(`slot-type-${num}`);
+            const taskSel = document.getElementById(`task-select-${num}`);
+            typeSel.onchange = () => {
+                const type = typeSel.value;
+                taskSel.querySelectorAll('option').forEach(opt => {
+                    if (opt.value === "") return;
+                    opt.style.display = (type === 'TODOS' || opt.dataset.type === type) ? 'block' : 'none';
+                });
+                taskSel.value = "";
+            };
+        });
+
+        window.clearSessionSlot = (num) => { document.getElementById(`task-select-${num}`).value = ""; };
+
         const updatePlayers = () => {
             const equipoid = teamSelect.value;
+            if (!equipoid) return;
             const teamPlayers = players.filter(p => p.equipoid == equipoid);
             playersList.innerHTML = teamPlayers.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
                     <input type="checkbox" name="playerids" value="${p.id}" ${session.playerids && session.playerids.includes(p.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
                     <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
                 </label>
-            `).join('');
+            `).join('') || '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores vinculados.</p>';
         };
-        
-        teamSelect.addEventListener('change', updatePlayers);
-        updatePlayers();
-        
-        lucide.createIcons(); modalOverlay.classList.add('active');
-        
-        
-        document.getElementById('edit-session-form').addEventListener('submit', async (e) => {
+
+        teamSelect.onchange = updatePlayers;
+        if (session.equipoid) updatePlayers();
+
+        lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('session-modal-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-            data.id = parseInt(data.id);
-            data.taskids = formData.getAll('taskids');
-            data.playerids = formData.getAll('playerids');
+            if (data.id) data.id = parseInt(data.id);
             
+            data.taskids = [];
+            for (let i = 1; i <= 6; i++) {
+                const val = document.getElementById(`task-select-${i}`).value;
+                if (val) data.taskids.push(val);
+            }
+            
+            data.playerids = formData.getAll('playerids');
             const team = teams.find(t => t.id == data.equipoid);
             data.equiponombre = team ? team.nombre : 'Equipo';
             
-            await db.update('sesiones', data);
+            if (isEdit) await db.update('sesiones', data);
+            else await db.add('sesiones', data);
+            
             closeModal();
-            window.switchView('sesiones');
-        });
+            window.renderView('sesiones');
+        };
+    };
+
+    window.viewSession = async (id) => {
+        const sessions = await db.getAll('sesiones');
+        const session = sessions.find(s => s.id == id);
+        window.renderSessionModal(session);
     };
 
     window.deleteSession = async (id) => {
@@ -1043,7 +1543,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const currentTeam = teams.find(t => t.id == session.equipoid);
 
-        const sessionTasks = allTasks.filter(t => session.taskids && session.taskids.includes(t.id.toString()));
+        const sessionTasks = (session.taskids || []).map(id => allTasks.find(t => t.id == id)).filter(Boolean);
         const sessionPlayers = allPlayers.filter(p => session.playerids && session.playerids.includes(p.id.toString()));
         
         const printDiv = document.createElement('div');
@@ -1252,7 +1752,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                     </div>
-                    <button type="submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar Cambios</button>
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
+                    </div>
                 </form>
             </div>
         `;
@@ -1365,11 +1868,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="col-span-2"><input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required></div>
                         <input name="dorsal" type="number" placeholder="Dorsal" class="w-full p-3 border rounded-xl">
                         <select name="posicion" class="w-full p-3 border rounded-xl">
-                            <option>Portero</option><option>Defensa</option><option>Mediocentro</option><option>Extremo</option><option>Delantero</option>
+                            <option value="PO">PO (Portero)</option>
+                            <option value="DBD">DBD (Lateral Dcho)</option>
+                            <option value="DBZ">DBZ (Lateral Izq)</option>
+                            <option value="DCD">DCD (Central Dcho)</option>
+                            <option value="DCZ">DCZ (Central Izq)</option>
+                            <option value="MCD">MCD (Mediocentro Dcho)</option>
+                            <option value="MCZ">MCZ (Mediocentro Izq)</option>
+                            <option value="MVD">MVD (Interior Dcho)</option>
+                            <option value="MVZ">MVZ (Interior Izq)</option>
+                            <option value="MBD">MBD (Extremo Dcho)</option>
+                            <option value="MBZ">MBZ (Extremo Izq)</option>
+                            <option value="MPD">MPD (Mediapunta Dcho)</option>
+                            <option value="MPZ">MPZ (Mediapunta Izq)</option>
+                            <option value="ACD">ACD (Delantero Dcho)</option>
+                            <option value="ACZ">ACZ (Delantero Izq)</option>
                         </select>
                         <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24"></textarea>
                     </div>
-                    <button type="submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar Jugador</button>
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Jugador</button>
+                    </div>
                 </form>
             </div>
         `;
@@ -1403,6 +1923,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Equipo</th>
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Posición</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Club Convenido</th>
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-center">Dorsal</th>
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
                         </tr>
@@ -1421,6 +1942,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </td>
                                     <td class="px-6 py-4">
                                         <span class="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-600 uppercase">${p.posicion || '--'}</span>
+                                    </td>
+                                    <td class="px-6 py-4 truncate max-w-[120px]">
+                                        <span class="text-[10px] font-bold text-blue-500 uppercase">${p.equipoConvenido || '--'}</span>
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                          <span class="text-sm font-black text-slate-400">${p.dorsal || '--'}</span>
@@ -1479,11 +2003,49 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posición</label>
                             <select name="posicion" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option ${player.posicion === 'Portero' ? 'selected' : ''}>Portero</option>
-                                <option ${player.posicion === 'Defensa' ? 'selected' : ''}>Defensa</option>
-                                <option ${player.posicion === 'Mediocentro' ? 'selected' : ''}>Mediocentro</option>
-                                <option ${player.posicion === 'Extremo' ? 'selected' : ''}>Extremo</option>
-                                <option ${player.posicion === 'Delantero' ? 'selected' : ''}>Delantero</option>
+                                <option value="PO" ${player.posicion === 'PO' ? 'selected' : ''}>PO (Portero)</option>
+                                <option value="DBD" ${player.posicion === 'DBD' ? 'selected' : ''}>DBD (Lateral Dcho)</option>
+                                <option value="DBZ" ${player.posicion === 'DBZ' ? 'selected' : ''}>DBZ (Lateral Izq)</option>
+                                <option value="DCD" ${player.posicion === 'DCD' ? 'selected' : ''}>DCD (Central Dcho)</option>
+                                <option value="DCZ" ${player.posicion === 'DCZ' ? 'selected' : ''}>DCZ (Central Izq)</option>
+                                <option value="MCD" ${player.posicion === 'MCD' ? 'selected' : ''}>MCD (Mediocentro Dcho)</option>
+                                <option value="MCZ" ${player.posicion === 'MCZ' ? 'selected' : ''}>MCZ (Mediocentro Izq)</option>
+                                <option value="MVD" ${player.posicion === 'MVD' ? 'selected' : ''}>MVD (Interior Dcho)</option>
+                                <option value="MVZ" ${player.posicion === 'MVZ' ? 'selected' : ''}>MVZ (Interior Izq)</option>
+                                <option value="MBD" ${player.posicion === 'MBD' ? 'selected' : ''}>MBD (Extremo Dcho)</option>
+                                <option value="MBZ" ${player.posicion === 'MBZ' ? 'selected' : ''}>MBZ (Extremo Izq)</option>
+                                <option value="MPD" ${player.posicion === 'MPD' ? 'selected' : ''}>MPD (Mediapunta Dcho)</option>
+                                <option value="MPZ" ${player.posicion === 'MPZ' ? 'selected' : ''}>MPZ (Mediapunta Izq)</option>
+                                <option value="ACD" ${player.posicion === 'ACD' ? 'selected' : ''}>ACD (Delantero Dcho)</option>
+                                <option value="ACZ" ${player.posicion === 'ACZ' ? 'selected' : ''}>ACZ (Delantero Izq)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año Nacimiento</label>
+                            <input name="anionacimiento" type="number" value="${player.anionacimiento || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Ej: 2010">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
+                            <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                <option value="">Ninguno</option>
+                                <option ${player.equipoConvenido === 'CD BAZTAN KE' ? 'selected' : ''}>CD BAZTAN KE</option>
+                                <option ${player.equipoConvenido === 'BETI GAZTE KJKE' ? 'selected' : ''}>BETI GAZTE KJKE</option>
+                                <option ${player.equipoConvenido === 'GURE TXOKOA KKE' ? 'selected' : ''}>GURE TXOKOA KKE</option>
+                                <option ${player.equipoConvenido === 'CA RIVER EBRO' ? 'selected' : ''}>CA RIVER EBRO</option>
+                                <option ${player.equipoConvenido === 'CALAHORRA FB' ? 'selected' : ''}>CALAHORRA FB</option>
+                                <option ${player.equipoConvenido === 'EF ARNEDO' ? 'selected' : ''}>EF ARNEDO</option>
+                                <option ${player.equipoConvenido === 'EFB ALFARO' ? 'selected' : ''}>EFB ALFARO</option>
+                                <option ${player.equipoConvenido === 'UD BALSAS PICARRAL' ? 'selected' : ''}>UD BALSAS PICARRAL</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nivel (1-5)</label>
+                            <select name="nivel" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                <option value="1" ${player.nivel == 1 ? 'selected' : ''}>⭐ (Muy Bajo)</option>
+                                <option value="2" ${player.nivel == 2 ? 'selected' : ''}>⭐⭐ (Bajo)</option>
+                                <option value="3" ${player.nivel == 3 ? 'selected' : ''}>⭐⭐⭐ (Normal)</option>
+                                <option value="4" ${player.nivel == 4 ? 'selected' : ''}>⭐⭐⭐⭐ (Alto)</option>
+                                <option value="5" ${player.nivel == 5 ? 'selected' : ''}>⭐⭐⭐⭐⭐ (Top)</option>
                             </select>
                         </div>
                         <div class="col-span-2">
@@ -1492,9 +2054,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </fieldset>
                     
-                    <div class="flex gap-4">
-                        <button type="button" onclick="event.stopPropagation(); window.deletePlayer(${player.id})" class="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all admin-only"><i data-lucide="trash-2"></i></button>
-                        ${db.userRole === 'ELITE' ? `<button type="submit" class="flex-1 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>` : ''}
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        ${db.userRole === 'ELITE' ? `<button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>` : ''}
                     </div>
                 </form>
             </div>
@@ -1653,9 +2215,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 window.switchView('asistencia');
             };
             container.querySelector('#team-sel').onchange = (e) => { selectedTeamId = e.target.value; updateBoard(); };
-            container.querySelector('#date-sel').onchange = (e) => { selectedDate = e.target.value; };
             updateBoard();
-            
         }, 0);
     }
 
@@ -1665,6 +2225,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.newAsistenciaReport();
             return;
         }
+        if (currentView === 'convocatorias') {
+            window.newConvocatoria();
+            return;
+        }
+        if (currentView === 'sesiones') {
+            window.renderSessionModal();
+            return;
+        }
 
         let modalHtml = '';
         if (currentView === 'tareas') {
@@ -1672,56 +2240,70 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="p-8 max-w-2xl w-full mx-auto overflow-y-auto max-h-[80vh]">
                     <h3 class="text-2xl font-black mb-6 text-slate-800">Nueva Tarea de Entrenamiento</h3>
                     <form id="modal-form" class="space-y-6">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="col-span-2">
+                        <div class="space-y-4">
+                            <div>
                                 <label class="block text-xs font-black text-slate-400 uppercase mb-2">Nombre de la Tarea</label>
                                 <input name="name" placeholder="Ej: Rondo 4x4 + 3" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all outline-none" required>
                             </div>
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tipo / Categoría</label>
-                                <select name="category" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
-                                    <option>Ataque</option>
-                                    <option>Defensa</option>
-                                    <option>Transición</option>
-                                    <option>Estrategia / ABP</option>
-                                    <option>Físico</option>
-                                </select>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tipo</label>
+                                    <select name="type" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 text-xs outline-none">
+                                        ${TASK_TYPES.map(t => `<option>${t}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Categoría</label>
+                                    <select name="categoria" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
+                                        ${TASK_CATEGORIES.map(c => `<option>${c}</option>`).join('')}
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tiempo Total (min)</label>
-                                <input name="duration" type="number" value="15" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none" required>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Objetivo</label>
+                                    <select name="objetivo" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
+                                        <option value="">Seleccionar...</option>
+                                        ${TASK_OBJECTIVES.map(obj => `<option>${obj}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Espacio</label>
+                                    <select name="espacio" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
+                                        <option value="">Seleccionar...</option>
+                                        ${TASK_SPACES.map(s => `<option>${s}</option>`).join('')}
+                                    </select>
+                                </div>
                             </div>
-                        </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tiempo (min)</label>
+                                    <input name="duration" type="number" value="15" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none" required>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Material</label>
+                                    <select name="material" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
+                                        <option value="">Seleccionar...</option>
+                                        ${TASK_MATERIALS.map(m => `<option>${m}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
 
-                        <div class="grid grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Objetivo</label>
-                                <input name="objetivo" placeholder="Ej: Velocidad" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
+                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Descripción del Ejercicio</label>
+                                <textarea name="description" rows="3" placeholder="Explica el funcionamiento de la tarea..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
                             </div>
+
                             <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Espacio</label>
-                                <input name="espacio" placeholder="Ej: 30x20m" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
+                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Variantes (Opcional)</label>
+                                <textarea name="variantes" rows="2" placeholder="Posibles variaciones..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
                             </div>
-                        </div>
 
-                        <div>
-                            <label class="block text-xs font-black text-slate-400 uppercase mb-2">Descripción del Ejercicio</label>
-                            <textarea name="description" rows="3" placeholder="Explica el funcionamiento de la tarea..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
-                        </div>
-
-                        <div>
-                            <label class="block text-xs font-black text-slate-400 uppercase mb-2">Variantes (Opcional)</label>
-                            <textarea name="variantes" rows="2" placeholder="Posibles variaciones..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Material</label>
-                                <input name="material" placeholder="Ej: Conos, Balones..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">ID Video (Drive/Youtube)</label>
-                                <input name="video" placeholder="ID del video" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">ID Video (Drive/Youtube)</label>
+                                    <input name="video" placeholder="ID del video" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
+                                </div>
                             </div>
                         </div>
 
@@ -1732,151 +2314,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Crear Tarea</button>
+                        <div class="flex gap-4 mt-6">
+                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Crear Tarea</button>
+                        </div>
                     </form>
                 </div>
             `;
             
-            // Add image preview logic
             setTimeout(() => {
                 const input = document.getElementById('task-image-input');
-                const preview = document.getElementById('image-preview-container');
-                input.addEventListener('change', (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (re) => {
-                            preview.innerHTML = `<img src="${re.target.result}" class="h-28 rounded-xl object-contain">`;
-                        };
-                        reader.readAsDataURL(file);
-                    }
-                });
-            }, 0);
-        } else if (currentView === 'sesiones') {
-            Promise.all([db.getAll('equipos'), db.getAll('tareas'), db.getAll('jugadores')]).then(([teams, tasks, players]) => {
-                modalContainer.innerHTML = `
-                    <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <h3 class="text-2xl font-bold mb-6 text-slate-800">Planificar Nueva Sesión</h3>
-                        <form id="modal-form" class="space-y-6">
-                            <div class="grid grid-cols-2 gap-6">
-                                <div class="col-span-2">
-                                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Objetivo de la Sesión</label>
-                                    <input name="titulo" placeholder="Ej: Transiciones ofensivas rápidas" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                                    <select name="equipoid" id="session-team-select" class="w-full p-3 border rounded-xl bg-white">
-                                        ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
-                                        <input name="fecha" type="date" class="w-full p-3 border rounded-xl" required>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
-                                        <input name="hora" type="time" class="w-full p-3 border rounded-xl" required>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <div class="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                                    ${tasks.map(t => `
-                                        <div class="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-4 hover:border-blue-200 transition-all">
-                                            <label class="flex items-center gap-4 cursor-pointer">
-                                                <input type="checkbox" name="taskids" value="${t.id}" onchange="document.getElementById('task-meta-${t.id}').classList.toggle('hidden', !this.checked)" class="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500">
-                                                <div class="flex-1">
-                                                    <p class="text-sm font-bold text-slate-800">${t.name}</p>
-                                                    <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">${t.category}</p>
-                                                </div>
-                                            </label>
-                                            <div id="task-meta-${t.id}" class="hidden space-y-4 pt-4 border-t border-slate-50 animate-in slide-in-from-top-2 duration-200">
-                                                <div class="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Tiempo de trabajo</label>
-                                                        <div class="flex items-center gap-2">
-                                                            <input name="taskTime_${t.id}" type="number" value="${t.duration}" class="w-full p-2 text-xs border border-slate-200 rounded-xl bg-slate-50 font-bold focus:bg-white transition-all">
-                                                            <span class="text-[9px] font-black text-slate-400">MIN</span>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Espacio de trabajo</label>
-                                                        <input name="taskSpace_${t.id}" type="text" placeholder="Ej: Medio campo" class="w-full p-2 text-xs border border-slate-200 rounded-xl bg-slate-50 font-bold focus:bg-white transition-all">
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label class="block text-[9px] font-black text-slate-400 uppercase mb-2">Asignación de Grupos (Jugadores)</label>
-                                                    <div class="task-players-assignment-${t.id} grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
-                                                        <p class="text-[9px] text-slate-400 italic col-span-full">Selecciona un equipo para asignar grupos</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Jugadores Disponibles</label>
-                                <div id="session-players-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Selecciona un equipo para cargar jugadores</p>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Planificación</button>
-                        </form>
-                    </div>
-                `;
-                
-                // Logic to filter players by team
-                const teamSelect = document.getElementById('session-team-select');
-                const playersList = document.getElementById('session-players-list');
-                
-                const updatePlayers = () => {
-                    const equipoid = teamSelect.value;
-                    const teamPlayers = players.filter(p => p.equipoid == equipoid);
-                    
-                    // Main list
-                    playersList.innerHTML = teamPlayers.map(p => `
-                        <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
-                            <input type="checkbox" name="playerids" value="${p.id}" checked class="w-4 h-4 rounded text-blue-600">
-                            <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
-                        </label>
-                    `).join('') || '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores en este equipo.</p>';
-
-                    // Per-task group assignment
-                    tasks.forEach(t => {
-                        const target = document.querySelector(`.task-players-assignment-${t.id}`);
-                        if (target) {
-                            target.innerHTML = teamPlayers.map(p => `
-                                <div class="flex items-center gap-3 bg-white px-2 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-                                    <span class="text-[9px] font-bold text-slate-600 truncate flex-1">${p.nombre}</span>
-                                    <div class="flex gap-1.5">
-                                        <label class="cursor-pointer group/color">
-                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Azul" class="hidden peer">
-                                            <div class="w-5 h-5 rounded-md bg-blue-500 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
-                                        </label>
-                                        <label class="cursor-pointer group/color">
-                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Rojo" class="hidden peer">
-                                            <div class="w-5 h-5 rounded-md bg-red-500 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
-                                        </label>
-                                        <label class="cursor-pointer group/color">
-                                            <input type="radio" name="taskPlayerGroup_${t.id}_${p.id}" value="Amarillo" class="hidden peer">
-                                            <div class="w-5 h-5 rounded-md bg-yellow-400 border-2 border-white ring-1 ring-slate-100 peer-checked:ring-slate-900 peer-checked:scale-110 transition-all"></div>
-                                        </label>
-                                    </div>
-                                </div>
-                            `).join('') || '<p class="text-[9px] text-slate-400 italic col-span-full">Sin jugadores</p>';
-                        }
+                if (input) {
+                    input.addEventListener('change', (e) => {
+                        // Logic for preview if needed
                     });
-                };
-                
-                teamSelect.addEventListener('change', updatePlayers);
-                updatePlayers();
-                attachFormSubmit('sesiones');
-            });
+                }
+            }, 0);
         } else if (currentView === 'equipos') {
             const players = await db.getAll('jugadores');
             modalHtml = `
@@ -1908,7 +2361,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             </div>
                         </div>
-                        <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all mt-4 uppercase tracking-widest">Crear Equipo</button>
+                        <div class="flex gap-4 mt-6">
+                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all mt-4 uppercase tracking-widest">Crear Equipo</button>
+                        </div>
                     </form>
                 </div>
             `;
@@ -1925,9 +2381,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </label>
                     `).join('') || `<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Escribe un año para filtrar jugadores.</p>`;
                 };
-                yearInput.addEventListener('change', update);
+                if (yearInput) yearInput.addEventListener('change', update);
                 update();
-                attachFormSubmit('equipos');
             }, 0);
         } else if (currentView === 'eventos') {
             modalHtml = `
@@ -1944,7 +2399,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <input name="lugar" placeholder="Lugar (Campo, Oficina...)" class="w-full p-3 border rounded-xl">
                             <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-amber-100"></textarea>
                         </div>
-                        <button type="submit" class="w-full py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 hover:bg-amber-700 transition-all mt-4">Añadir a la Agenda</button>
+                        <div class="flex gap-4 mt-6">
+                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                            <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 hover:bg-amber-700 transition-all mt-4">Añadir a la Agenda</button>
+                        </div>
                     </form>
                 </div>
             `;
@@ -1973,28 +2431,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="col-span-2">
                                  <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posición Principal</label>
                                  <select name="posicion" class="w-full p-3 border rounded-xl bg-white">
-                                    <option>PO</option>
-                                    <option>DBD</option><option>DBZ</option>
-                                    <option>DCD</option><option>DCZ</option>
-                                    <option>MBD</option><option>MBZ</option>
-                                    <option>MCD</option><option>MCZ</option>
-                                    <option>MVD</option><option>MVZ</option>
-                                    <option>MPD</option><option>MPZ</option>
-                                    <option>ACD</option><option>ACZ</option>
+                                    <option>PO</option><option>DBD</option><option>DBZ</option><option>DCD</option><option>DCZ</option>
+                                    <option>MBD</option><option>MBZ</option><option>MCD</option><option>MCZ</option><option>MVD</option>
+                                    <option>MVZ</option><option>MPD</option><option>MPZ</option><option>ACD</option><option>ACZ</option>
                                 </select>
                             </div>
                             <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo Convenido</label>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
                                 <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white">
                                     <option value="">Ninguno</option>
-                                    <option>CD BAZTAN KE</option>
-                                    <option>BETI GAZTE KJKE</option>
-                                    <option>GURE TXOKOA KKE</option>
-                                    <option>CA RIVER EBRO</option>
-                                    <option>CALAHORRA FB</option>
-                                    <option>EF ARNEDO</option>
-                                    <option>EFB ALFARO</option>
-                                    <option>UD BALSAS PICARRAL</option>
+                                    <option>CD BAZTAN KE</option><option>BETI GAZTE KJKE</option><option>GURE TXOKOA KKE</option>
+                                    <option>CA RIVER EBRO</option><option>CALAHORRA FB</option><option>EF ARNEDO</option>
+                                    <option>EFB ALFARO</option><option>UD BALSAS PICARRAL</option>
                                 </select>
                             </div>
                             <div>
@@ -2005,20 +2453,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de Nacimiento</label>
                                 <input name="fechanacimiento" type="date" class="w-full p-3 border rounded-xl">
                             </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nivel (1-5)</label>
+                                <select name="nivel" class="w-full p-3 border rounded-xl bg-white">
+                                    <option value="1">⭐ (Muy Bajo)</option><option value="2">⭐⭐ (Bajo)</option>
+                                    <option value="3" selected>⭐⭐⭐ (Normal)</option><option value="4">⭐⭐⭐⭐ (Alto)</option>
+                                    <option value="5">⭐⭐⭐⭐⭐ (Top)</option>
+                                </select>
+                            </div>
                         </div>
-                        <button type="submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar en Directorio</button>
+                         <div class="flex gap-4 mt-6">
+                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar en Directorio</button>
+                        </div>
                     </form>
                 </div>
             `;
-            setTimeout(() => attachFormSubmit('jugadores'), 0);
         }
 
         if (modalHtml) {
             modalContainer.innerHTML = modalHtml;
             lucide.createIcons(); modalOverlay.classList.add('active');
             attachFormSubmit(currentView);
-        } else if (currentView === 'sesiones') {
-            lucide.createIcons(); modalOverlay.classList.add('active');
         }
     });
 
@@ -2029,6 +2485,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
+
             
             try {
                 // Handle multiple checkboxes (taskids, playerids)
@@ -2159,8 +2616,574 @@ document.addEventListener('DOMContentLoaded', async () => {
         else window.switchView('usuarios');
     };
 
+    let currentConvocatoriaTab = 'Ciclo';
+
+    async function renderConvocatorias(container) {
+        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false });
+        if (error) {
+            container.innerHTML = `<p class="p-10 text-red-500">Error: ${error.message}</p>`;
+            return;
+        }
+
+        const filtered = convs.filter(c => c.tipo === currentConvocatoriaTab);
+
+        container.innerHTML = `
+            <div class="mb-8 overflow-x-auto">
+                <div class="flex gap-2 p-1 bg-slate-100 rounded-2xl w-max">
+                    ${['Ciclos', 'Sesiones', 'Torneos', 'Zubieta'].map(tab => `
+                        <button onclick="window.switchConvocatoriaTab('${tab}')" class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${currentConvocatoriaTab === tab.replace('s', '') || (currentConvocatoriaTab === tab) ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}">
+                            ${tab}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                ${filtered.map(c => `
+                    <div onclick="window.viewConvocatoria(${c.id})" class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:border-blue-200 transition-all cursor-pointer group relative overflow-hidden">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${c.tipo}</span>
+                            <span class="text-xs font-bold text-slate-400">${c.fecha}</span>
+                        </div>
+                        <h4 class="text-xl font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors uppercase tracking-tight">${c.nombre}</h4>
+                        <div class="flex items-center gap-2 text-slate-500">
+                             <i data-lucide="users" class="w-4 h-4 text-slate-300"></i>
+                             <span class="text-xs font-bold">${Array.isArray(c.playerids) ? c.playerids.length : 0} Jugadores convocados</span>
+                        </div>
+                        <div class="mt-6 pt-4 border-t border-slate-50 flex justify-end">
+                             <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-400 hover:text-red-600 transition-all">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                             </button>
+                        </div>
+                    </div>
+                `).join('') || `<div class="col-span-full py-20 text-center text-slate-300 italic">No hay convocatorias de este tipo registradas.</div>`}
+            </div>
+        `;
+        lucide.createIcons();
+    }
+
+    window.switchConvocatoriaTab = (tab) => {
+        currentConvocatoriaTab = tab;
+        renderView('convocatorias');
+    };
+
+    window.newConvocatoria = async () => {
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <h3 class="text-2xl font-bold text-slate-800 mb-6">Crear Convocatoria: <span class="text-blue-600">${currentConvocatoriaTab}</span></h3>
+                <form id="new-convocatoria-form" class="space-y-6">
+                    <input type="hidden" name="tipo" value="${currentConvocatoriaTab}">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="col-span-2">
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
+                             <input name="nombre" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
+                             <select id="conv-equipo" name="equipoid" class="w-full p-3 border rounded-xl bg-white outline-none" required>
+                                 <option value="">Selecciona equipo...</option>
+                                 ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                             </select>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
+                             <input name="fecha" type="date" class="w-full p-3 border rounded-xl outline-none" required>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
+                             <input name="hora" type="time" class="w-full p-3 border rounded-xl outline-none" required>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
+                             <input name="lugar" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
+                        </div>
+                    </div>
+
+                    <div id="player-selector-container" class="hidden">
+                        <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Jugadores del equipo <span id="selected-team-label" class="text-blue-600"></span></label>
+                        <div id="filtered-players-list" class="max-h-64 overflow-y-auto border rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
+                            <!-- Los jugadores se cargarán aquí -->
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Generar Convocatoria</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        modalOverlay.classList.add('active');
+        lucide.createIcons();
+
+        const equipoSelect = document.getElementById('conv-equipo');
+        const playerContainer = document.getElementById('player-selector-container');
+        const playerList = document.getElementById('filtered-players-list');
+        const teamLabel = document.getElementById('selected-team-label');
+
+        equipoSelect.onchange = (e) => {
+            const teamId = e.target.value;
+            if (!teamId) {
+                playerContainer.classList.add('hidden');
+                return;
+            }
+
+            const team = teams.find(t => t.id == teamId);
+            teamLabel.textContent = team ? team.nombre : '';
+            playerContainer.classList.remove('hidden');
+            
+            const filteredPlayers = players.filter(p => p.equipoid == teamId);
+            
+            if (filteredPlayers.length > 0) {
+                playerList.innerHTML = filteredPlayers.map(p => `
+                    <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" name="playerids" value="${p.id}" class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600">
+                            <span class="text-sm font-bold text-slate-700">${p.nombre}</span>
+                        </div>
+                        <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'} (${p.anionacimiento || '--'})</span>
+                    </label>
+                `).join('');
+            } else {
+                playerList.innerHTML = `<p class="text-center py-6 text-slate-400 italic text-xs">No hay jugadores registrados en este equipo.</p>`;
+            }
+        };
+
+        document.getElementById('new-convocatoria-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.playerids = formData.getAll('playerids');
+            
+            // Guardamos el equipoid para saber de qué equipo es la convocatoria
+            const { error } = await supabaseClient.from('convocatorias').insert(data);
+            if (error) alert("Error: " + error.message);
+            else {
+                closeModal();
+                renderView('convocatorias');
+            }
+        };
+    };
+
+    window.deleteConvocatoria = async (id) => {
+        window.customConfirm('¿Eliminar Convocatoria?', '¿Estás seguro de que quieres borrar este listado?', async () => {
+            const { error } = await supabaseClient.from('convocatorias').delete().eq('id', id);
+            if (error) alert(error.message);
+            else renderView('convocatorias');
+        });
+    };
+
+    window.viewConvocatoria = async (id) => {
+        const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
+        if (error) return;
+
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => t.id == conv.equipoid);
+        const convocados = players.filter(p => conv.playerids.includes(p.id.toString()));
+
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-start mb-8">
+                    <div>
+                        <div class="flex gap-2 mb-2">
+                            <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.tipo}</span>
+                            <span class="px-2 py-1 bg-slate-100 text-slate-500 rounded text-[10px] font-black uppercase tracking-widest">${team ? team.nombre : 'Equipo General'}</span>
+                        </div>
+                        <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
+                        <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all"><i data-lucide="x"></i></button>
+                </div>
+
+                <div class="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                    <div class="grid grid-cols-12 px-4 py-2 border-b text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        <div class="col-span-1">#</div>
+                        <div class="col-span-5">Jugador</div>
+                        <div class="col-span-3 text-center">Posición</div>
+                        <div class="col-span-3 text-right">Año</div>
+                    </div>
+                    ${convocados.length > 0 ? convocados.map((p, i) => `
+                        <div class="grid grid-cols-12 items-center p-4 bg-white hover:bg-slate-50 border-b border-slate-50 transition-colors">
+                            <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
+                            <div class="col-span-5 font-bold text-slate-800">${p.nombre}</div>
+                            <div class="col-span-3 text-center text-xs font-bold text-slate-500">${p.posicion || '--'}</div>
+                            <div class="col-span-3 text-right text-xs font-bold text-slate-500">${p.anionacimiento || '--'}</div>
+                        </div>
+                    `).join('') : '<p class="text-center py-10 text-slate-400 italic">No hay jugadores en esta convocatoria.</p>'}
+                </div>
+
+                <div class="mt-8 flex gap-4">
+                     <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
+                        <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
+                        Descargar PDF
+                     </button>
+                     <button onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-600 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cerrar</button>
+                </div>
+            </div>
+        `;
+        modalOverlay.classList.add('active');
+        lucide.createIcons();
+    };
+
+    window.exportConvocatoria = async (id) => {
+        const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
+        if (error) return;
+
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => t.id == conv.equipoid);
+        const convocados = players.filter(p => conv.playerids.includes(p.id.toString()));
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Estilo de diseño
+        const blueColor = [37, 99, 235];
+        const slateColor = [30, 41, 59];
+
+        // Añadir Logo si existe
+        if (team && team.escudo) {
+            try {
+                doc.addImage(team.escudo, 'PNG', 15, 15, 25, 25);
+            } catch (e) { console.error("Logo error:", e); }
+        }
+
+        // Título Cabecera
+        doc.setFontSize(22);
+        doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+        doc.setFont("helvetica", "bold");
+        doc.text(conv.nombre.toUpperCase(), 45, 25);
+
+        doc.setFontSize(10);
+        doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+        doc.text(`CONVOCATORIA: ${conv.tipo.toUpperCase()}`, 45, 30);
+
+        // Datos del Evento
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(9);
+        doc.text(`EQUIPO: ${team ? team.nombre : 'General'}`, 45, 37);
+        doc.text(`FECHA: ${conv.fecha}   |   HORA: ${conv.hora || '--'}   |   LUGAR: ${conv.lugar || '--'}`, 45, 42);
+
+        // Línea separadora
+        doc.setDrawColor(241, 245, 249);
+        doc.line(15, 50, 195, 50);
+
+        // Tabla de Jugadores
+        const tableBody = convocados.map((p, index) => [
+            index + 1,
+            p.nombre,
+            team ? team.nombre : '--',
+            p.posicion || '--',
+            p.anionacimiento || '--'
+        ]);
+
+        doc.autoTable({
+            startY: 55,
+            head: [['#', 'JUGADOR', 'EQUIPO', 'POSICIÓN', 'AÑO']],
+            body: tableBody,
+            headStyles: {
+                fillColor: blueColor,
+                textColor: [255, 255, 255],
+                fontSize: 10,
+                fontStyle: 'bold',
+                halign: 'center'
+            },
+            bodyStyles: {
+                fontSize: 9,
+                textColor: [51, 65, 85],
+                cellPadding: 4
+            },
+            alternateRowStyles: {
+                fillColor: [248, 250, 252]
+            },
+            columnStyles: {
+                0: { halign: 'center', cellWidth: 10 },
+                2: { halign: 'center' },
+                3: { halign: 'center' },
+                4: { halign: 'center' }
+            },
+            margin: { left: 15, right: 15 }
+        });
+
+        // Footer
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            doc.text(`Generado por MS Coach - Página ${i} de ${pageCount}`, 150, 285);
+        }
+
+        doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
+    };
+
+    let campogramaFilters = {
+        sistema: 'F11_433',
+        equipos: [],
+        posiciones: [],
+        niveles: [3, 4, 5],
+        years: [],
+        clubesConvenidos: []
+    };
+
+    const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MBD', 'MBZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
+
+    const FORMATIONS = {
+        // --- FÚTBOL 11 ---
+        'F11_433': { name: '4-3-3 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
+            { pos: 'MCD', x: 48, y: 50 }, { pos: 'MVD', x: 65, y: 75 }, { pos: 'MVZ', x: 65, y: 25 }, { pos: 'MBD', x: 85, y: 85 }, { pos: 'ACZ', x: 92, y: 50 }, { pos: 'MBZ', x: 85, y: 15 }
+        ]},
+        'F11_442': { name: '4-4-2 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
+            { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 60 }, { pos: 'ACZ', x: 90, y: 40 }
+        ]},
+        'F11_4231': { name: '4-2-3-1 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
+            { pos: 'MCD', x: 45, y: 65 }, { pos: 'MCZ', x: 45, y: 35 }, { pos: 'MBD', x: 70, y: 85 }, { pos: 'MPZ', x: 70, y: 50 }, { pos: 'MBZ', x: 70, y: 15 }, { pos: 'ACZ', x: 92, y: 50 }
+        ]},
+        'F11_352': { name: '3-5-2 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 75 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 25 },
+            { pos: 'MBD', x: 50, y: 90 }, { pos: 'MCD', x: 50, y: 65 }, { pos: 'MCZ', x: 50, y: 35 }, { pos: 'MBZ', x: 50, y: 10 }, { pos: 'MPZ', x: 68, y: 50 },
+            { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+        ]},
+        'F11_541': { name: '5-4-1 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 90 }, { pos: 'DCD', x: 25, y: 70 }, { pos: 'DCZ', x: 25, y: 50 }, { pos: 'DCD', x: 25, y: 30 }, { pos: 'DBZ', x: 25, y: 10 },
+            { pos: 'MBD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 20 }, { pos: 'ACZ', x: 92, y: 50 }
+        ]},
+        'F11_4141': { name: '4-1-4-1 (F11)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
+            { pos: 'MCD', x: 45, y: 50 }, { pos: 'MVD', x: 65, y: 80 }, { pos: 'MVD', x: 65, y: 60 }, { pos: 'MVZ', x: 65, y: 40 }, { pos: 'MVZ', x: 65, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
+        ]},
+
+        // --- FÚTBOL 8 ---
+        'F8_331': { name: '3-3-1 (F8)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
+            { pos: 'MVD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
+        ]},
+        'F8_322': { name: '3-2-2 (F8)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
+            { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+        ]},
+        'F8_241': { name: '2-4-1 (F8)', positions: [
+            { pos: 'PO', x: 8, y: 50 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 },
+            { pos: 'MBD', x: 55, y: 90 }, { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'MBZ', x: 55, y: 10 }, { pos: 'ACZ', x: 90, y: 50 }
+        ]},
+
+        // --- FÚTBOL 7 ---
+        'F7_321': { name: '3-2-1 (F7)', positions: [
+            { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
+            { pos: 'MCD', x: 60, y: 65 }, { pos: 'MCZ', x: 60, y: 35 }, { pos: 'ACZ', x: 90, y: 50 }
+        ]},
+        'F7_231': { name: '2-3-1 (F7)', positions: [
+            { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 65 }, { pos: 'DCZ', x: 30, y: 35 },
+            { pos: 'MVD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 15 }, { pos: 'ACZ', x: 90, y: 50 }
+        ]},
+        'F7_132': { name: '1-3-2 (F7)', positions: [
+            { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 50 },
+            { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+        ]},
+        'F7_312': { name: '3-1-2 (F7)', positions: [
+            { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
+            { pos: 'MCD', x: 60, y: 50 }, { pos: 'ACD', x: 92, y: 65 }, { pos: 'ACZ', x: 92, y: 35 }
+        ]}
+    };
+
+    async function renderCampograma(container) {
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const years = [...new Set(players.map(p => p.anionacimiento).filter(y => y))].sort((a,b) => b-a);
+        const clubs = [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort();
+        
+        const filteredPlayers = players.filter(p => {
+            const teamMatch = campogramaFilters.equipos.length === 0 || campogramaFilters.equipos.includes(p.equipoid.toString());
+            const levelMatch = campogramaFilters.niveles.length === 0 || campogramaFilters.niveles.includes(Number(p.nivel || 3));
+            const posMatch = campogramaFilters.posiciones.length === 0 || campogramaFilters.posiciones.includes(p.posicion);
+            const yearMatch = campogramaFilters.years.length === 0 || campogramaFilters.years.includes(p.anionacimiento?.toString());
+            const clubMatch = campogramaFilters.clubesConvenidos.length === 0 || campogramaFilters.clubesConvenidos.includes(p.equipoConvenido);
+            return teamMatch && levelMatch && posMatch && yearMatch && clubMatch;
+        });
+
+        const activeFormation = FORMATIONS[campogramaFilters.sistema];
+
+        // Helper to render custom multiselect
+        const renderMultiSelect = (label, options, selectedValues, onToggle, id) => {
+            const labelText = selectedValues.length === 0 ? `TODOS (${options.length})` : `${selectedValues.length} SELECCIONADOS`;
+            return `
+                <div class="space-y-2 relative group/ms">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">${label}</label>
+                    <button onclick="document.getElementById('${id}-menu').classList.toggle('hidden')" 
+                        class="w-full p-4 bg-slate-900 border-none rounded-2xl font-bold text-white text-xs uppercase tracking-widest flex justify-between items-center hover:bg-black transition-all">
+                        <span>${labelText}</span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 opacity-50"></i>
+                    </button>
+                    <!-- Floating Menu -->
+                    <div id="${id}-menu" class="hidden absolute z-[50] top-full left-0 w-64 bg-white border border-slate-100 shadow-2xl rounded-3xl mt-2 p-4 max-h-64 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
+                        <div class="space-y-1">
+                            ${options.map(opt => {
+                                const isSelected = selectedValues.includes(opt.value.toString());
+                                return `
+                                    <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                        <input type="checkbox" onchange="${onToggle}('${opt.value}')" ${isSelected ? 'checked' : ''} 
+                                            class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                        <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'}">${opt.label.toUpperCase()}</span>
+                                    </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        container.innerHTML = `
+            <!-- Advanced Scouting Filters - Optimized Grid -->
+            <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-2xl mb-12">
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-6">
+                    <!-- Sistema (Single Select) -->
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sistema Táctico</label>
+                        <select onchange="window.updateCampogramaFilter('sistema', this.value)" 
+                            class="w-full p-4 bg-blue-600 text-white border-none rounded-2xl font-black text-xs uppercase tracking-widest outline-none hover:bg-blue-700 transition-all cursor-pointer appearance-none text-center shadow-lg shadow-blue-600/20">
+                            ${Object.entries(FORMATIONS).map(([id, f]) => `<option value="${id}" ${campogramaFilters.sistema === id ? 'selected' : ''}>${f.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <!-- Filter Options -->
+                    ${renderMultiSelect('Equipos', teams.map(t => ({ label: t.nombre, value: t.id })), campogramaFilters.equipos, 'window.toggleCampogramaTeam', 'teams')}
+                    ${renderMultiSelect('Posiciones', PLAYER_POSITIONS.map(p => ({ label: p, value: p })), campogramaFilters.posiciones, 'window.toggleCampogramaPos', 'positions')}
+                    ${renderMultiSelect('Año Nac.', years.map(y => ({ label: y.toString(), value: y })), campogramaFilters.years, 'window.toggleCampogramaYear', 'years')}
+                    ${renderMultiSelect('Club Convenido', clubs.map(c => ({ label: c, value: c })), campogramaFilters.clubesConvenidos, 'window.toggleCampogramaClub', 'clubs')}
+                    ${renderMultiSelect('Nivel Pro', [1,2,3,4,5].map(lvl => ({ label: `NIVEL ${lvl}`, value: lvl })), campogramaFilters.niveles, 'window.toggleCampogramaLevel', 'levels')}
+                </div>
+            </div>
+
+            <div class="max-w-6xl mx-auto">
+                <div class="relative w-full aspect-[3/2] bg-[#1a4d2e] rounded-[3.5rem] p-8 shadow-2xl overflow-hidden border-[20px] border-[#133a22] group">
+                    <div class="absolute inset-0 pointer-events-none" style="background: repeating-linear-gradient(90deg, #1a4d2e, #1a4d2e 90px, #164328 90px, #164328 180px);"></div>
+                    <div class="absolute inset-10 border-[5px] border-white/20 rounded-[2.5rem] pointer-events-none">
+                        <!-- Middle Line -->
+                        <div class="absolute left-1/2 top-0 bottom-0 w-[5px] bg-white/20"></div>
+                        <!-- Center Circle -->
+                        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-[5px] border-white/20 rounded-full"></div>
+                        
+                        <!-- Left Area (Area Grande) -->
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-[5px] border-white/20 border-l-0"></div>
+                        <!-- Left Goal Box (Area Pequeña) -->
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-[5px] border-white/20 border-l-0"></div>
+                        <!-- Left D (Semicircle) -->
+                        <div class="absolute left-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-[5px] border-white/20 border-l-0 rounded-r-full"></div>
+                        
+                        <!-- Right Area (Area Grande) -->
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-[5px] border-white/20 border-r-0"></div>
+                        <!-- Right Goal Box (Area Pequeña) -->
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-[5px] border-white/20 border-r-0"></div>
+                        <!-- Right D (Semicircle) -->
+                        <div class="absolute right-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-[5px] border-white/20 border-r-0 rounded-l-full"></div>
+                    </div>
+
+                    <!-- Position Slots with Impact Sizes -->
+                    ${activeFormation.positions.map(p => {
+                        const playersInPos = filteredPlayers.filter(player => player.posicion == p.pos).slice(0, 5);
+                        return `
+                            <div class="absolute flex flex-col items-center" style="left: ${p.x}%; top: ${p.y}%; transform: translate(-50%, -50%);">
+                                <div class="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-2xl border-4 border-slate-900/10 mb-4 transform hover:rotate-12 transition-transform cursor-context-menu">
+                                    <span class="text-[13px] font-black text-slate-800">${p.pos}</span>
+                                </div>
+                                <div class="flex flex-col gap-2 w-[140px]">
+                                    ${playersInPos.map(player => `
+                                        <div onclick="window.viewPlayer(${player.id})" class="bg-slate-900 border border-white/10 px-4 py-3 rounded-2xl cursor-pointer hover:bg-blue-600 hover:scale-105 transition-all shadow-xl group/player">
+                                            <p class="text-[10px] font-black text-white text-center uppercase tracking-widest truncate group-hover/player:tracking-normal transition-all">${player.nombre.split(' ')[0]}</p>
+                                            <div class="flex justify-center gap-1 mt-1.5 opacity-60 group-hover:opacity-100">
+                                                ${Array(Number(player.nivel || 3)).fill(0).map(() => `<span class="w-2 h-2 bg-amber-400 rounded-full"></span>`).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                 <div class="bg-indigo-600 p-6 rounded-[2.5rem] shadow-xl text-white">
+                    <p class="text-[10px] font-black uppercase opacity-60 mb-1">Total Analizados</p>
+                    <p class="text-3xl font-black">${filteredPlayers.length}</p>
+                 </div>
+                 <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+                    <p class="text-[10px] font-black uppercase text-slate-400 mb-1">Equipos en Filtro</p>
+                    <p class="text-3xl font-black text-slate-800">${campogramaFilters.equipos.length || 'TODOS'}</p>
+                 </div>
+            </div>
+        `;
+        lucide.createIcons();
+    }
+
+    window.updateCampogramaFilter = (key, value) => {
+        campogramaFilters[key] = value;
+        renderView('campograma');
+    };
+
+    window.updateCampogramaSearch = (val) => {
+        campogramaFilters.search = val;
+        renderView('campograma');
+    };
+
+    window.toggleCampogramaTeam = (teamId) => {
+        const idStr = teamId.toString();
+        const idx = campogramaFilters.equipos.indexOf(idStr);
+        if (idx > -1) campogramaFilters.equipos.splice(idx, 1);
+        else campogramaFilters.equipos.push(idStr);
+        window.switchView('campograma');
+    };
+
+    window.toggleCampogramaPos = (pos) => {
+        const idx = campogramaFilters.posiciones.indexOf(pos);
+        if (idx > -1) campogramaFilters.posiciones.splice(idx, 1);
+        else campogramaFilters.posiciones.push(pos);
+        window.switchView('campograma');
+    };
+
+    window.toggleCampogramaYear = (year) => {
+        const yStr = year.toString();
+        const idx = campogramaFilters.years.indexOf(yStr);
+        if (idx > -1) campogramaFilters.years.splice(idx, 1);
+        else campogramaFilters.years.push(yStr);
+        window.switchView('campograma');
+    };
+
+    window.toggleCampogramaClub = (club) => {
+        const idx = campogramaFilters.clubesConvenidos.indexOf(club);
+        if (idx > -1) campogramaFilters.clubesConvenidos.splice(idx, 1);
+        else campogramaFilters.clubesConvenidos.push(club);
+        window.switchView('campograma');
+    };
+
+    window.toggleCampogramaLevel = (lvl) => {
+        const lNum = Number(lvl);
+        const idx = campogramaFilters.niveles.indexOf(lNum);
+        if (idx > -1) campogramaFilters.niveles.splice(idx, 1);
+        else campogramaFilters.niveles.push(lNum);
+        window.switchView('campograma');
+    };
+
     window.closeModal = () => modalOverlay.classList.remove('active');
-    modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+    
+    document.addEventListener('click', (e) => {
+        if (e.target.closest(modalOverlay)) {
+            if (e.target === modalOverlay) closeModal();
+        }
+        
+        // Close custom multiselects if clicking outside
+        if (!e.target.closest('.group\\/ms')) {
+            document.querySelectorAll('[id$="-menu"]').forEach(m => m.classList.add('hidden'));
+        }
+    });
 
 });
 
