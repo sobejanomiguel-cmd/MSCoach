@@ -124,18 +124,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isLogin) {
                 await db.login(email, password);
             } else {
+                console.log("Attempting sign up...");
                 await db.signUp(email, password);
-                window.customAlert('Registro exitoso', 'Por favor, verifica tu email si es necesario e inicia sesión.');
+                window.customAlert('Registro exitoso', 'Cuenta creada. Por favor, verifica tu email si es necesario e inicia sesión.');
                 isLogin = true;
-                toggleAuthBtn.click();
+                if (toggleAuthBtn) toggleAuthBtn.click();
             }
             await checkAuth();
         } catch (err) {
-            window.customAlert('Error', err.message);
+            console.error("Authentication Error:", err);
+            window.customAlert('Error de Acceso', err.message || 'Error desconocido al procesar la solicitud.');
         } finally {
             authSubmit.disabled = false;
             authSubmit.textContent = isLogin ? 'Entrar al Panel' : 'Crear Cuenta';
         }
+
     };
 
     // Logout logic
