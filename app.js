@@ -342,7 +342,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 `Se han importado ${importedCount} tareas nuevas. ` + 
                                 (skippedCount > 0 ? `${skippedCount} tareas saltadas por estar ya registradas.` : ''), 
                                 'success');
-                            renderView('tareas');
+                            window.switchView('tareas');
                         };
                         reader.readAsText(file);
                     };
@@ -398,7 +398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }
 
                             window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores correctamente.`, 'success');
-                            renderView('jugadores');
+                            window.switchView('jugadores');
                         };
                         reader.readAsText(file);
                     };
@@ -411,7 +411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         currentView = viewId;
         contentContainer.innerHTML = '';
-        await renderView(viewId);
+        await window.renderView(viewId);
         
     }
 
@@ -668,7 +668,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (task) {
             task.completada = !task.completada;
             await db.update('eventos', task);
-            renderView(currentView);
+            window.switchView(currentView);
         }
     };
 
@@ -691,7 +691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end gap-2">
                             <button onclick="window.viewEvento(${e.id})" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-red-400 hover:text-red-600 transition-all"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-red-400 hover:text-red-600 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </div>
                     </div>
                 `).join('') || '<div class="col-span-full py-20 text-center text-slate-400 italic">No hay tareas pendientes en la agenda.</div>'}
@@ -741,14 +741,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             data.id = parseInt(data.id);
             await db.update('eventos', data);
             closeModal();
-            renderView('eventos');
+            window.switchView('eventos');
         });
     };
 
     window.deleteEvento = async (id) => {
         window.customConfirm('¿Eliminar Evento?', 'Se borrará este evento de tu agenda.', async () => {
             await db.delete('eventos', Number(id));
-            renderView('eventos');
+            window.switchView('eventos');
         });
     };
 
@@ -773,7 +773,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description}</p>
                             <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end">
                                 <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-red-400 hover:text-red-600 transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
                             </div>
                         </div>
@@ -872,7 +872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             await db.update('tareas', data);
             closeModal();
-            renderView('tareas');
+            window.switchView('tareas');
         });
     };
 
@@ -883,7 +883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             async () => {
                 await db.delete('tareas', Number(id));
                 closeModal();
-                renderView('tareas');
+                window.switchView('tareas');
             }
         );
     };
@@ -1017,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             await db.update('sesiones', data);
             closeModal();
-            renderView('sesiones');
+            window.switchView('sesiones');
         });
     };
 
@@ -1028,7 +1028,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             async () => {
                 await db.delete('sesiones', Number(id));
                 closeModal();
-                renderView('sesiones');
+                window.switchView('sesiones');
             }
         );
     };
@@ -1207,7 +1207,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'Se borrarán los datos del equipo. Los jugadores asociados dejarán de estar asignados.',
             async () => {
                 await db.delete('equipos', Number(id));
-                renderView('equipos');
+                window.switchView('equipos');
             }
         );
     };
@@ -1313,7 +1313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             await db.update('equipos', data);
             closeModal();
-            renderView('equipos');
+            window.switchView('equipos');
         });
     };
 
@@ -1428,7 +1428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex justify-end gap-1">
                                             <button class="p-2 text-slate-400 group-hover:text-blue-600 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-400 hover:text-red-600 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-400 hover:text-red-600 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1509,7 +1509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             data.id = parseInt(data.id);
             await db.update('jugadores', data);
             closeModal();
-            renderView('jugadores');
+            window.switchView('jugadores');
         });
     };
 
@@ -1520,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             async () => {
                 await db.delete('jugadores', Number(id));
                 closeModal();
-                renderView('jugadores');
+                window.switchView('jugadores');
             }
         );
     };
@@ -2091,7 +2091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                     
                     closeModal();
-                    renderView('equipos');
+                    window.switchView('equipos');
                     return; // Prevent default db.add at bottom
                 }
                 
@@ -2156,7 +2156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const newRole = currentRole === 'ELITE' ? 'TECNICO' : 'ELITE';
         const { error } = await supabaseClient.from('profiles').update({ role: newRole }).eq('id', userId);
         if (error) alert("Error: " + error.message);
-        else renderView('usuarios');
+        else window.switchView('usuarios');
     };
 
     window.closeModal = () => modalOverlay.classList.remove('active');
