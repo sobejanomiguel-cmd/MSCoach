@@ -184,6 +184,12 @@ class CoachDB {
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
+    async clearLocal() {
+        const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos'];
+        const transaction = this.db.transaction(stores, 'readwrite');
+        stores.forEach(s => transaction.objectStore(s).clear());
+        console.log("Local IndexedDB cleared successfully.");
+        window.location.reload();
     }
 }
 

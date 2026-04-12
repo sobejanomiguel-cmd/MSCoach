@@ -360,7 +360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                 const newPlayer = {
                                     nombre: data['NOMBRE'],
-                                    equipoId: team ? team.id : '',
+                                    equipoid: team ? team.id : '',
                                     dorsal: data['DORSAL'] || '',
                                     posicion: data['POSICION'] || 'PO',
                                     equipoConvenido: data['EQUIPO CONVENIDO'] || '',
@@ -468,10 +468,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div>
                                 <div class="flex justify-between items-center mb-2">
                                     <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">${e.nombre}</span>
-                                    <span class="text-xs font-black text-blue-600">${e.asistenciaMedia}%</span>
+                                    <span class="text-xs font-black text-blue-600">${e.asistenciamedia}%</span>
                                 </div>
                                 <div class="attendance-bar-bg">
-                                    <div class="attendance-bar-fill" style="width: ${e.asistenciaMedia}%"></div>
+                                    <div class="attendance-bar-fill" style="width: ${e.asistenciamedia}%"></div>
                                 </div>
                             </div>
                         `).join('')}
@@ -902,8 +902,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                            <select name="equipoId" id="edit-session-team-select" class="w-full p-3 border rounded-xl bg-white">
-                                ${teams.map(t => `<option value="${t.id}" ${session.equipoId == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                            <select name="equipoid" id="edit-session-team-select" class="w-full p-3 border rounded-xl bg-white">
+                                ${teams.map(t => `<option value="${t.id}" ${session.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                             </select>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
@@ -953,7 +953,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const updatePlayers = () => {
             const teamId = teamSelect.value;
-            const teamPlayers = players.filter(p => p.equipoId == teamId);
+            const teamPlayers = players.filter(p => p.equipoid == teamId);
             playersList.innerHTML = teamPlayers.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
                     <input type="checkbox" name="playerIds" value="${p.id}" ${session.playerIds && session.playerIds.includes(p.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
@@ -976,7 +976,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             data.taskIds = formData.getAll('taskIds');
             data.playerIds = formData.getAll('playerIds');
             
-            const team = teams.find(t => t.id == data.equipoId);
+            const team = teams.find(t => t.id == data.equipoid);
             data.equipoNombre = team ? team.nombre : 'Equipo';
             
             await db.update('sesiones', data);
@@ -1005,7 +1005,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const allTasks = await db.getAll('tareas');
         const allPlayers = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
-        const currentTeam = teams.find(t => t.id == session.equipoId);
+        const currentTeam = teams.find(t => t.id == session.equipoid);
 
         const sessionTasks = allTasks.filter(t => session.taskIds && session.taskIds.includes(t.id.toString()));
         const sessionPlayers = allPlayers.filter(p => session.playerIds && session.playerIds.includes(p.id.toString()));
@@ -1144,9 +1144,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="space-y-4 mb-6">
                             <div class="flex justify-between items-end">
                                 <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Asistencia Media</span>
-                                <span class="text-sm font-black text-blue-600">${e.asistenciaMedia || 0}%</span>
+                                <span class="text-sm font-black text-blue-600">${e.asistenciamedia || 0}%</span>
                             </div>
-                            <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.asistenciaMedia || 0}%"></div></div>
+                            <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.asistenciamedia || 0}%"></div></div>
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div class="bg-slate-50 p-3 rounded-xl"><p class="text-[10px] font-bold text-slate-400 uppercase">Plantilla</p><p class="text-lg font-bold">${e.jugadoresCount || 0}</p></div>
@@ -1229,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const filtered = players.filter(p => !year || p.anioNacimiento == year);
             listDiv.innerHTML = filtered.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200">
-                    <input type="checkbox" name="linkedPlayerIds" value="${p.id}" ${p.equipoId == team.id ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
+                    <input type="checkbox" name="linkedPlayerIds" value="${p.id}" ${p.equipoid == team.id ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
                     <span class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</span>
                 </label>
             `).join('') || `<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores nacidos en ${year || 'este año'}.</p>`;
@@ -1263,11 +1263,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Update individual players to point to this team (or remove if unchecked)
             for (const p of players) {
                 const isLinked = linkedPlayerIds.includes(p.id.toString());
-                if (isLinked && p.equipoId != data.id) {
-                    p.equipoId = data.id.toString();
+                if (isLinked && p.equipoid != data.id) {
+                    p.equipoid = data.id.toString();
                     await db.update('jugadores', p);
-                } else if (!isLinked && p.equipoId == data.id) {
-                    p.equipoId = '';
+                } else if (!isLinked && p.equipoid == data.id) {
+                    p.equipoid = '';
                     await db.update('jugadores', p);
                 }
             }
@@ -1284,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.viewTeamPlayers = async (teamId) => {
         const teams = await db.getAll('equipos');
         const team = teams.find(t => t.id == teamId);
-        const players = (await db.getAll('jugadores')).filter(p => p.equipoId == teamId);
+        const players = (await db.getAll('jugadores')).filter(p => p.equipoid == teamId);
         
         modalContainer.innerHTML = `
             <div class="p-8">
@@ -1324,7 +1324,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="p-8">
                 <h3 class="text-2xl font-bold mb-6 text-slate-800">Nuevo Jugador</h3>
                 <form id="new-player-form" class="space-y-4">
-                    <input type="hidden" name="equipoId" value="${teamId}">
+                    <input type="hidden" name="equipoid" value="${teamId}">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2"><input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required></div>
                         <input name="dorsal" type="number" placeholder="Dorsal" class="w-full p-3 border rounded-xl">
@@ -1373,7 +1373,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </thead>
                     <tbody>
                         ${players.map(p => {
-                            const team = teams.find(t => t.id == p.equipoId);
+                            const team = teams.find(t => t.id == p.equipoid);
                             return `
                                 <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer group">
                                     <td class="px-6 py-4 flex items-center gap-3">
@@ -1431,9 +1431,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
-                            <select name="equipoId" class="w-full p-3 border rounded-xl bg-white outline-none">
+                            <select name="equipoid" class="w-full p-3 border rounded-xl bg-white outline-none">
                                 <option value="">Sin equipo</option>
-                                ${teams.map(t => `<option value="${t.id}" ${player.equipoId == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                                ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                             </select>
                         </div>
                         <div>
@@ -1558,7 +1558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         attendanceData = existingReport ? existingReport.data : {};
 
         const updateBoard = () => {
-            const teamPlayers = players.filter(j => j.equipoId == selectedTeamId);
+            const teamPlayers = players.filter(j => j.equipoid == selectedTeamId);
             const list = document.getElementById('asistencia-list');
             if (list) {
                 list.innerHTML = teamPlayers.map(j => {
@@ -1729,7 +1729,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                                    <select name="equipoId" id="session-team-select" class="w-full p-3 border rounded-xl bg-white">
+                                    <select name="equipoid" id="session-team-select" class="w-full p-3 border rounded-xl bg-white">
                                         ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                     </select>
                                 </div>
@@ -1800,7 +1800,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 const updatePlayers = () => {
                     const teamId = teamSelect.value;
-                    const teamPlayers = players.filter(p => p.equipoId == teamId);
+                    const teamPlayers = players.filter(p => p.equipoid == teamId);
                     
                     // Main list
                     playersList.innerHTML = teamPlayers.map(p => `
@@ -1925,7 +1925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
-                                <select name="equipoId" class="w-full p-3 border rounded-xl bg-white">
+                                <select name="equipoid" class="w-full p-3 border rounded-xl bg-white">
                                     <option value="">Ninguno (Libre)</option>
                                     ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                 </select>
@@ -2048,7 +2048,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         for (const pid of linkedPlayerIds) {
                             const p = players.find(x => x.id == pid);
                             if (p) {
-                                p.equipoId = id.toString();
+                                p.equipoid = id.toString();
                                 await db.update('jugadores', p);
                             }
                         }
@@ -2061,7 +2061,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 if (viewId === 'sesiones') {
                     const teams = await db.getAll('equipos');
-                    const t = teams.find(team => team.id == data.equipoId);
+                    const t = teams.find(team => team.id == data.equipoid);
                     data.equipoNombre = t ? t.nombre : 'Equipo';
                 }
 
@@ -2089,8 +2089,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         let firstTeamId;
         if ((await db.getAll('equipos')).length === 0) {
-            firstTeamId = await db.add('equipos', { nombre: 'Juvenil A', categoria: 'División de Honor', jugadoresCount: 18, asistenciaMedia: 94 });
-            await db.add('equipos', { nombre: 'Primer Equipo', categoria: '3ª RFEF', jugadoresCount: 22, asistenciaMedia: 98 });
+            firstTeamId = await db.add('equipos', { nombre: 'Juvenil A', categoria: 'División de Honor', jugadoresCount: 18, asistenciamedia: 94 });
+            await db.add('equipos', { nombre: 'Primer Equipo', categoria: '3ª RFEF', jugadoresCount: 22, asistenciamedia: 98 });
         } else {
             const teams = await db.getAll('equipos');
             firstTeamId = teams[0].id;
@@ -2098,11 +2098,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if ((await db.getAll('jugadores')).length === 0 && firstTeamId) {
             const players = [
-                { nombre: 'Dani García', dorsal: 1, equipoId: firstTeamId },
-                { nombre: 'Hugo López', dorsal: 4, equipoId: firstTeamId },
-                { nombre: 'Marc Soler', dorsal: 7, equipoId: firstTeamId },
-                { nombre: 'Erik Martínez', dorsal: 9, equipoId: firstTeamId },
-                { nombre: 'Alvaro Sanz', dorsal: 10, equipoId: firstTeamId }
+                { nombre: 'Dani García', dorsal: 1, equipoid: firstTeamId },
+                { nombre: 'Hugo López', dorsal: 4, equipoid: firstTeamId },
+                { nombre: 'Marc Soler', dorsal: 7, equipoid: firstTeamId },
+                { nombre: 'Erik Martínez', dorsal: 9, equipoid: firstTeamId },
+                { nombre: 'Alvaro Sanz', dorsal: 10, equipoid: firstTeamId }
             ];
             for (const p of players) await db.add('jugadores', p);
         }
