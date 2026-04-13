@@ -119,8 +119,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             el.style.display = isTecnico ? 'none' : 'block';
         });
 
-        const secondaryBtn = document.getElementById('secondary-add-btn');
-        if (secondaryBtn) secondaryBtn.style.display = isTecnico ? 'none' : 'flex';
     };
 
     if (toggleAuthBtn) {
