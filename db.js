@@ -58,6 +58,19 @@ class CoachDB {
             }
         }
     }
+    async get(storeName, id) {
+        if (!this.db) {
+            await this.init();
+        }
+        return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
+            const request = store.get(Number(id));
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+        });
+    }
+
 
     async getAll(storeName) {
         if (supabaseClient) {
@@ -131,11 +144,15 @@ class CoachDB {
 
     async update(storeName, data) {
         if (supabaseClient && data.id) {
-            try {
-                const { error } = await supabaseClient.from(storeName).update(data).eq('id', data.id);
-                if (error) throw error;
-            } catch (err) {
-                console.error("Cloud update failed:", err);
+            const { id, ...toUpdate } = data;
+            const { error } = await supabaseClient
+                .from(storeName)
+                .update(toUpdate)
+                .eq('id', Number(id));
+
+            if (error) {
+                console.error(`Supabase update error (${storeName}):`, error);
+                throw error; // Propagate to caller for UI alerts
             }
         }
         return this.saveLocal(storeName, data);

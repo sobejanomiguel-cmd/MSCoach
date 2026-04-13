@@ -2051,7 +2051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 ${teams.map(e => `
-                    <div onclick="window.viewTeam(${e.id})" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-200 transition-all">
+                    <div onclick="window.editTeam(${e.id})" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-200 transition-all">
                         <div class="flex items-center gap-4 mb-6">
                             ${e.escudo ? `<img src="${e.escudo}" class="w-14 h-14 object-contain rounded-xl">` : `<div class="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
                             <div>
@@ -2094,7 +2094,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     };
 
-    window.viewTeam = async (id) => {
+    window.editTeam = async (id) => {
         const team = await db.get('equipos', id);
         const players = await db.getAll('jugadores');
         
@@ -2128,7 +2128,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Vincular Jugadores (Filtrados por Año)</label>
+                            <div class="flex justify-between items-center mb-4">
+                                <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">Vincular Jugadores (Filtrados por Año)</label>
+                                <button type="button" id="edit-select-all-btn" class="text-[9px] font-black text-blue-600 uppercase hover:text-blue-700 transition-colors">Seleccionar Todos</button>
+                            </div>
                             <div id="edit-linked-players-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                 <!-- Filered players will load here -->
                             </div>
@@ -2159,46 +2162,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         yearInput.addEventListener('change', updatePlayerLinkage);
         updatePlayerLinkage();
         
+        document.getElementById('edit-select-all-btn').onclick = () => {
+            const checkboxes = listDiv.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = true);
+        };
+        
         lucide.createIcons(); modalOverlay.classList.add('active');
         
 
         document.getElementById('edit-team-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            data.id = parseInt(data.id);
-            
-            const imgInput = document.getElementById('edit-team-crest-input');
-            if (imgInput.files[0]) {
-                data.escudo = await new Promise(resolve => {
-                    const reader = new FileReader();
-                    reader.onload = (re) => resolve(re.target.result);
-                    reader.readAsDataURL(imgInput.files[0]);
-                });
-            } else {
-                data.escudo = team.escudo;
-            }
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Guardando...';
 
-            const linkedPlayerIds = formData.getAll('linkedPlayerIds');
-            
-            // Update individual players to point to this team (or remove if unchecked)
-            for (const p of players) {
-                const isLinked = linkedPlayerIds.includes(p.id.toString());
-                if (isLinked && p.equipoid != data.id) {
-                    p.equipoid = data.id.toString();
-                    await db.update('jugadores', p);
-                } else if (!isLinked && p.equipoid == data.id) {
-                    p.equipoid = '';
-                    await db.update('jugadores', p);
+            try {
+                const formData = new FormData(e.target);
+                const data = { 
+                    ...team,
+                    id: parseInt(formData.get('id')),
+                    nombre: formData.get('nombre'),
+                    categoria: parseInt(formData.get('categoria')) || null
+                };
+                
+                const imgInput = document.getElementById('edit-team-crest-input');
+                if (imgInput.files[0]) {
+                    const url = await db.uploadImage(imgInput.files[0]);
+                    if (url) data.escudo = url;
+                } else {
+                    data.escudo = team.escudo;
                 }
-            }
 
-            // Recalculate players count
-            data.jugadorescount = linkedPlayerIds.length;
-            
-            await db.update('equipos', data);
-            closeModal();
-            window.switchView('equipos');
+                const linkedPlayerIds = formData.getAll('linkedPlayerIds').map(id => parseInt(id));
+                
+                // Update individual players
+                for (const p of players) {
+                    const isNowLinked = linkedPlayerIds.includes(p.id);
+                    const wasLinked = p.equipoid == data.id;
+
+                    if (isNowLinked && !wasLinked) {
+                        p.equipoid = data.id;
+                        await db.update('jugadores', p);
+                    } else if (!isNowLinked && wasLinked) {
+                        p.equipoid = null;
+                        await db.update('jugadores', p);
+                    }
+                }
+
+                data.jugadorescount = linkedPlayerIds.length;
+                
+                await db.update('equipos', data);
+                closeModal();
+                
+                // Refresh the view smoothly using the correct ID
+                const contentArea = document.getElementById('content-container');
+                if (contentArea) {
+                    await renderEquipos(contentArea);
+                }
+                window.switchView('equipos');
+            } catch (err) {
+                console.error("Error saving team:", err);
+                window.customAlert('Error al guardar', 'Supabase ha rechazado el cambio: ' + (err.message || err), 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
         });
     };
 
