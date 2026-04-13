@@ -303,7 +303,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
-        'usuarios': { title: 'Gestión de Staff', subtitle: 'Controla los accesos y roles de tu equipo técnico.', addButtonEnabled: false },
+        'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
         'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
     };
 
@@ -1615,7 +1615,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
-        const { data: users } = await supabaseClient.from('profiles').select('*');
+        const { data: users, error: userError } = await supabaseClient.from('profiles').select('*');
+        if (userError) console.warn("Error fetching profiles, check RLS or table existence:", userError);
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         
         const isEdit = sessionData !== null;
@@ -2689,12 +2690,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (yearInput) yearInput.addEventListener('change', update);
                 update();
             }, 0);
-        } else if (currentView === 'eventos') {
+        } else if (currentView === 'eventos' || currentView === 'usuarios') {
             const { data: users } = await supabaseClient.from('profiles').select('*');
             const currentUser = (await supabaseClient.auth.getUser()).data.user;
 
-            modalHtml = `
-                <div class="p-8">
+            if (currentView === 'usuarios') {
+                modalHtml = `
+                    <div class="p-8">
+                        <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nuevo Miembro del Staff</h3>
+                        <form id="modal-form" class="space-y-6">
+                             <div class="grid grid-cols-2 gap-4">
+                                <div class="col-span-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nombre Completo</label>
+                                    <input name="name" placeholder="Ej: Juan Pérez" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 font-bold" required>
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email de Acceso</label>
+                                    <input name="email" type="email" placeholder="email@ejemplo.com" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 font-bold" required>
+                                </div>
+                                <div class="col-span-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rol en el Equipo</label>
+                                    <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold">
+                                        <option>TECNICO</option>
+                                        <option>ELITE</option>
+                                    </select>
+                                </div>
+                             </div>
+                             <div class="bg-blue-50 p-4 rounded-2xl text-[10px] text-blue-700 font-bold">
+                                <i data-lucide="info" class="inline w-3 h-3 mr-1"></i> Esto creará un registro de staff. El usuario podrá acceder si se registra con este mismo email.
+                             </div>
+                             <div class="flex gap-4">
+                                <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl">Cancelar</button>
+                                <button type="submit" class="flex-[2] py-4 bg-slate-900 text-white font-black rounded-2xl shadow-lg uppercase tracking-widest">Registrar Miembro</button>
+                             </div>
+                        </form>
+                    </div>
+                `;
+            } else {
+                modalHtml = `
+                    <div class="p-8">
                     <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nuevo Evento de Agenda</h3>
                     <form id="modal-form" class="space-y-6">
                         <!-- Campos principales -->
@@ -2731,7 +2765,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </form>
                 </div>
-            `;
+                `;
+            }
         } else if (currentView === 'jugadores') {
             const teams = await db.getAll('equipos');
             modalHtml = `
@@ -2835,6 +2870,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     data.tasksMeta = tasksMeta;
                 }
                 
+                if (viewId === 'usuarios') {
+                    await window.addNewStaffMember(formData);
+                    return;
+                }
+                
                 if (viewId === 'tareas') {
                     data.material = formData.getAll('material').join(', ');
                     const imgInput = document.getElementById('task-image-input');
@@ -2904,11 +2944,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function renderPerfil(container) {
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
-        
-        // Handle name fallback
-        const currentName = profile.name || profile.full_name || profile.nombre || '';
+        try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            if (!user) {
+                container.innerHTML = `<p class="p-10 text-slate-400 italic text-center">Inicia sesión para ver tu perfil.</p>`;
+                return;
+            }
+
+            let { data: profile, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            
+            // Si no hay perfil por ID, intentamos por email (usuarios creados manualmente)
+            if (!profile) {
+                const { data: emailProfiles } = await supabaseClient.from('profiles').select('*').eq('email', user.email);
+                if (emailProfiles && emailProfiles.length > 0) {
+                    profile = emailProfiles[0];
+                    // Atamos el ID para futuras consultas
+                    await supabaseClient.from('profiles').update({ id: user.id }).eq('email', user.email);
+                }
+            }
+
+            if (!profile) {
+                // Auto-creación definitiva
+                const { data: newProfile } = await supabaseClient.from('profiles').insert([
+                    { id: user.id, email: user.email, role: 'TECNICO', name: user.user_metadata?.full_name || '' }
+                ]).select().maybeSingle();
+                profile = newProfile;
+            }
+
+            if (!profile) throw new Error("No se pudo obtener ni crear el perfil");
+            
+            const currentName = profile.name || profile.full_name || profile.nombre || '';
 
         container.innerHTML = `
             <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4">
@@ -2973,7 +3038,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (window.lucide) lucide.createIcons();
 
-        document.getElementById('profile-form').onsubmit = async (e) => {
+        container.querySelector('#profile-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const { error } = await supabaseClient.from('profiles').update({ name: formData.get('full_name') }).eq('id', user.id);
@@ -2983,7 +3048,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
 
-        document.getElementById('password-form').onsubmit = async (e) => {
+        container.querySelector('#password-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const pass = formData.get('password');
@@ -2993,43 +3058,53 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { error } = await supabaseClient.auth.updateUser({ password: pass });
             if (!error) window.customAlert('Éxito', 'Contraseña actualizada', 'success');
         };
+        } catch (err) {
+            console.error("Error in renderPerfil:", err);
+            container.innerHTML = `<p class="p-10 text-red-500">Error: ${err.message}</p>`;
+        }
     }
 
     async function renderUsuarios(container) {
-        const { data: profiles, error } = await supabaseClient.from('profiles').select('*');
-        const currentUserRole = db.userRole;
+        try {
+            const { data: profiles, error } = await supabaseClient.from('profiles').select('*');
+            const currentUserRole = db.userRole || 'TECNICO';
 
-        container.innerHTML = `
-            <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                <table class="w-full">
-                    <thead>
-                        <tr class="bg-slate-50 text-left border-b border-slate-100">
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${profiles.map(u => `
-                            <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                <td class="px-6 py-4 font-bold text-slate-800">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</td>
-                                <td class="px-6 py-4 text-xs text-slate-500">${u.email}</td>
-                                <td class="px-6 py-4">
-                                    <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
-                                        ${u.role}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    ${currentUserRole === 'ELITE' ? `
-                                        <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                    ` : '<span class="text-[10px] text-slate-300 italic">Solo lectura</span>'}
-                                </td>
+            if (error) {
+                 container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-3xl border border-red-100"><p class="font-bold">Error de Acceso</p><p class="text-xs opacity-80">${error.message}</p></div>`;
+                 return;
+            }
+
+            container.innerHTML = `
+                <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-50 text-left border-b border-slate-100">
+                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
+                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email</th>
+                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol</th>
+                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            ${profiles && profiles.length > 0 ? profiles.map(u => `
+                                <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-6 py-4 font-bold text-slate-800">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</td>
+                                    <td class="px-6 py-4 text-xs text-slate-500">${u.email}</td>
+                                    <td class="px-6 py-4">
+                                        <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
+                                            ${u.role}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        ${currentUserRole === 'ELITE' ? `
+                                            <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                        ` : '<span class="text-[10px] text-slate-300 italic">Lectura</span>'}
+                                    </td>
+                                </tr>
+                            `).join('') : '<tr><td colspan="4" class="p-10 text-center text-slate-400 italic">No hay miembros registrados aún.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
             <p class="mt-6 text-xs text-slate-400 italic px-6 mb-12">* Solo los usuarios con rol ELITE pueden editar perfiles de Staff y gestionar permisos globales.</p>
             
             <div class="pt-8 border-t border-slate-100">
@@ -3044,6 +3119,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Render profile card below
         const selfContainer = container.querySelector('#self-profile-container');
         if (selfContainer) await renderPerfil(selfContainer);
+
+        } catch (err) {
+            console.error("Error in renderUsuarios:", err);
+            container.innerHTML = `<p class="p-10 text-red-500">Error: ${err.message}</p>`;
+        }
     }
 
     window.toggleUserRole = async (userId, currentRole) => {
@@ -3053,6 +3133,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         else window.switchView('usuarios');
     };
 
+    window.addNewStaffMember = async (formData) => {
+        const name = formData.get('name');
+        const email = formData.get('email');
+        const role = formData.get('role');
+
+        const { data, error } = await supabaseClient.from('profiles').insert([
+            { name, email, role }
+        ]);
+
+        if (error) {
+            window.customAlert('Error', error.message, 'error');
+        } else {
+            window.customAlert('Éxito', 'Miembro añadido correctamente', 'success');
+            closeModal();
+            window.switchView('usuarios');
+        }
+    };
     window.editUserAdmin = async (userId) => {
         const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
         
@@ -3090,7 +3187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         lucide.createIcons();
         modalOverlay.classList.add('active');
 
-        document.getElementById('admin-user-edit-form').onsubmit = async (e) => {
+        modalContainer.querySelector('#admin-user-edit-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const updateData = { role: formData.get('role') };
