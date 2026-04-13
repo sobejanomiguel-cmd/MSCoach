@@ -2983,10 +2983,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                     <div class="flex flex-col md:flex-row gap-8 items-center md:items-start relative z-10">
                         <div class="relative group">
-                            <div class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-blue-500/30 group-hover:rotate-6 transition-all duration-500">
-                                ${currentName ? currentName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                            <input type="file" id="avatar-input" class="hidden" accept="image/*">
+                            <div id="avatar-display" class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-blue-500/30 group-hover:rotate-6 transition-all duration-500 overflow-hidden">
+                                ${profile.avatar_url ? `<img src="${profile.avatar_url}" class="w-full h-full object-cover">` : (currentName ? currentName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase())}
                             </div>
-                            <button class="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl border border-slate-100 shadow-md text-slate-400 hover:text-blue-600 transition-all">
+                            <button onclick="document.getElementById('avatar-input').click()" class="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl border border-slate-100 shadow-md text-slate-400 hover:text-blue-600 transition-all shadow-xl">
                                 <i data-lucide="camera" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -3037,6 +3038,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         if (window.lucide) lucide.createIcons();
+        
+        const avatarInput = container.querySelector('#avatar-input');
+        if (avatarInput) {
+            avatarInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                // Show loading state
+                const display = container.querySelector('#avatar-display');
+                display.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-4 border-white border-t-transparent"></div>';
+
+                const reader = new FileReader();
+                reader.onload = async (re) => {
+                    const base64 = re.target.result;
+                    const { error } = await supabaseClient.from('profiles').update({ avatar_url: base64 }).eq('id', user.id);
+                    if (!error) {
+                        window.customAlert('Éxito', 'Foto de perfil actualizada', 'success');
+                        window.switchView('perfil');
+                    } else {
+                        window.customAlert('Error', 'No se pudo guardar la imagen: ' + error.message, 'error');
+                        window.switchView('perfil');
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+        }
 
         container.querySelector('#profile-form').onsubmit = async (e) => {
             e.preventDefault();
