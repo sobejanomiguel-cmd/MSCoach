@@ -111,13 +111,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const applyRoleRestrictions = () => {
-        const isRestricted = db.userRole !== 'ELITE';
-        document.body.classList.toggle('role-tecnico', isRestricted);
+        const isAdmin = db.userRole === 'ELITE';
+        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
         
-        // Hide Admin Sections
+        // El staff y otras secciones críticas son solo para ELITE
         document.querySelectorAll('.admin-only').forEach(el => {
-            el.style.display = isRestricted ? 'none' : 'block';
+            el.style.display = isAdmin ? 'block' : 'none';
         });
+
+        // Clase para ajustes visuales globales si fuese necesario
+        document.body.classList.toggle('role-readonly', isConvenido);
 
     };
 
@@ -337,7 +340,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tertiaryAddBtn = document.getElementById('tertiary-add-btn');
         const cleanTasksBtn = document.getElementById('clean-tasks-btn');
 
-        if (meta.addButtonEnabled) {
+        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+
+        if (meta.addButtonEnabled && !isConvenido) {
             addBtn.classList.remove('hidden');
             const btnText = addBtn.querySelector('.btn-text');
             if (btnText) btnText.textContent = meta.addButtonLabel;
@@ -347,7 +352,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (addBtnMobile) addBtnMobile.classList.add('hidden');
         }
 
-        if (meta.secondaryButtonEnabled) {
+        if (meta.secondaryButtonEnabled && !isConvenido) {
             secondaryAddBtn.classList.remove('hidden');
             secondaryAddBtn.querySelector('span').textContent = meta.secondaryButtonLabel;
             
@@ -1707,20 +1712,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
-                    <div class="space-y-3">
-                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                        <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                            ${users ? users.filter(u => u.id !== currentUser.id).map(u => `
-                                <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                    <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                    <div class="flex-1">
-                                        <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
-                                        <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
-                                    </div>
-                                </label>
-                            `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                    ${(users && db.userRole !== 'TECNICO CLUB CONVENIDO') ? `
+                        <div class="space-y-3">
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                            <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                                ${users.filter(u => u.id !== currentUser.id).map(u => `
+                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <div class="flex-1">
+                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
+                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
+                                        </div>
+                                    </label>
+                                `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                            </div>
                         </div>
-                    </div>
+                    ` : ''}
 
                     <div class="flex gap-4 mt-8">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
@@ -2736,20 +2743,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
 
                         <!-- Panel de Compartir -->
-                        <div class="space-y-3">
-                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                                ${users ? users.filter(u => u.id !== currentUser.id).map(u => `
-                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                        <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                        <div class="flex-1">
-                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
-                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
-                                        </div>
-                                    </label>
-                                `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                        ${(users && db.userRole !== 'TECNICO CLUB CONVENIDO') ? `
+                            <div class="space-y-3">
+                                <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                                    ${users.filter(u => u.id !== currentUser.id).map(u => `
+                                        <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                            <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                            <div class="flex-1">
+                                                <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
+                                                <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
+                                            </div>
+                                        </label>
+                                    `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                                </div>
                             </div>
-                        </div>
+                        ` : ''}
 
                         <div class="flex gap-4 mt-6">
                             <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
