@@ -666,8 +666,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.lucide) {
             setTimeout(() => {
                 lucide.createIcons();
-                // Refuerzo extra: si hay algún botón de borrar, nos aseguramos de que se vea
-                console.log("Iconos de Lucide refrescados");
             }, 100);
         }
     }
@@ -677,15 +675,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tasks = await db.getAll('tareas');
         const sessions = await db.getAll('sesiones');
         const teams = await db.getAll('equipos');
+        const convocatorias = await db.getAll('convocatorias');
         const players = await db.getAll('jugadores');
-
-        // Logic for task distribution chart
-        const categories = {};
-        tasks.forEach(t => {
-            categories[t.category] = (categories[t.category] || 0) + 1;
-        });
-        const totalTasks = tasks.length || 1;
-
+ 
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                 <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
@@ -736,29 +728,91 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             </div>
                         `).join('')}
-                        ${teams.length === 0 ? '<p class="text-xs text-slate-400 italic text-center">No hay datos de asistencia disponibles.</p>' : ''}
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm overflow-hidden h-[450px] flex flex-col">
                     <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                        <i data-lucide="pie-chart" class="w-5 h-5 text-indigo-600"></i>
-                        Estructura de Contenidos (Tareas)
+                        <i data-lucide="brain-circuit" class="w-5 h-5 text-indigo-600"></i>
+                        Metodología y Contenidos por Equipo
                     </h3>
-                    <div class="grid grid-cols-1 gap-4">
-                        ${Object.entries(categories).map(([cat, count]) => {
-                            const pct = Math.round((count / totalTasks) * 100);
+                    <div class="space-y-8 flex-1 overflow-y-auto custom-scrollbar pr-2">
+                        ${teams.map(team => {
+                            const teamSessions = sessions.filter(s => s.equipoid == team.id);
+                            const teamConvocatorias = convocatorias.filter(c => c.equipoid == team.id);
+                            const taskIds = teamSessions.flatMap(s => s.taskids || []);
+                            const taskObjects = tasks.filter(t => taskIds.includes(t.id.toString()));
+                            
+                            // Analisis de convocatorias compartidas
+                            const sessionPlayersIds = [...new Set(teamSessions.flatMap(s => s.playerids || []))];
+                            const tournamentPlayersIds = [...new Set(teamConvocatorias.flatMap(c => c.playerids || []))];
+                            const commonPlayers = tournamentPlayersIds.filter(id => sessionPlayersIds.includes(id));
+                            const onlyTourney = tournamentPlayersIds.filter(id => !sessionPlayersIds.includes(id));
+
+                            const typeCounts = {};
+                            taskObjects.forEach(t => {
+                                typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
+                            });
+                            const totalTasks = taskObjects.length || 1;
+
                             return `
-                                <div class="flex items-center gap-4">
-                                    <div class="w-24 text-[10px] font-black text-slate-400 uppercase truncate">${cat}</div>
-                                    <div class="flex-1 h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                                        <div class="h-full bg-indigo-500 rounded-full transition-all duration-700" style="width: ${pct}%"></div>
+                                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100/50">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                                            <span class="text-sm font-black text-slate-800 uppercase tracking-widest">${team.nombre}</span>
+                                        </div>
                                     </div>
-                                    <div class="w-10 text-xs font-bold text-indigo-600 text-right">${pct}%</div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                        <div class="space-y-3">
+                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">METODOLOGÍA (% DE TRABAJO)</p>
+                                            <div class="space-y-2">
+                                                ${Object.entries(typeCounts).map(([type, count]) => {
+                                                    const pct = Math.round((count / totalTasks) * 100);
+                                                    return `
+                                                        <div class="flex items-center gap-3">
+                                                            <div class="flex-1 h-2 bg-white rounded-full overflow-hidden border border-slate-200">
+                                                                <div class="h-full bg-indigo-500 rounded-full" style="width: ${pct}%"></div>
+                                                            </div>
+                                                            <div class="w-24 flex justify-between items-center">
+                                                                <span class="text-[9px] font-black text-slate-700">${pct}%</span>
+                                                                <span class="text-[8px] font-bold text-slate-400 uppercase truncate ml-2">${type}</span>
+                                                            </div>
+                                                        </div>
+                                                    `;
+                                                }).join('') || '<p class="text-[9px] text-slate-400 italic">Sin datos registrados</p>'}
+                                            </div>
+                                        </div>
+                                        <div class="space-y-3">
+                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">ANÁLISIS DE CONVOCATORIA</p>
+                                            <div class="space-y-3">
+                                                <div class="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100">
+                                                    <span class="text-[9px] font-bold text-slate-500 uppercase">Núcleo Competición</span>
+                                                    <span class="text-xs font-black text-emerald-600">${commonPlayers.length}</span>
+                                                </div>
+                                                <div class="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100">
+                                                    <span class="text-[9px] font-bold text-slate-500 uppercase">Refuerzos Torneo</span>
+                                                    <span class="text-xs font-black text-amber-600">${onlyTourney.length}</span>
+                                                </div>
+                                                <div class="text-[8px] text-slate-400 italic">
+                                                    ${commonPlayers.length > 0 ? `Comparten el ${Math.round((commonPlayers.length / (tournamentPlayersIds.length || 1)) * 100)}% de los jugadores en ambos eventos.` : 'Inicia torneos para comparar continuidad.'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3 pt-4 border-t border-slate-200/50">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">HISTORIAL DE SESIONES</p>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            ${[...new Set(taskObjects.map(t => t.name))].slice(0, 8).map(name => `
+                                                <span class="px-2 py-1 bg-white text-[9px] font-bold text-slate-500 rounded-xl border border-slate-100 shadow-sm">${name}</span>
+                                            `).join('') || '<span class="text-[10px] text-slate-400 italic">Pendiente de ejecución</span>'}
+                                        </div>
+                                    </div>
                                 </div>
                             `;
                         }).join('')}
-                        ${Object.keys(categories).length === 0 ? '<p class="text-xs text-slate-400 italic text-center p-4">Carga tareas para ver su distribución.</p>' : ''}
                     </div>
                 </div>
             </div>
@@ -770,9 +824,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                          <div class="relative z-10">
                              <h4 class="font-bold text-xl mb-1">${sessions[0].titulo}</h4>
                              <p class="text-blue-100 text-sm flex items-center gap-2">
-                                <i data-lucide="calendar" class="w-4 h-4"></i> ${sessions[0].fecha} 
-                                <span class="opacity-30">|</span> 
-                                <i data-lucide="users" class="w-4 h-4"></i> ${sessions[0].equiponombre || 'Equipo'}
+                                 <i data-lucide="calendar" class="w-4 h-4"></i> ${sessions[0].fecha} 
+                                 <span class="opacity-30">|</span> 
+                                 <i data-lucide="users" class="w-4 h-4"></i> ${sessions[0].equiponombre || 'Equipo'}
                              </p>
                          </div>
                          <i data-lucide="zap" class="absolute right-[-20px] bottom-[-20px] w-32 h-32 text-white/10 -rotate-12 group-hover:rotate-0 transition-transform duration-700"></i>
@@ -1688,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             ${e.escudo ? `<img src="${e.escudo}" class="w-14 h-14 object-contain rounded-xl">` : `<div class="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
                             <div>
                                 <h4 class="font-bold text-slate-800">${e.nombre}</h4>
-                                <p class="text-xs text-slate-500">${e.anionacimiento || 'Año no def.'}</p>
+                                <p class="text-xs text-slate-500">${e.categoria || 'Año no def.'}</p>
                             </div>
                         </div>
                         <div class="space-y-4 mb-6">
@@ -1745,9 +1799,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento (Categoría)</label>
-                             <select id="edit-team-year-input" name="anionacimiento" class="w-full p-3 border rounded-xl bg-white" required>
+                             <select id="edit-team-year-input" name="categoria" class="w-full p-3 border rounded-xl bg-white" required>
                                 <option value="">Seleccionar año...</option>
-                                ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}" ${team.anionacimiento == y ? 'selected' : ''}>${y}</option>`).join('')}
+                                ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}" ${team.categoria == y ? 'selected' : ''}>${y}</option>`).join('')}
                              </select>
                         </div>
                         <div class="col-span-2">
@@ -1844,7 +1898,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="flex justify-between items-center mb-8">
                     <div>
                         <h3 class="text-2xl font-bold text-slate-800">${team.nombre}</h3>
-                        <p class="text-slate-500">${team.anionacimiento || 'Año no def.'}</p>
+                        <p class="text-slate-500">${team.categoria || 'Año no def.'}</p>
                     </div>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
@@ -2357,7 +2411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div class="col-span-2">
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento (Categoría)</label>
-                                <select id="new-team-year-input" name="anionacimiento" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100" required>
+                                <select id="new-team-year-input" name="categoria" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100" required>
                                     <option value="">Seleccionar año...</option>
                                     ${[2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018].map(y => `<option value="${y}">${y}</option>`).join('')}
                                 </select>
