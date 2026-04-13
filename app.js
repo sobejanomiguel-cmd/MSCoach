@@ -423,7 +423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     espacio: taskData['ESPACIO'] || taskData['SPACE'] || '',
                                     duration: parseInt(taskData['TIEMPO TOTAL'] || taskData['TIME'] || taskData['DURATION']) || 15,
                                     material: taskData['MATERIAL'] || '',
-                                    video: taskData['VIDEO_DRIVE'] || taskData['VIDEO'] || '',
+                                    video: taskData['VIDEO DRIVE ID'] || taskData['VIDEO_DRIVE'] || taskData['VIDEO'] || '',
                                     series: taskData['SERIES'] || '',
                                     tiempoSeries: taskData['TIEMPO SERIES'] || taskData['TIME SERIES'] || ''
                                 });
@@ -471,8 +471,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                             const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
                             const teams = await db.getAll('equipos');
+                            const existingPlayers = await db.getAll('jugadores');
+                            const existingPlayerNames = new Set(existingPlayers.map(p => p.nombre?.toLowerCase()));
 
                             let importedCount = 0;
+                            let skippedCount = 0;
                             for (let i = 1; i < lines.length; i++) {
                                 const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
@@ -495,13 +498,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     nivel: data['NIVEL'] || 3
                                 };
 
-                                if (newPlayer.nombre) {
-                                    await db.add('jugadores', newPlayer);
-                                    importedCount++;
+                                if (!newPlayer.nombre || existingPlayerNames.has(newPlayer.nombre.toLowerCase())) {
+                                    skippedCount++;
+                                    continue;
                                 }
+
+                                await db.add('jugadores', newPlayer);
+                                importedCount++;
+                                existingPlayerNames.add(newPlayer.nombre.toLowerCase());
                             }
 
-                            window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores correctamente.`, 'success');
+                            window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores nuevos. ` + (skippedCount > 0 ? `${skippedCount} saltados por ya existir.` : ''), 'success');
                             window.switchView('jugadores');
                         };
                         reader.readAsText(file);
@@ -526,8 +533,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
                             const teams = await db.getAll('equipos');
                             const players = await db.getAll('jugadores');
+                            const existingConvs = await db.getAll('convocatorias');
+                            const existingConvKeys = new Set(existingConvs.map(c => `${c.nombre?.toLowerCase()}|${c.fecha}`));
 
                             let importedCount = 0;
+                            let skippedCount = 0;
                             for (let i = 1; i < lines.length; i++) {
                                 const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
@@ -555,13 +565,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     playerids: foundPlayerIds
                                 };
 
-                                if (convData.nombre) {
-                                    await supabaseClient.from('convocatorias').insert(convData);
-                                    importedCount++;
+                                const key = `${convData.nombre?.toLowerCase()}|${convData.fecha}`;
+                                if (!convData.nombre || existingConvKeys.has(key)) {
+                                    skippedCount++;
+                                    continue;
                                 }
+
+                                await supabaseClient.from('convocatorias').insert(convData);
+                                importedCount++;
+                                existingConvKeys.add(key);
                             }
 
-                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias correctamente.`, 'success');
+                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias nuevas. ` + (skippedCount > 0 ? `${skippedCount} saltadas por ya existir.` : ''), 'success');
                             window.switchView('convocatorias');
                         };
                         reader.readAsText(file);
@@ -582,7 +597,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const lines = text.split('\n').filter(line => line.trim() !== '');
                             if (lines.length < 2) return;
                             const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            const existingTeams = await db.getAll('equipos');
+                            const existingTeamNames = new Set(existingTeams.map(e => e.nombre?.toLowerCase()));
+
                             let importedCount = 0;
+                            let skippedCount = 0;
                             for (let i = 1; i < lines.length; i++) {
                                 const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
@@ -594,12 +613,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     escudo: null,
                                     jugadorescount: 0
                                 };
-                                if (newTeam.nombre) {
-                                    await db.add('equipos', newTeam);
-                                    importedCount++;
+                                if (!newTeam.nombre || existingTeamNames.has(newTeam.nombre.toLowerCase())) {
+                                    skippedCount++;
+                                    continue;
                                 }
+                                await db.add('equipos', newTeam);
+                                importedCount++;
+                                existingTeamNames.add(newTeam.nombre.toLowerCase());
                             }
-                            window.customAlert('Importación Exitosa', `${importedCount} equipos creados.`, 'success');
+                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} equipos nuevos. ` + (skippedCount > 0 ? `${skippedCount} saltados por ya existir.` : ''), 'success');
                             window.switchView('equipos');
                         };
                         reader.readAsText(file);
@@ -1147,10 +1169,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase tracking-tighter">${t.type || 'FÚTBOL'}</span>
                                 <span class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded uppercase tracking-tighter">${t.categoria || 'ETAPA'}</span>
                                 <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded tracking-tighter">${t.duration} min</span>
+                                ${t.video ? `<span class="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded uppercase tracking-tighter flex items-center gap-1"><i data-lucide="video" class="w-2.5 h-2.5"></i> VIDEO</span>` : ''}
                             </div>
                             <h4 class="font-bold text-slate-800 mb-2 group-hover:text-blue-600 transition-colors">${t.name}</h4>
                             <p class="text-xs text-slate-500 line-clamp-2 flex-1">${t.description || ''}</p>
-                            <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end">
+                            <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end gap-2">
+                                ${t.video ? `
+                                    <button onclick="event.stopPropagation(); window.open('${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}', '_blank')" class="p-2 text-blue-500 hover:text-blue-700 transition-all" title="Ver Video">
+                                        <i data-lucide="play-circle" class="w-4 h-4"></i>
+                                    </button>
+                                ` : ''}
                                 <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-red-400 hover:text-red-600 transition-all">
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
@@ -1249,6 +1277,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div>
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Variantes (Opcional)</label>
                              <textarea name="variantes" class="w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-blue-100">${task.variantes || ''}</textarea>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">ID / Enlace Video (Drive/Youtube)</label>
+                             <input name="video" value="${task.video || ''}" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" placeholder="ID o enlace al video">
                         </div>
                         <div class="col-span-2 text-center p-6 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50 group hover:border-blue-200 transition-all cursor-pointer relative overflow-hidden">
                              <input type="file" id="edit-task-image-input" accept="image/*" class="hidden">
