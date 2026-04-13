@@ -1835,6 +1835,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
         const { data: users } = await supabaseClient.from('profiles').select('*');
+        const { data: convs } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false });
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         
         const isEdit = sessionData !== null;
@@ -1921,7 +1922,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <option value="TODOS">TODOS LOS TIPOS</option>
                                             ${TASK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
                                         </select>
-                                        <select name="task-slot-${num}" id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
+                                        <select id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
                                             <option value="">Seleccionar ejercicio...</option>
                                             ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num-1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}
                                         </select>
@@ -1932,7 +1933,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-slate-400 uppercase mb-4">Convocatoria de Jugadores</label>
+                        <div class="flex justify-between items-center mb-4">
+                            <label class="block text-xs font-bold text-slate-400 uppercase">Convocatoria de Jugadores</label>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest">Vincular:</span>
+                                <select id="session-modal-conv-select" class="p-2 bg-slate-100 border-none rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 ring-blue-100 min-w-[150px]">
+                                    <option value="">-- MODO MANUAL --</option>
+                                    ${convs ? convs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha})</option>`).join('') : ''}
+                                </select>
+                            </div>
+                        </div>
                         <div id="session-modal-players-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
                             <p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Selecciona un equipo para cargar jugadores</p>
                         </div>
@@ -1997,6 +2007,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         teamSelect.onchange = updatePlayers;
         if (session.equipoid) updatePlayers();
 
+        // Convocatoria linking
+        const convSelect = document.getElementById('session-modal-conv-select');
+        convSelect.onchange = () => {
+            const opt = convSelect.selectedOptions[0];
+            if (!opt || !opt.value) return;
+            try {
+                const playerIds = JSON.parse(opt.dataset.players);
+                const checkboxes = playersList.querySelectorAll('input[name="playerids"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = playerIds.includes(cb.value) || playerIds.includes(parseInt(cb.value));
+                });
+            } catch(e) { console.error("Error parsing conv players:", e); }
+        };
+
         lucide.createIcons();
         modalOverlay.classList.add('active');
 
@@ -2005,6 +2029,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             if (data.id) data.id = parseInt(data.id);
+            data.ciclo = data.ciclo ? parseInt(data.ciclo) : null;
+            data.numSesion = data.numSesion ? parseInt(data.numSesion) : null;
+            if (data.equipoid) data.equipoid = parseInt(data.equipoid);
             data.sharedWith = formData.getAll('sharedWith'); 
             data.createdBy = currentUser.id;
             
@@ -2057,6 +2084,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sessionTasks = (session.taskids || []).map(id => allTasks.find(t => t.id == id)).filter(Boolean);
         const sessionPlayers = allPlayers.filter(p => session.playerids && session.playerids.includes(p.id.toString()));
         
+        const allMaterials = sessionTasks.map(t => t.material || '').join(',').split(',').map(m => m.trim()).filter(m => m !== '');
+        const uniqueMaterialList = [...new Set(allMaterials)].join(', ') || 'Estándar';
+
         const printDiv = document.createElement('div');
         printDiv.className = 'print-view bg-white p-12 fixed inset-0 z-[200] overflow-y-auto';
         printDiv.innerHTML = `
@@ -2064,7 +2094,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 @media print {
                     body * { visibility: hidden; }
                     .print-view, .print-view * { visibility: visible; }
-                    .print-view { position: absolute; left: 0; top: 0; width: 100%; height: auto; display: block !important; }
+                    .print-view { position: absolute; left: 0; top: 0; width: 100%; height: auto; display: block !important; background: white !important; }
+                    .print-view .breakout-page { 
+                        page-break-inside: avoid; 
+                        break-inside: avoid; 
+                        margin-bottom: 30px; 
+                    }
+                    .print-view .force-page-break { 
+                        page-break-after: always; 
+                        break-after: page; 
+                    }
                 }
             </style>
             <div class="max-w-[900px] mx-auto">
@@ -2079,89 +2118,102 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </header>
 
-                <div class="grid grid-cols-4 gap-4 mb-10">
-                    <div class="bg-slate-50 p-4 rounded-2xl">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Sesión</p>
-                        <p class="text-sm font-bold text-slate-800">${session.nombre || session.titulo}</p>
-                    </div>
-                    <div class="bg-slate-50 p-4 rounded-2xl">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Fecha / Hora</p>
-                        <p class="text-sm font-bold text-slate-800">${session.fecha} | ${session.hora}</p>
+                <div class="grid grid-cols-5 gap-3 mb-10">
+                    <div class="bg-slate-50 p-4 rounded-2xl col-span-2">
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Sesión / Objetivo</p>
+                        <p class="text-sm font-bold text-slate-800 uppercase tracking-tight">${session.titulo || session.nombre}</p>
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl">
                         <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Equipo</p>
-                        <p class="text-sm font-bold text-slate-800">${session.equiponombre}</p>
+                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.equiponombre}</p>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-2xl">
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Fecha / Hora</p>
+                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.fecha} | ${session.hora}</p>
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-500">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Convocatoria</p>
-                        <p class="text-sm font-bold text-slate-800">${sessionPlayers.length} Jugadores</p>
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Lugar</p>
+                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.lugar || '--'}</p>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-3 gap-8 mb-12">
                     <div class="col-span-2">
                         <h3 class="text-xs font-black text-slate-400 uppercase mb-3 tracking-widest flex items-center gap-2">
-                            <i data-lucide="target" class="w-4 h-4"></i> Objetivos Técnicos
+                            <i data-lucide="target" class="w-4 h-4"></i> Información Adicional
                         </h3>
-                        <p class="text-slate-700 font-medium bg-slate-50 p-6 rounded-3xl border border-slate-100">${session.objetivos || 'Pendiente de definir...'}</p>
+                        <div class="flex items-center gap-6 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Plantilla</p>
+                                <p class="text-sm font-bold text-slate-800">${sessionPlayers.length} Convocados</p>
+                            </div>
+                            <div class="w-px h-8 bg-slate-200"></div>
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Material Necesario</p>
+                                <p class="text-sm font-bold text-slate-800">${uniqueMaterialList}</p>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <h3 class="text-xs font-black text-slate-400 uppercase mb-3 tracking-widest flex items-center gap-2">
-                            <i data-lucide="package" class="w-4 h-4"></i> Material
+                            <i data-lucide="layers" class="w-4 h-4"></i> Bloques
                         </h3>
-                        <p class="text-slate-700 font-medium bg-slate-50 p-6 rounded-3xl border border-slate-100">${session.material || 'Estándar'}</p>
+                        <p class="text-2xl font-black text-blue-600 bg-blue-50 p-5 rounded-3xl border border-blue-100 text-center">${sessionTasks.length} <span class="text-[10px] text-blue-400 uppercase tracking-widest ml-1">Tareas</span></p>
                     </div>
                 </div>
 
-                <div class="space-y-8">
-                    <h3 class="text-sm font-black text-slate-800 uppercase border-b-2 border-slate-100 pb-2 mb-6">Bloques de Entrenamiento</h3>
+                <div class="space-y-12">
+                    <h3 class="text-sm font-black text-slate-800 uppercase border-b-2 border-slate-100 pb-2 mb-6">Desglose de Tareas</h3>
                     ${sessionTasks.map((t, idx) => {
                         const meta = session.tasksMeta ? session.tasksMeta[t.id] : { time: t.duration, groups: 'General' };
+                        const isForcedBreak = (idx === 2 && sessionTasks.length > 3);
                         return `
-                        <div class="flex gap-8 items-start breakout-page">
-                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black shrink-0 shadow-lg shadow-blue-500/20">${idx + 1}</div>
-                            <div class="flex-1">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h4 class="text-lg font-bold text-slate-800 uppercase">${t.name}</h4>
-                                    <div class="flex gap-3">
-                                        <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${t.category}</span>
-                                        <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${meta.time || t.duration} MIN</span>
+                        <div class="space-y-6 breakout-page bg-white ${isForcedBreak ? 'force-page-break' : ''}">
+                            <div class="flex justify-between items-center border-l-4 border-blue-600 pl-4 py-1">
+                                <div>
+                                    <h4 class="text-xl font-black text-slate-800 uppercase tracking-tight">${idx + 1}. ${t.name}</h4>
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${t.type || 'Ejercicio'}</p>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="text-right">
+                                        <p class="text-[9px] font-black text-slate-300 uppercase">Tiempo</p>
+                                        <p class="text-sm font-black text-slate-800 uppercase">${meta.time || t.duration} MIN</p>
                                     </div>
                                 </div>
-                                <div class="grid grid-cols-1 gap-6">
-                                    ${t.imagen ? `<img src="${t.imagen}" class="w-full rounded-2xl border border-slate-200">` : ''}
-                                    <div class="bg-white p-6 rounded-2xl border-2 border-dashed border-slate-100 space-y-4">
-                                        <div class="flex justify-between items-center gap-6">
-                                            <div class="flex-1">
-                                                <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Descripción Técnica</p>
-                                                <p class="text-xs text-slate-600 leading-relaxed font-medium">${t.description}</p>
-                                            </div>
-                                            <div class="w-1/3 bg-blue-50 rounded-xl p-4 border border-blue-100 text-center">
-                                                <p class="text-[9px] font-black text-blue-400 uppercase mb-1">Espacio</p>
-                                                <p class="text-xs font-black text-blue-700 uppercase">${meta.space || 'General'}</p>
-                                            </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-6">
+                                ${t.image ? `<img src="${t.image}" class="w-full rounded-3xl border border-slate-100 object-cover shadow-sm">` : ''}
+                                <div class="bg-slate-50/50 p-8 rounded-[2.5rem] border border-slate-100">
+                                    <div class="grid grid-cols-1 gap-8">
+                                        <div>
+                                            <p class="text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Explicación y Variantes</p>
+                                            <p class="text-sm text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">${t.description || 'Sin descripción detallada.'}</p>
                                         </div>
-                                        ${meta.playerGroups && Object.keys(meta.playerGroups).length > 0 ? `
-                                            <div class="pt-4 border-t border-slate-50">
-                                                <p class="text-[9px] font-black text-slate-400 uppercase mb-2">Grupos de Trabajo</p>
-                                                <div class="flex flex-wrap gap-2">
-                                                    ${Object.entries(meta.playerGroups).map(([pid, g]) => {
-                                                        const p = allPlayers.find(pl => pl.id == pid);
-                                                        const colorClass = g === 'Azul' ? 'bg-blue-600 text-white' : g === 'Rojo' ? 'bg-red-600 text-white' : 'bg-yellow-400 text-slate-900';
-                                                        return `<span class="${colorClass} px-2 py-1 rounded-lg text-[10px] font-black uppercase shadow-sm"> ${p ? p.nombre : 'Jugador'}</span>`;
-                                                    }).join('')}
+                                        ${t.video ? `
+                                            <div class="pt-6 border-t border-slate-100 flex items-center justify-between">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center">
+                                                        <i data-lucide="play-circle" class="w-5 h-5"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Recurso Audiovisual</p>
+                                                        <a href="${t.video}" class="text-xs font-bold text-blue-600 hover:underline">${t.video}</a>
+                                                    </div>
                                                 </div>
+                                                <div class="px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Video Disponible</div>
                                             </div>
                                         ` : ''}
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    `;}).join('<hr class="my-10 border-slate-100">')}
+                    `;}).join('<div class="h-20"></div>')}
                 </div>
 
-                <footer class="mt-20 pt-8 border-t border-slate-100 text-center">
-                    <p class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">MS Coach Professional Tool • www.mscoach.com</p>
+                <footer class="mt-24 pt-8 border-t border-slate-100 text-center">
+                    <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-2">MS Coach Professional Tactical Reporting • Planificación de Alto Rendimiento</p>
+                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Generado automáticamente el ${new Date().toLocaleDateString('es-ES')} • Todos los derechos reservados</p>
                 </footer>
             </div>
         `;
