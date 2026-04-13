@@ -2930,7 +2930,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 // Handle sharedWith
                 data.sharedWith = formData.getAll('sharedWith');
-                // Removed createdBy assignment to avoid schema cache errors in tables like 'eventos'
+                const currentUser = (await supabaseClient.auth.getUser()).data.user;
+                data.createdBy = currentUser.id;
 
                 await db.add(viewId, data);
 
