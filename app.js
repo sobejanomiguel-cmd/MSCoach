@@ -1615,7 +1615,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
-        const { data: users } = await supabaseClient.from('profiles').select('id, full_name, role');
+        const { data: users } = await supabaseClient.from('profiles').select('*');
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         
         const isEdit = sessionData !== null;
@@ -2690,7 +2690,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 update();
             }, 0);
         } else if (currentView === 'eventos') {
-            const { data: users } = await supabaseClient.from('profiles').select('id, full_name, role');
+            const { data: users } = await supabaseClient.from('profiles').select('*');
             const currentUser = (await supabaseClient.auth.getUser()).data.user;
 
             modalHtml = `
@@ -2717,7 +2717,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
                                         <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
                                         <div class="flex-1">
-                                            <p class="text-[10px] font-bold text-slate-700">${u.full_name}</p>
+                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
                                             <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
                                         </div>
                                     </label>
@@ -2906,6 +2906,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function renderPerfil(container) {
         const { data: { user } } = await supabaseClient.auth.getUser();
         const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+        
+        // Handle name fallback
+        const currentName = profile.name || profile.full_name || profile.nombre || '';
 
         container.innerHTML = `
             <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4">
@@ -2916,14 +2919,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex flex-col md:flex-row gap-8 items-center md:items-start relative z-10">
                         <div class="relative group">
                             <div class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-blue-500/30 group-hover:rotate-6 transition-all duration-500">
-                                ${profile.full_name ? profile.full_name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                                ${currentName ? currentName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
                             </div>
                             <button class="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl border border-slate-100 shadow-md text-slate-400 hover:text-blue-600 transition-all">
                                 <i data-lucide="camera" class="w-4 h-4"></i>
                             </button>
                         </div>
                         <div class="flex-1 text-center md:text-left">
-                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">${profile.full_name || 'Sin Nombre'}</h3>
+                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">${currentName || 'Sin Nombre'}</h3>
                             <div class="flex flex-wrap justify-center md:justify-start gap-3 items-center">
                                 <span class="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest">${profile.role}</span>
                                 <span class="text-sm text-slate-400 font-medium">${user.email}</span>
@@ -2941,7 +2944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <form id="profile-form" class="space-y-4">
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
-                                <input name="full_name" value="${profile.full_name || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all font-bold text-slate-700" placeholder="Tu nombre...">
+                                <input name="full_name" value="${currentName}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all font-bold text-slate-700" placeholder="Tu nombre...">
                             </div>
                             <button type="submit" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-lg hover:bg-black transition-all uppercase tracking-widest text-xs">Guardar Cambios</button>
                         </form>
@@ -2973,7 +2976,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('profile-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const { error } = await supabaseClient.from('profiles').update({ full_name: formData.get('full_name') }).eq('id', user.id);
+            const { error } = await supabaseClient.from('profiles').update({ name: formData.get('full_name') }).eq('id', user.id);
             if (!error) {
                 window.customAlert('Éxito', 'Perfil actualizado', 'success');
                 window.renderView('perfil');
@@ -3010,7 +3013,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <tbody>
                         ${profiles.map(u => `
                             <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                <td class="px-6 py-4 font-bold text-slate-800">${u.full_name || 'Sin Nombre'}</td>
+                                <td class="px-6 py-4 font-bold text-slate-800">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</td>
                                 <td class="px-6 py-4 text-xs text-slate-500">${u.email}</td>
                                 <td class="px-6 py-4">
                                     <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
@@ -3027,8 +3030,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </tbody>
                 </table>
             </div>
-            <p class="mt-6 text-xs text-slate-400 italic px-6">* Solo los usuarios con rol ELITE pueden editar perfiles de Staff y gestionar permisos globales.</p>
+            <p class="mt-6 text-xs text-slate-400 italic px-6 mb-12">* Solo los usuarios con rol ELITE pueden editar perfiles de Staff y gestionar permisos globales.</p>
+            
+            <div class="pt-8 border-t border-slate-100">
+                <div class="flex items-center gap-3 mb-6 px-4">
+                    <div class="p-2 bg-blue-50 rounded-xl text-blue-600"><i data-lucide="user-cog" class="w-5 h-5"></i></div>
+                    <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Tu Configuración Personal</h3>
+                </div>
+                <div id="self-profile-container"></div>
+            </div>
         `;
+
+        // Render profile card below
+        const selfContainer = container.querySelector('#self-profile-container');
+        if (selfContainer) await renderPerfil(selfContainer);
     }
 
     window.toggleUserRole = async (userId, currentRole) => {
@@ -3049,7 +3064,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="space-y-4">
                         <div>
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
-                            <input name="full_name" value="${profile.full_name || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
+                            <input name="full_name" value="${profile.name || profile.full_name || profile.nombre || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
                         </div>
                         <div>
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Rol de Permisos</label>
@@ -3078,10 +3093,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('admin-user-edit-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const { error } = await supabaseClient.from('profiles').update({
-                full_name: formData.get('full_name'),
-                role: formData.get('role')
-            }).eq('id', userId);
+            const updateData = { role: formData.get('role') };
+            const nameToSet = formData.get('full_name');
+            // Intentar actualizar ambos campos por si acaso
+            updateData.name = nameToSet;
+            
+            const { error } = await supabaseClient.from('profiles').update(updateData).eq('id', userId);
             
             if (!error) {
                 window.customAlert('Éxito', 'Staff actualizado correctamente', 'success');
