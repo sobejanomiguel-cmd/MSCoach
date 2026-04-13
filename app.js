@@ -1831,7 +1831,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.renderSessionModal = async (sessionData = null) => {
-        const teams = await db.getAll('equipos');
+        const teams = (await db.getAll('equipos')).sort((a,b) => (parseInt(a.categoria)||999)- (parseInt(b.categoria)||999));
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
         const { data: users } = await supabaseClient.from('profiles').select('*');
@@ -1891,6 +1891,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Ciclo</label>
                             <select name="ciclo" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-blue-100 outline-none">
+                                <option value="" ${!session.ciclo ? 'selected' : ''}>Ninguno</option>
                                 ${[1,2,3,4,5,6].map(num => `<option value="${num}" ${session.ciclo == num ? 'selected' : ''}>Ciclo ${num}</option>`).join('')}
                             </select>
                         </div>
@@ -1899,6 +1900,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <select name="numSesion" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-blue-100 outline-none">
                                 ${Array.from({length: 25}, (_, i) => i + 1).map(num => `<option value="${num}" ${session.numSesion == num ? 'selected' : ''}>Sesión ${num}</option>`).join('')}
                             </select>
+                        </div>
+                        <div class="col-span-2">
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar / Campo</label>
+                             <input name="lugar" value="${session.lugar || ''}" placeholder="Ej: Campo 1, Zubieta..." class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100">
                         </div>
                     </div>
                     
