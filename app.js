@@ -1123,50 +1123,101 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.viewEvento = async (id) => {
         const events = await db.getAll('eventos');
         const evento = events.find(e => e.id == id);
-        
+        const { data: users } = await supabaseClient.from('profiles').select('*');
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
+        const isAdminOrTecnico = db.userRole !== 'TECNICO CLUB CONVENIDO';
+
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-6">
                     <h3 class="text-2xl font-bold text-slate-800">Editar Evento</h3>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
-                <form id="edit-evento-form" class="space-y-4">
+                <form id="edit-evento-form" class="space-y-6">
                     <input type="hidden" name="id" value="${evento.id}">
                     <div class="grid grid-cols-2 gap-4">
                          <div class="col-span-2">
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Evento</label>
                              <input name="nombre" value="${evento.nombre}" class="w-full p-3 border rounded-xl font-bold text-lg" required>
                          </div>
-                         <select name="categoria" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-amber-100 outline-none">
-                             <option ${evento.categoria === 'Reunión' ? 'selected' : ''}>Reunión</option>
-                             <option ${evento.categoria === 'Partido' ? 'selected' : ''}>Partido</option>
-                             <option ${evento.categoria === 'Scouting' ? 'selected' : ''}>Scouting</option>
-                             <option ${evento.categoria === 'Mandar convocatorias' ? 'selected' : ''}>Mandar convocatorias</option>
-                             <option ${evento.categoria === 'Preparar equipos torneos' ? 'selected' : ''}>Preparar equipos torneos</option>
-                             <option ${evento.categoria === 'Preparar jugadores ciclos/sesiones' ? 'selected' : ''}>Preparar jugadores ciclos/sesiones</option>
-                             <option ${evento.categoria === 'Otro' ? 'selected' : ''}>Otro</option>
-                         </select>
-                         <input name="hora" type="time" value="${evento.hora}" class="w-full p-3 border rounded-xl" required>
-                         <input name="fecha" type="date" value="${evento.fecha}" class="w-full p-3 border rounded-xl" required>
-                         <input name="lugar" value="${evento.lugar || ''}" placeholder="Lugar" class="w-full p-3 border rounded-xl">
-                         <textarea name="notas" class="col-span-2 w-full p-3 border rounded-xl h-24" placeholder="Notas...">${evento.notas || ''}</textarea>
+                         <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Categoría</label>
+                            <select name="categoria" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-amber-100 outline-none">
+                                <option ${evento.categoria === 'Reunión' ? 'selected' : ''}>Reunión</option>
+                                <option ${evento.categoria === 'Partido' ? 'selected' : ''}>Partido</option>
+                                <option ${evento.categoria === 'Scouting' ? 'selected' : ''}>Scouting</option>
+                                <option ${evento.categoria === 'Mandar convocatorias' ? 'selected' : ''}>Mandar convocatorias</option>
+                                <option ${evento.categoria === 'Preparar equipos torneos' ? 'selected' : ''}>Preparar equipos torneos</option>
+                                <option ${evento.categoria === 'Preparar jugadores ciclos/sesiones' ? 'selected' : ''}>Preparar jugadores ciclos/sesiones</option>
+                                <option ${evento.categoria === 'Otro' ? 'selected' : ''}>Otro</option>
+                            </select>
+                         </div>
+                         <div class="grid grid-cols-2 gap-2 col-span-1">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
+                                <input name="fecha" type="date" value="${evento.fecha}" class="w-full p-3 border rounded-xl" required>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
+                                <input name="hora" type="time" value="${evento.hora}" class="w-full p-3 border rounded-xl" required>
+                            </div>
+                         </div>
+                         <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
+                            <input name="lugar" value="${evento.lugar || ''}" placeholder="Lugar" class="w-full p-3 border rounded-xl">
+                         </div>
+                         <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Notas</label>
+                            <textarea name="notas" class="w-full p-3 border rounded-xl h-24" placeholder="Notas...">${evento.notas || ''}</textarea>
+                         </div>
                     </div>
+
+                    <!-- Panel de Compartir (solo si puede editar) -->
+                    ${(users && isAdminOrTecnico) ? `
+                        <div class="space-y-3">
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                                ${users.filter(u => u.id !== currentUser.id).map(u => `
+                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="sharedWith" value="${u.id}" ${evento.sharedWith && evento.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <div class="flex-1">
+                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
+                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
+                                        </div>
+                                    </label>
+                                `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                            </div>
+                        </div>
+                    ` : ''}
+
                     <div class="flex gap-4 mt-6">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all">Guardar Evento</button>
+                        <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all uppercase tracking-widest">Guardar Cambios</button>
                     </div>
                 </form>
             </div>
         `;
         lucide.createIcons(); modalOverlay.classList.add('active');
         
-        
         document.getElementById('edit-evento-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
-            data.id = parseInt(data.id);
-            await db.update('eventos', data);
-            closeModal();
-            window.switchView('eventos');
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.sharedWith = formData.getAll('sharedWith');
+            
+            const eventId = parseInt(data.id);
+            delete data.id;
+
+            const { error } = await supabaseClient.from('eventos').update(data).eq('id', eventId);
+            
+            if (error) {
+                window.customAlert('Error', 'No se pudo guardar: ' + error.message, 'error');
+            } else {
+                window.customAlert('Éxito', 'Evento actualizado', 'success');
+                closeModal();
+                if (window.refreshNotifications) window.refreshNotifications();
+                window.switchView(currentView || 'calendario');
+            }
         });
     };
 
