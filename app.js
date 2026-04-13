@@ -507,34 +507,49 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const lines = text.split('\n').filter(line => line.trim() !== '');
                             if (lines.length < 2) return;
 
-                            const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            const firstLine = lines[0];
+                            const delimiter = firstLine.includes(';') ? ';' : ',';
+                            const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                            
                             const teams = await db.getAll('equipos');
                             const existingPlayers = await db.getAll('jugadores');
-                            const existingPlayerNames = new Set(existingPlayers.map(p => p.nombre?.toLowerCase()));
 
                             let importedCount = 0;
                             let updatedCount = 0;
                             let skippedCount = 0;
+                            
+                            const loadingAlert = document.createElement('div');
+                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                            loadingAlert.innerHTML = `
+                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando ${lines.length - 1} Jugadores...</p>
+                                </div>
+                            `;
+                            document.body.appendChild(loadingAlert);
+
+                            const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+                            const playersToInsert = [];
+
                             for (let i = 1; i < lines.length; i++) {
-                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
 
                                 const data = {};
                                 headers.forEach((h, idx) => data[h] = row[idx]);
 
-                                // Find team ID by name
                                 const teamName = data['EQUIPO'];
                                 const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
 
                                 const csvPlayer = {
                                     nombre: data['NOMBRE'],
-                                    equipoid: team ? team.id : '',
+                                    equipoid: team ? team.id.toString() : '',
                                     dorsal: data['DORSAL'] || '',
                                     posicion: data['POSICION'] || 'PO',
                                     equipoConvenido: data['CLUB CONVENIDO'] || data['EQUIPO CONVENIDO'] || '',
                                     anionacimiento: data['AÑO NACIMIENTO'] || '',
                                     fechanacimiento: data['FECHA NACIMIENTO'] || '',
-                                    nivel: data['NIVEL'] || 3
+                                    nivel: parseInt(data['NIVEL']) || 3
                                 };
 
                                 if (!csvPlayer.nombre) continue;
@@ -557,7 +572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         }
                                     }
                                     if (needsUpdate) {
-                                        await db.update('jugadores', existing);
+                                        await supabaseClient.from('jugadores').update(existing).eq('id', existing.id);
                                         updatedCount++;
                                     } else {
                                         skippedCount++;
@@ -565,11 +580,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     continue;
                                 }
 
-                                await db.add('jugadores', csvPlayer);
-                                importedCount++;
+                                playersToInsert.push(csvPlayer);
                             }
 
-                            window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores nuevos y completado ${updatedCount} existentes. ` + (skippedCount > 0 ? `${skippedCount} sin cambios.` : ''), 'success');
+                            if (playersToInsert.length > 0) {
+                                const { error } = await supabaseClient.from('jugadores').insert(playersToInsert);
+                                if (error) {
+                                    console.error("Bulk Insert error:", error);
+                                } else {
+                                    importedCount = playersToInsert.length;
+                                }
+                            }
+
+                            loadingAlert.remove();
+                            window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores nuevos y actualizado ${updatedCount}.`, 'success');
                             window.switchView('jugadores');
                         };
                         reader.readAsText(file);
@@ -591,30 +615,41 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const lines = text.split('\n').filter(line => line.trim() !== '');
                             if (lines.length < 2) return;
 
-                            const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            const firstLine = lines[0];
+                            const delimiter = firstLine.includes(';') ? ';' : ',';
+                            const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                            
                             const teams = await db.getAll('equipos');
                             const players = await db.getAll('jugadores');
                             const existingConvs = await db.getAll('convocatorias');
-                            const existingConvKeys = new Set(existingConvs.map(c => `${c.nombre?.toLowerCase()}|${c.fecha}`));
 
                             let importedCount = 0;
                             let updatedCount = 0;
-                            let skippedCount = 0;
+                            
+                            const loadingAlert = document.createElement('div');
+                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                            loadingAlert.innerHTML = `
+                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando Convocatorias...</p>
+                                </div>
+                            `;
+                            document.body.appendChild(loadingAlert);
+
+                            const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+
                             for (let i = 1; i < lines.length; i++) {
-                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
 
                                 const data = {};
                                 headers.forEach((h, idx) => data[h] = row[idx]);
-
-                                // Buscar el equipo por nombre
+                                
                                 const teamName = data['EQUIPO'];
                                 const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
-
-                                // Buscar jugadores por nombre (separados por ;)
                                 const playerNames = (data['JUGADORES'] || '').split(';').map(n => n.trim().toLowerCase());
                                 const foundPlayerIds = players
-                                    .filter(p => playerNames.includes(p.nombre.toLowerCase()))
+                                    .filter(p => playerNames.includes(p.nombre?.toLowerCase()))
                                     .map(p => p.id.toString());
 
                                 const convData = {
@@ -623,36 +658,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     fecha: data['FECHA'],
                                     hora: data['HORA'],
                                     lugar: data['LUGAR'],
-                                    equipoid: team ? team.id : null,
+                                    equipoid: team ? team.id.toString() : null,
                                     playerids: foundPlayerIds
                                 };
 
-                                const key = `${convData.nombre?.toLowerCase()}|${convData.fecha}`;
+                                if (!convData.nombre || !convData.fecha) continue;
+
+                                const key = `${convData.nombre.toLowerCase()}|${convData.fecha}`;
                                 const existing = existingConvs.find(c => `${c.nombre?.toLowerCase()}|${c.fecha}` === key);
 
                                 if (existing) {
-                                    let needsUpdate = false;
-                                    if (!existing.hora && convData.hora) { existing.hora = convData.hora; needsUpdate = true; }
-                                    if (!existing.lugar && convData.lugar) { existing.lugar = convData.lugar; needsUpdate = true; }
-                                    if ((!existing.playerids || existing.playerids.length === 0) && convData.playerids.length > 0) {
-                                        existing.playerids = convData.playerids;
-                                        needsUpdate = true;
-                                    }
-
-                                    if (needsUpdate) {
-                                        await supabaseClient.from('convocatorias').update(existing).eq('id', existing.id);
-                                        updatedCount++;
-                                    } else {
-                                        skippedCount++;
-                                    }
-                                    continue;
+                                    await supabaseClient.from('convocatorias').update(convData).eq('id', existing.id);
+                                    updatedCount++;
+                                } else {
+                                    await supabaseClient.from('convocatorias').insert(convData);
+                                    importedCount++;
                                 }
-
-                                await supabaseClient.from('convocatorias').insert(convData);
-                                importedCount++;
                             }
-
-                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias y actualizado ${updatedCount}. ` + (skippedCount > 0 ? `${skippedCount} sin cambios.` : ''), 'success');
+                            loadingAlert.remove();
+                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias y actualizado ${updatedCount}.`, 'success');
                             window.switchView('convocatorias');
                         };
                         reader.readAsText(file);
@@ -672,18 +696,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const text = re.target.result;
                             const lines = text.split('\n').filter(line => line.trim() !== '');
                             if (lines.length < 2) return;
-                            const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+                            const firstLine = lines[0];
+                            const delimiter = firstLine.includes(';') ? ';' : ',';
+                            const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                            
                             const existingTeams = await db.getAll('equipos');
-                            const existingTeamNames = new Set(existingTeams.map(e => e.nombre?.toLowerCase()));
 
                             let importedCount = 0;
                             let updatedCount = 0;
-                            let skippedCount = 0;
+                            
+                            const loadingAlert = document.createElement('div');
+                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                            loadingAlert.innerHTML = `
+                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando Equipos...</p>
+                                </div>
+                            `;
+                            document.body.appendChild(loadingAlert);
+
+                            const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+
                             for (let i = 1; i < lines.length; i++) {
-                                const row = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^"|"$/g, ''));
+                                const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
                                 if (row.length < headers.length) continue;
+
                                 const data = {};
                                 headers.forEach((h, idx) => data[h] = row[idx]);
+
                                 const newTeam = {
                                     nombre: data['NOMBRE'],
                                     categoria: data['CATEGORIA'] || 'Sénior',
@@ -694,19 +734,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                 const existing = existingTeams.find(e => e.nombre?.toLowerCase() === newTeam.nombre.toLowerCase());
                                 if (existing) {
-                                    if (!existing.categoria && newTeam.categoria) {
-                                        existing.categoria = newTeam.categoria;
-                                        await db.update('equipos', existing);
-                                        updatedCount++;
-                                    } else {
-                                        skippedCount++;
-                                    }
-                                    continue;
+                                    await supabaseClient.from('equipos').update(newTeam).eq('id', existing.id);
+                                    updatedCount++;
+                                } else {
+                                    await supabaseClient.from('equipos').insert(newTeam);
+                                    importedCount++;
                                 }
-                                await db.add('equipos', newTeam);
-                                importedCount++;
                             }
-                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} equipos y actualizado ${updatedCount}. ` + (skippedCount > 0 ? `${skippedCount} sin cambios.` : ''), 'success');
+                            loadingAlert.remove();
+                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} equipos y actualizado ${updatedCount}.`, 'success');
                             window.switchView('equipos');
                         };
                         reader.readAsText(file);
