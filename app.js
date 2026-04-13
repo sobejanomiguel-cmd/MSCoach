@@ -111,12 +111,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const applyRoleRestrictions = () => {
-        const isTecnico = db.userRole === 'TECNICO';
-        document.body.classList.toggle('role-tecnico', isTecnico);
+        const isRestricted = db.userRole !== 'ELITE';
+        document.body.classList.toggle('role-tecnico', isRestricted);
         
         // Hide Admin Sections
         document.querySelectorAll('.admin-only').forEach(el => {
-            el.style.display = isTecnico ? 'none' : 'block';
+            el.style.display = isRestricted ? 'none' : 'block';
         });
 
     };
@@ -2711,6 +2711,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold">
                                         <option>TECNICO</option>
                                         <option>ELITE</option>
+                                        <option>TECNICO CLUB CONVENIDO</option>
                                     </select>
                                 </div>
                              </div>
@@ -3226,6 +3227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
                                 <option ${profile.role === 'TECNICO' ? 'selected' : ''}>TECNICO</option>
                                 <option ${profile.role === 'ELITE' ? 'selected' : ''}>ELITE</option>
+                                <option ${profile.role === 'TECNICO CLUB CONVENIDO' ? 'selected' : ''}>TECNICO CLUB CONVENIDO</option>
                             </select>
                         </div>
                     </div>
