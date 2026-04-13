@@ -535,6 +535,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const idxAnio = mapHeader(['AÑO NACIMIENTO', 'AÑO', 'YEAR', 'NACIMIENTO', 'AÑO NAC', 'NAC']);
                                 const idxNivel = mapHeader(['NIVEL', 'LEVEL', 'RANKING', 'VALORACION']);
                                 const idxNotas = mapHeader(['NOTAS', 'COMENTARIOS', 'SCOUT', 'NOTES', 'OBSERVACIONES']);
+                                const idxSexo = mapHeader(['SEXO', 'GÉNERO', 'GENERO', 'GENDER', 'SEX']);
+
 
                                 if (idxNombre === -1) {
                                     window.customAlert('Formato no reconocido', 'No hemos encontrado la columna "NOMBRE". Revisa que la primera fila tenga los títulos de las columnas.', 'error');
@@ -558,28 +560,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                     const csvPlayer = {
                                         nombre: row[idxNombre] || '',
-                                        equipoid: team ? team.id : null,
-                                        dorsal: idxDorsal !== -1 && row[idxDorsal] !== '' ? parseInt(row[idxDorsal]) : null,
-                                        posicion: idxPosicion !== -1 ? (row[idxPosicion] || 'PO') : 'PO',
-                                        equipoConvenido: idxConvenido !== -1 ? row[idxConvenido] : '',
-                                        anionacimiento: idxAnio !== -1 && row[idxAnio] !== '' ? parseInt(row[idxAnio]) : null,
-                                        nivel: idxNivel !== -1 && row[idxNivel] !== '' ? parseInt(row[idxNivel]) : 3,
-                                        notas: idxNotas !== -1 ? row[idxNotas] : ''
+                                        nivel: 3 // Todos a 3 estrellas por defecto
                                     };
+
+                                    if (team) {
+                                        csvPlayer.equipoid = team.id;
+                                    }
+
+                                    // Only add properties if found in CSV to avoid "column not found" errors in Supabase
+                                    if (idxDorsal !== -1 && row[idxDorsal] !== '') csvPlayer.dorsal = parseInt(row[idxDorsal]);
+                                    if (idxPosicion !== -1) csvPlayer.posicion = row[idxPosicion] || 'PO';
+                                    if (idxConvenido !== -1) csvPlayer.equipoConvenido = row[idxConvenido];
+                                    if (idxAnio !== -1 && row[idxAnio] !== '') csvPlayer.anionacimiento = parseInt(row[idxAnio]);
+                                    if (idxNivel !== -1 && row[idxNivel] !== '') csvPlayer.nivel = parseInt(row[idxNivel]);
+                                    if (idxSexo !== -1) csvPlayer.sexo = row[idxSexo];
+                                    if (idxNotas !== -1) csvPlayer.notas = row[idxNotas];
+
+
 
                                     const existing = existingPlayers.find(p => p.nombre.toLowerCase() === csvPlayer.nombre.toLowerCase());
                                     
                                     if (existing) {
                                         let needsUpdate = false;
-                                        // Update fields if they are currently empty but present in CSV
                                         if (!existing.equipoid && csvPlayer.equipoid) { existing.equipoid = csvPlayer.equipoid; needsUpdate = true; }
                                         if (!existing.equipoConvenido && csvPlayer.equipoConvenido) { existing.equipoConvenido = csvPlayer.equipoConvenido; needsUpdate = true; }
                                         if (!existing.notas && csvPlayer.notas) { existing.notas = csvPlayer.notas; needsUpdate = true; }
+                                        if (!existing.sexo && csvPlayer.sexo) { existing.sexo = csvPlayer.sexo; needsUpdate = true; }
                                         
                                         if (needsUpdate) {
                                             await db.update('jugadores', existing);
                                             updatedCount++;
                                         }
+
                                     } else {
                                         playersToInsert.push(csvPlayer);
                                     }
@@ -2295,7 +2307,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <option value="ACD">ACD (Delantero Dcho)</option>
                             <option value="ACZ">ACZ (Delantero Izq)</option>
                         </select>
+                        <select name="sexo" class="w-full p-3 border rounded-xl bg-white outline-none">
+                            <option value="Masculino">Masculino</option>
+                            <option value="Femenino">Femenino</option>
+                            <option value="Otro">Otro</option>
+                        </select>
                         <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24"></textarea>
+
                     </div>
                     <div class="flex gap-4 mt-6">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
@@ -2350,6 +2368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                 <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sexo</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club Convenido</th>
@@ -2374,6 +2393,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                         <td class="px-6 py-5">
                                             <span class="text-[11px] font-bold text-slate-500">${team ? team.nombre : '<span class="text-slate-300 italic">No asignado</span>'}</span>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase">${p.sexo || '--'}</span>
                                         </td>
                                         <td class="px-6 py-5">
                                             <span class="px-3 py-1.5 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tight">${p.posicion || '--'}</span>
@@ -2485,6 +2507,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Sexo / Género</label>
+                            <select name="sexo" class="w-full p-3 border rounded-xl bg-white outline-none">
+                                <option value="Masculino" ${player.sexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
+                                <option value="Femenino" ${player.sexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
+                                <option value="Otro" ${player.sexo === 'Otro' ? 'selected' : ''}>Otro</option>
+                            </select>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posición</label>
