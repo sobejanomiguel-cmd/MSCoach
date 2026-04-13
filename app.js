@@ -503,98 +503,105 @@ document.addEventListener('DOMContentLoaded', async () => {
                         
                         const reader = new FileReader();
                         reader.onload = async (re) => {
-                            const text = re.target.result;
-                            const lines = text.split('\n').filter(line => line.trim() !== '');
-                            if (lines.length < 2) return;
-
-                            const firstLine = lines[0];
-                            const delimiter = firstLine.includes(';') ? ';' : ',';
-                            const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                            
-                            const teams = await db.getAll('equipos');
-                            const existingPlayers = await db.getAll('jugadores');
-
-                            let importedCount = 0;
-                            let updatedCount = 0;
-                            let skippedCount = 0;
-                            
                             const loadingAlert = document.createElement('div');
                             loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
                             loadingAlert.innerHTML = `
                                 <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
                                     <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando ${lines.length - 1} Jugadores...</p>
+                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Analizando archivo...</p>
                                 </div>
                             `;
                             document.body.appendChild(loadingAlert);
 
-                            const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
-                            const playersToInsert = [];
+                            try {
+                                const text = re.target.result;
+                                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                                if (lines.length < 2) {
+                                    window.customAlert('Archivo sin datos', 'El archivo parece estar vacío o solo contiene la cabecera.', 'warning');
+                                    return;
+                                }
 
-                            for (let i = 1; i < lines.length; i++) {
-                                const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
-                                if (row.length < headers.length) continue;
+                                const firstLine = lines[0];
+                                const delimiter = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
+                                const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                                
+                                const mapHeader = (possibleNames) => headers.findIndex(h => possibleNames.includes(h));
 
-                                const data = {};
-                                headers.forEach((h, idx) => data[h] = row[idx]);
+                                const idxNombre = mapHeader(['NOMBRE', 'JUGADOR', 'PLAYER', 'FULL NAME', 'NOMBRES', 'NAME', 'APELLIDOS', 'NOMBRE COMPLETO']);
+                                const idxEquipo = mapHeader(['EQUIPO', 'TEAM', 'CLUB', 'SQUAD', 'GRUPO']);
+                                const idxDorsal = mapHeader(['DORSAL', 'NÚMERO', 'NUMBER', '#', 'DOR', 'NUMERO']);
+                                const idxPosicion = mapHeader(['POSICION', 'POSICIÓN', 'POSITION', 'POS', 'PUESTO', 'DEMARCACION']);
+                                const idxConvenido = mapHeader(['CLUB CONVENIDO', 'EQUIPO CONVENIDO', 'CONVENIDO', 'ORIGEN', 'CONVENIO']);
+                                const idxAnio = mapHeader(['AÑO NACIMIENTO', 'AÑO', 'YEAR', 'NACIMIENTO', 'AÑO NAC', 'NAC']);
+                                const idxNivel = mapHeader(['NIVEL', 'LEVEL', 'RANKING', 'VALORACION']);
+                                const idxNotas = mapHeader(['NOTAS', 'COMENTARIOS', 'SCOUT', 'NOTES', 'OBSERVACIONES']);
 
-                                const teamName = data['EQUIPO'];
-                                const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
+                                if (idxNombre === -1) {
+                                    window.customAlert('Formato no reconocido', 'No hemos encontrado la columna "NOMBRE". Revisa que la primera fila tenga los títulos de las columnas.', 'error');
+                                    return;
+                                }
 
-                                const csvPlayer = {
-                                    nombre: data['NOMBRE'],
-                                    equipoid: team ? team.id.toString() : '',
-                                    dorsal: data['DORSAL'] || '',
-                                    posicion: data['POSICION'] || 'PO',
-                                    equipoConvenido: data['CLUB CONVENIDO'] || data['EQUIPO CONVENIDO'] || '',
-                                    anionacimiento: data['AÑO NACIMIENTO'] || '',
-                                    fechanacimiento: data['FECHA NACIMIENTO'] || '',
-                                    nivel: parseInt(data['NIVEL']) || 3
-                                };
+                                const teams = await db.getAll('equipos');
+                                const existingPlayers = await db.getAll('jugadores');
 
-                                if (!csvPlayer.nombre) continue;
+                                let updatedCount = 0;
+                                let errors = 0;
+                                const playersToInsert = [];
+                                const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
 
-                                const existing = existingPlayers.find(p => p.nombre.toLowerCase() === csvPlayer.nombre.toLowerCase());
+                                for (let i = 1; i < lines.length; i++) {
+                                    const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
+                                    if (!row[idxNombre]) continue;
 
-                                if (existing) {
-                                    let needsUpdate = false;
-                                    const fieldsMapping = {
-                                        equipoid: csvPlayer.equipoid,
-                                        dorsal: csvPlayer.dorsal,
-                                        equipoConvenido: csvPlayer.equipoConvenido,
-                                        anionacimiento: csvPlayer.anionacimiento,
-                                        fechanacimiento: csvPlayer.fechanacimiento
+                                    const teamName = idxEquipo !== -1 ? row[idxEquipo] : '';
+                                    const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
+
+                                    const csvPlayer = {
+                                        nombre: row[idxNombre] || '',
+                                        equipoid: team ? team.id : null,
+                                        dorsal: idxDorsal !== -1 && row[idxDorsal] !== '' ? parseInt(row[idxDorsal]) : null,
+                                        posicion: idxPosicion !== -1 ? (row[idxPosicion] || 'PO') : 'PO',
+                                        equipoConvenido: idxConvenido !== -1 ? row[idxConvenido] : '',
+                                        anionacimiento: idxAnio !== -1 && row[idxAnio] !== '' ? parseInt(row[idxAnio]) : null,
+                                        nivel: idxNivel !== -1 && row[idxNivel] !== '' ? parseInt(row[idxNivel]) : 3,
+                                        notas: idxNotas !== -1 ? row[idxNotas] : ''
                                     };
-                                    for (const [key, val] of Object.entries(fieldsMapping)) {
-                                        if (!existing[key] && val) {
-                                            existing[key] = val;
-                                            needsUpdate = true;
+
+                                    const existing = existingPlayers.find(p => p.nombre.toLowerCase() === csvPlayer.nombre.toLowerCase());
+                                    
+                                    if (existing) {
+                                        let needsUpdate = false;
+                                        // Update fields if they are currently empty but present in CSV
+                                        if (!existing.equipoid && csvPlayer.equipoid) { existing.equipoid = csvPlayer.equipoid; needsUpdate = true; }
+                                        if (!existing.equipoConvenido && csvPlayer.equipoConvenido) { existing.equipoConvenido = csvPlayer.equipoConvenido; needsUpdate = true; }
+                                        if (!existing.notas && csvPlayer.notas) { existing.notas = csvPlayer.notas; needsUpdate = true; }
+                                        
+                                        if (needsUpdate) {
+                                            await db.update('jugadores', existing);
+                                            updatedCount++;
                                         }
-                                    }
-                                    if (needsUpdate) {
-                                        await supabaseClient.from('jugadores').update(existing).eq('id', existing.id);
-                                        updatedCount++;
                                     } else {
-                                        skippedCount++;
+                                        playersToInsert.push(csvPlayer);
                                     }
-                                    continue;
                                 }
 
-                                playersToInsert.push(csvPlayer);
-                            }
-
-                            if (playersToInsert.length > 0) {
-                                const { error } = await supabaseClient.from('jugadores').insert(playersToInsert);
-                                if (error) {
-                                    console.error("Bulk Insert error:", error);
-                                } else {
-                                    importedCount = playersToInsert.length;
+                                if (playersToInsert.length > 0) {
+                                    const { error } = await supabaseClient.from('jugadores').insert(playersToInsert);
+                                    if (error) throw error;
                                 }
-                            }
 
-                            loadingAlert.remove();
-                            window.customAlert('Importación Completada', `Se han importado ${importedCount} jugadores nuevos y actualizado ${updatedCount}.`, 'success');
-                            window.switchView('jugadores');
+                                // Refresh local cache
+                                await db.getAll('jugadores');
+                                
+                                window.customAlert('¡Importación Lista!', `Se han añadido ${playersToInsert.length} nuevos y actualizado ${updatedCount} existentes.`, 'success');
+                                window.switchView('jugadores');
+
+                            } catch (err) {
+                                console.error("CSV Import Error:", err);
+                                window.customAlert('Error de Importación', 'Ha ocurrido un fallo al procesar el archivo: ' + err.message, 'error');
+                            } finally {
+                                loadingAlert.remove();
+                            }
                         };
                         reader.readAsText(file);
                     };
@@ -1265,6 +1272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS' };
+    let playerFilters = { search: '', team: 'TODOS' };
     let tasksPerPage = 12;
     let currentTaskPage = 1;
 
@@ -2276,66 +2284,135 @@ document.addEventListener('DOMContentLoaded', async () => {
         
     };
 
-    async function renderJugadores(container) { // fix
-        const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
-        
-        container.innerHTML = `
-            <div class="flex justify-between items-center mb-8">
-                <div class="flex gap-4">
-                    <div class="relative">
-                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" placeholder="Buscar por nombre..." class="pl-10 pr-4 py-2 border rounded-xl text-sm w-64 bg-white">
+    async function renderJugadores(container) {
+        try {
+            let players = await db.getAll('jugadores');
+            const teams = await db.getAll('equipos');
+            
+            // Safety check for search state
+            if (!playerFilters) playerFilters = { search: '', team: 'TODOS' };
+
+            // Filter players based on state with safety checks
+            const filteredPlayers = (players || []).filter(p => {
+                const nombre = p.nombre || '';
+                const matchesSearch = nombre.toLowerCase().includes(playerFilters.search.toLowerCase());
+                const matchesTeam = playerFilters.team === 'TODOS' || p.equipoid == playerFilters.team;
+                return matchesSearch && matchesTeam;
+            });
+
+            container.innerHTML = `
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                    <div class="flex flex-1 gap-3 w-full">
+                        <div class="relative flex-1 max-w-md">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" id="player-search-input" value="${playerFilters.search}" placeholder="Buscar jugador por nombre o apellido..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
+                        </div>
+                        <select id="player-team-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm min-w-[180px]">
+                            <option value="TODOS">TODOS LOS EQUIPOS</option>
+                            ${teams.map(t => `<option value="${t.id}" ${playerFilters.team == t.id ? 'selected' : ''}>${t.nombre.toUpperCase()}</option>`).join('')}
+                            <option value="" ${playerFilters.team === '' ? 'selected' : ''}>SIN EQUIPO</option>
+                        </select>
                     </div>
                 </div>
-            </div>
 
-            <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                <table class="w-full">
-                    <thead>
-                        <tr class="bg-slate-50 text-left border-b border-slate-100">
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Equipo</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Posición</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Club Convenido</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-center">Dorsal</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${players.map(p => {
-                            const team = teams.find(t => t.id == p.equipoid);
-                            return `
-                                <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer group">
-                                    <td class="px-6 py-4 flex items-center gap-3">
-                                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs group-hover:bg-blue-600 group-hover:text-white transition-all">${p.nombre.substring(0,1)}</div>
-                                        <span class="text-sm font-bold text-slate-800">${p.nombre}</span>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span class="text-xs font-bold text-slate-500">${team ? team.nombre : 'Sin equipo'}</span>
-                                    </td>
-                                    <td class="px-6 py-4">
-                                        <span class="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-600 uppercase">${p.posicion || '--'}</span>
-                                    </td>
-                                    <td class="px-6 py-4 truncate max-w-[120px]">
-                                        <span class="text-[10px] font-bold text-blue-500 uppercase">${p.equipoConvenido || '--'}</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-center">
-                                         <span class="text-sm font-black text-slate-400">${p.dorsal || '--'}</span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        <div class="flex justify-end gap-1">
-                                            <button class="p-2 text-slate-400 group-hover:text-blue-600 transition-colors"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                            <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-400 hover:text-red-600 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('') || '<tr><td colspan="5" class="p-20 text-center text-slate-400 italic">No hay jugadores registrados en la base de datos global.</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
-        `;
+                <div class="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-slate-50/50 text-left border-b border-slate-100">
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club Convenido</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filteredPlayers.map(p => {
+                                const team = teams.find(t => t.id == p.equipoid);
+                                return `
+                                    <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
+                                        <td class="px-8 py-5 flex items-center gap-4">
+                                            ${p.foto ? 
+                                                `<img src="${p.foto}" class="w-10 h-10 rounded-2xl object-cover shadow-sm group-hover:scale-105 transition-all">` :
+                                                `<div class="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">${(p.nombre || 'J').substring(0,1)}</div>`
+                                            }
+                                            <div>
+                                                <p class="text-sm font-bold text-slate-800">${p.nombre || 'Sin nombre'}</p>
+                                                <p class="text-[9px] font-black text-slate-300 uppercase tracking-widest">${p.anionacimiento || 'Año n/d'}</p>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <span class="text-[11px] font-bold text-slate-500">${team ? team.nombre : '<span class="text-slate-300 italic">No asignado</span>'}</span>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <span class="px-3 py-1.5 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600 uppercase tracking-tight">${p.posicion || '--'}</span>
+                                        </td>
+                                        <td class="px-6 py-5 text-center">
+                                            <span class="text-[11px] font-bold text-slate-400">${p.anionacimiento || '--'}</span>
+                                        </td>
+                                        <td class="px-6 py-5 truncate max-w-[150px]">
+                                            <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${p.equipoConvenido || '--'}</span>
+                                        </td>
+                                        <td class="px-6 py-5 text-center">
+                                            <div class="flex items-center justify-center gap-0.5 text-amber-400">
+                                                ${Array(parseInt(p.nivel) || 1).fill('★').join('')}
+                                            </div>
+                                        </td>
+                                        </td>
+                                        <td class="px-8 py-5 text-right">
+                                            <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-red-300 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('') || `<tr><td colspan="6" class="py-24 text-center">
+                                <div class="flex flex-col items-center gap-2 opacity-40">
+                                    <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+                                        <i data-lucide="users" class="w-10 h-10 text-slate-300"></i>
+                                    </div>
+                                    <p class="text-sm font-bold text-slate-800">No hay jugadores disponibles</p>
+                                    <p class="text-xs text-slate-400 max-w-[280px] mx-auto mb-6">Usa el botón <span class="text-blue-600 font-bold uppercase tracking-widest">"Importar CSV"</span> arriba a la derecha para cargar tu lista de jugadores masivamente.</p>
+                                    <div class="flex gap-3">
+                                        <button onclick="document.getElementById('add-btn').click()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Crear Manual</button>
+                                    </div>
+                                </div>
+                            </td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            if (window.lucide) lucide.createIcons();
+
+            // Listeners for filters
+            const searchInput = document.getElementById('player-search-input');
+            const teamFilter = document.getElementById('player-team-filter');
+
+            let searchTimer;
+            if (searchInput) {
+                searchInput.oninput = (e) => {
+                    playerFilters.search = e.target.value;
+                    clearTimeout(searchTimer);
+                    searchTimer = setTimeout(() => {
+                        renderJugadores(container);
+                    }, 300);
+                };
+            }
+
+            if (teamFilter) {
+                teamFilter.onchange = (e) => {
+                    playerFilters.team = e.target.value;
+                    renderJugadores(container);
+                };
+            }
+        } catch (err) {
+            console.error("Error rendering players:", err);
+            container.innerHTML = `<div class="p-20 text-center text-red-500 font-bold">Error al cargar jugadores: ${err.message}</div>`;
+        }
     }
 
     window.viewPlayer = async (id) => {
@@ -2347,7 +2424,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
                     <div class="flex items-center gap-4">
-                        <div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-blue-500/20">${player.nombre.substring(0,1)}</div>
+                        <div class="relative group cursor-pointer" onclick="document.getElementById('player-photo-input').click()">
+                            ${player.foto ? 
+                                `<img src="${player.foto}" class="w-16 h-16 rounded-2xl object-cover shadow-lg border-2 border-white">` :
+                                `<div class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-blue-500/20">${(player.nombre || 'J').substring(0,1)}</div>`
+                            }
+                            <div class="absolute -bottom-1 -right-1 w-6 h-6 bg-white border border-slate-100 rounded-lg flex items-center justify-center shadow-md group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                <i data-lucide="camera" class="w-3 h-3 text-slate-400 group-hover:text-white transition-colors"></i>
+                            </div>
+                            <input type="file" id="player-photo-input" class="hidden" accept="image/*">
+                        </div>
                         <div>
                             <h3 class="text-2xl font-bold text-slate-800">Ficha del Jugador</h3>
                             <p class="text-slate-400 text-sm">ID #${player.id}</p>
@@ -2358,10 +2444,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 <form id="edit-player-form" class="space-y-6">
                     <input type="hidden" name="id" value="${player.id}">
-                    <fieldset ${db.userRole === 'TECNICO' ? 'disabled' : ''} class="grid grid-cols-2 gap-6">
+                    <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre Completo</label>
-                             <input name="nombre" value="${player.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" required>
+                             <input name="nombre" value="${player.nombre || ''}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" required>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
@@ -2370,9 +2456,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                             </select>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Dorsal</label>
-                            <input name="dorsal" type="number" value="${player.dorsal || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="nº">
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posición</label>
@@ -2398,19 +2481,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año Nacimiento</label>
                             <input name="anionacimiento" type="number" value="${player.anionacimiento || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Ej: 2010">
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
-                            <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option value="">Ninguno</option>
-                                <option ${player.equipoConvenido === 'CD BAZTAN KE' ? 'selected' : ''}>CD BAZTAN KE</option>
-                                <option ${player.equipoConvenido === 'BETI GAZTE KJKE' ? 'selected' : ''}>BETI GAZTE KJKE</option>
-                                <option ${player.equipoConvenido === 'GURE TXOKOA KKE' ? 'selected' : ''}>GURE TXOKOA KKE</option>
-                                <option ${player.equipoConvenido === 'CA RIVER EBRO' ? 'selected' : ''}>CA RIVER EBRO</option>
-                                <option ${player.equipoConvenido === 'CALAHORRA FB' ? 'selected' : ''}>CALAHORRA FB</option>
-                                <option ${player.equipoConvenido === 'EF ARNEDO' ? 'selected' : ''}>EF ARNEDO</option>
-                                <option ${player.equipoConvenido === 'EFB ALFARO' ? 'selected' : ''}>EFB ALFARO</option>
-                                <option ${player.equipoConvenido === 'UD BALSAS PICARRAL' ? 'selected' : ''}>UD BALSAS PICARRAL</option>
-                            </select>
+                        <div class="col-span-2">
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club / Entorno Convenido</label>
+                             <input name="equipoConvenido" value="${player.equipoConvenido || ''}" list="convenidos-list" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" placeholder="Ej: CA RIVER EBRO">
+                             <datalist id="convenidos-list">
+                                <option value="CD BAZTAN KE">
+                                <option value="BETI GAZTE KJKE">
+                                <option value="GURE TXOKOA KKE">
+                                <option value="CA RIVER EBRO">
+                                <option value="CALAHORRA FB">
+                                <option value="EF ARNEDO">
+                                <option value="EFB ALFARO">
+                                <option value="UD BALSAS PICARRAL">
+                             </datalist>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nivel (1-5)</label>
@@ -2426,11 +2509,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Notas Técnicas / Scout</label>
                              <textarea name="notas" class="w-full p-4 border rounded-2xl h-32 outline-none focus:ring-2 ring-blue-100" placeholder="Añade comentarios sobre su rendimiento...">${player.notas || ''}</textarea>
                         </div>
-                    </fieldset>
+                    </div>
                     
                     <div class="flex gap-4 mt-6">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                        ${db.userRole === 'ELITE' ? `<button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>` : ''}
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Actualizar Jugador</button>
                     </div>
                 </form>
             </div>
@@ -2438,6 +2521,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         lucide.createIcons(); modalOverlay.classList.add('active');
         
+        // Image upload listener
+        document.getElementById('player-photo-input').onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const loading = document.createElement('div');
+            loading.className = 'absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl';
+            loading.innerHTML = '<div class="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>';
+            e.target.parentElement.appendChild(loading);
+
+            try {
+                const url = await db.uploadImage(file);
+                if (url) {
+                    player.foto = url;
+                    await db.update('jugadores', player);
+                    // Refresh modal
+                    window.viewPlayer(id);
+                }
+            } catch (err) {
+                console.error("Error al subir foto:", err);
+            } finally {
+                loading.remove();
+            }
+        };
         
         document.getElementById('edit-player-form').addEventListener('submit', async (e) => {
             e.preventDefault();
