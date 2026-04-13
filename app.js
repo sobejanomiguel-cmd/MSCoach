@@ -2964,10 +2964,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (!profile) {
-                // Auto-creación definitiva
-                const { data: newProfile } = await supabaseClient.from('profiles').insert([
-                    { id: user.id, email: user.email, role: 'TECNICO', name: user.user_metadata?.full_name || '' }
-                ]).select().maybeSingle();
+                // Auto-creación definitiva con detección de columnas
+                const { data: firstProfile } = await supabaseClient.from('profiles').select('*').limit(1).maybeSingle();
+                const newRow = { id: user.id, email: user.email, role: 'TECNICO' };
+                const initialName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+                
+                if (firstProfile) {
+                    if ('name' in firstProfile) newRow.name = initialName;
+                    if ('full_name' in firstProfile) newRow.full_name = initialName;
+                    if ('nombre' in firstProfile) newRow.nombre = initialName;
+                } else {
+                    // Fallback a 'name' si es el primer registro absoluto
+                    newRow.name = initialName;
+                }
+
+                const { data: newProfile } = await supabaseClient.from('profiles').insert([newRow]).select().maybeSingle();
                 profile = newProfile;
             }
 
@@ -3068,10 +3079,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.querySelector('#profile-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const { error } = await supabaseClient.from('profiles').update({ name: formData.get('full_name') }).eq('id', user.id);
+            const newName = formData.get('full_name');
+
+            // Detección dinámica ultra-robusta de columnas
+            const { data: profileCheck } = await supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            const updatePayload = {};
+            const nameKeys = ['name', 'full_name', 'nombre', 'nombre_completo'];
+            
+            if (profileCheck) {
+                const existingKeys = Object.keys(profileCheck);
+                nameKeys.forEach(key => {
+                    if (existingKeys.includes(key)) updatePayload[key] = newName;
+                });
+            }
+
+            if (Object.keys(updatePayload).length === 0) {
+                // Fallback desesperado: intentar con 'name'
+                updatePayload.name = newName;
+            }
+
+            const { error } = await supabaseClient.from('profiles').update(updatePayload).eq('id', user.id);
+
             if (!error) {
                 window.customAlert('Éxito', 'Perfil actualizado', 'success');
-                window.renderView('perfil');
+                window.switchView('perfil');
+            } else {
+                window.customAlert('Error', error.message, 'error');
             }
         };
 
