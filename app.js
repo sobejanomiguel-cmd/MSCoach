@@ -303,7 +303,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
-        'usuarios': { title: 'Gestión de Staff', subtitle: 'Controla los accesos y roles de tu equipo técnico.', addButtonEnabled: false }
+        'usuarios': { title: 'Gestión de Staff', subtitle: 'Controla los accesos y roles de tu equipo técnico.', addButtonEnabled: false },
+        'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
     };
 
     window.switchView = async (viewId) => {
@@ -761,6 +762,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'convocatorias': await renderConvocatorias(wrapper); break;
             case 'torneos': await renderTorneos(wrapper); break;
             case 'usuarios': await renderUsuarios(wrapper); break;
+            case 'perfil': await renderPerfil(wrapper); break;
         }
         
         contentContainer.innerHTML = '';
@@ -1082,6 +1084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (task) {
             task.completada = !task.completada;
             await db.update('eventos', task);
+            if (window.refreshNotifications) window.refreshNotifications();
             window.switchView(currentView);
         }
     };
@@ -1320,16 +1323,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    window.getTaskVideoEmbed = (video) => {
+        if (!video) return '';
+        let embedUrl = '';
+        
+        if (video.includes('youtube.com/watch?v=')) {
+            const id = video.split('v=')[1].split('&')[0];
+            embedUrl = `https://www.youtube.com/embed/${id}`;
+        } else if (video.includes('youtu.be/')) {
+            const id = video.split('youtu.be/')[1].split('?')[0];
+            embedUrl = `https://www.youtube.com/embed/${id}`;
+        } else if (video.includes('drive.google.com')) {
+            const match = video.match(/\/file\/d\/([^\/]+)/) || video.match(/id=([^\&]+)/);
+            if (match) embedUrl = `https://drive.google.com/file/d/${match[1]}/preview`;
+        } else if (!video.startsWith('http')) {
+            embedUrl = `https://drive.google.com/file/d/${video}/preview`;
+        } else {
+            embedUrl = video;
+        }
+
+        return `<div class="video-container mb-6 overflow-hidden border-4 border-slate-900 shadow-2xl">
+                    <iframe src="${embedUrl}" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                </div>`;
+    };
+
     window.viewTask = async (id) => {
         const tasks = await db.getAll('tareas');
         const task = tasks.find(t => t.id == id);
         
+        const videoEmbed = window.getTaskVideoEmbed(task.video);
+        
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-bold text-slate-800">Editar Tarea</h3>
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Ficha de Tarea</h3>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 group hover:bg-red-50 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
+
+                <div id="video-preview-container">
+                    ${videoEmbed}
+                </div>
+
                 <form id="edit-task-form" class="space-y-4">
                     <input type="hidden" name="id" value="${task.id}">
                     <div class="space-y-4">
@@ -1429,6 +1463,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 reader.readAsDataURL(file);
             }
         });
+
+        // Real-time video preview
+        const videoInput = modalContainer.querySelector('input[name="video"]');
+        if (videoInput) {
+            videoInput.addEventListener('input', (e) => {
+                const val = e.target.value.trim();
+                const container = document.getElementById('video-preview-container');
+                container.innerHTML = window.getTaskVideoEmbed(val);
+            });
+        }
 
         document.getElementById('edit-task-form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1571,6 +1615,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
+        const { data: users } = await supabaseClient.from('profiles').select('id, full_name, role');
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
         
         const isEdit = sessionData !== null;
         const session = sessionData || {
@@ -1582,7 +1628,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             ciclo: 1,
             numSesion: 1,
             taskids: [],
-            playerids: []
+            playerids: [],
+            sharedWith: []
         };
 
         modalContainer.innerHTML = `
@@ -1661,6 +1708,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
+                    <div class="space-y-3">
+                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                        <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                        <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                            ${users ? users.filter(u => u.id !== currentUser.id).map(u => `
+                                <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                    <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                    <div class="flex-1">
+                                        <p class="text-[10px] font-bold text-slate-700">${u.full_name}</p>
+                                        <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
+                                    </div>
+                                </label>
+                            `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                        </div>
+                    </div>
+
                     <div class="flex gap-4 mt-8">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
                         <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">${isEdit ? 'Guardar Cambios' : 'Crear Sesión'}</button>
@@ -1711,6 +1780,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             if (data.id) data.id = parseInt(data.id);
+            data.sharedWith = formData.getAll('sharedWith'); 
+            data.createdBy = currentUser.id;
             
             data.taskids = [];
             for (let i = 1; i <= 6; i++) {
@@ -2457,7 +2528,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (currentView === 'tareas') {
             modalHtml = `
                 <div class="p-8 max-w-2xl w-full mx-auto overflow-y-auto max-h-[80vh]">
-                    <h3 class="text-2xl font-black mb-6 text-slate-800">Nueva Tarea de Entrenamiento</h3>
+                    <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nueva Tarea de Entrenamiento</h3>
+                    <div id="new-task-video-preview"></div>
                     <form id="modal-form" class="space-y-6">
                         <div class="space-y-4">
                             <div>
@@ -2552,6 +2624,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // Logic for preview if needed
                     });
                 }
+                
+                // Real-time video preview
+                const videoInput = modalContainer.querySelector('input[name="video"]');
+                if (videoInput) {
+                    videoInput.addEventListener('input', (e) => {
+                        const val = e.target.value.trim();
+                        const container = document.getElementById('new-task-video-preview');
+                        container.innerHTML = window.getTaskVideoEmbed(val);
+                    });
+                }
             }, 0);
         } else if (currentView === 'equipos') {
             const players = await db.getAll('jugadores');
@@ -2608,10 +2690,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 update();
             }, 0);
         } else if (currentView === 'eventos') {
+            const { data: users } = await supabaseClient.from('profiles').select('id, full_name, role');
+            const currentUser = (await supabaseClient.auth.getUser()).data.user;
+
             modalHtml = `
                 <div class="p-8">
-                    <h3 class="text-2xl font-bold mb-6 text-slate-800">Nuevo Evento de Agenda</h3>
-                    <form id="modal-form" class="space-y-4">
+                    <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nuevo Evento de Agenda</h3>
+                    <form id="modal-form" class="space-y-6">
+                        <!-- Campos principales -->
                         <div class="grid grid-cols-2 gap-4">
                             <input name="nombre" placeholder="Título del evento" class="col-span-2 w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-amber-100" required>
                             <select name="categoria" class="w-full p-3 border rounded-xl bg-white outline-none">
@@ -2622,9 +2708,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <input name="lugar" placeholder="Lugar (Campo, Oficina...)" class="w-full p-3 border rounded-xl">
                             <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-amber-100"></textarea>
                         </div>
+
+                        <!-- Panel de Compartir -->
+                        <div class="space-y-3">
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                                ${users ? users.filter(u => u.id !== currentUser.id).map(u => `
+                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <div class="flex-1">
+                                            <p class="text-[10px] font-bold text-slate-700">${u.full_name}</p>
+                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
+                                        </div>
+                                    </label>
+                                `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                            </div>
+                        </div>
+
                         <div class="flex gap-4 mt-6">
                             <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-bold rounded-2xl shadow-lg shadow-amber-500/20 hover:bg-amber-700 transition-all mt-4">Añadir a la Agenda</button>
+                            <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-black rounded-2xl shadow-lg shadow-amber-500/20 hover:bg-amber-700 transition-all uppercase tracking-widest">Añadir y Compartir</button>
                         </div>
                     </form>
                 </div>
@@ -2782,7 +2885,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     data.equiponombre = t ? t.nombre : 'Equipo';
                 }
 
+                // Handle sharedWith
+                data.sharedWith = formData.getAll('sharedWith');
+                const currentUser = (await supabaseClient.auth.getUser()).data.user;
+                data.createdBy = currentUser.id;
+
                 await db.add(viewId, data);
+
+                if (window.refreshNotifications) window.refreshNotifications();
                 window.customAlert('Éxito', 'Guardado correctamente');
                 closeModal();
                 switchView(viewId);
@@ -2793,43 +2903,131 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    async function renderPerfil(container) {
+        const { data: { user } } = await supabaseClient.auth.getUser();
+        const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+
+        container.innerHTML = `
+            <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-8 opacity-10">
+                        <i data-lucide="user" class="w-32 h-32"></i>
+                    </div>
+                    <div class="flex flex-col md:flex-row gap-8 items-center md:items-start relative z-10">
+                        <div class="relative group">
+                            <div class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-blue-500/30 group-hover:rotate-6 transition-all duration-500">
+                                ${profile.full_name ? profile.full_name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                            </div>
+                            <button class="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl border border-slate-100 shadow-md text-slate-400 hover:text-blue-600 transition-all">
+                                <i data-lucide="camera" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="flex-1 text-center md:text-left">
+                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">${profile.full_name || 'Sin Nombre'}</h3>
+                            <div class="flex flex-wrap justify-center md:justify-start gap-3 items-center">
+                                <span class="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest">${profile.role}</span>
+                                <span class="text-sm text-slate-400 font-medium">${user.email}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-lg space-y-6">
+                        <div class="flex items-center gap-3 mb-2">
+                             <div class="p-2 bg-slate-50 rounded-xl text-slate-400"><i data-lucide="settings-2" class="w-5 h-5"></i></div>
+                             <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight">Datos de Usuario</h4>
+                        </div>
+                        <form id="profile-form" class="space-y-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
+                                <input name="full_name" value="${profile.full_name || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all font-bold text-slate-700" placeholder="Tu nombre...">
+                            </div>
+                            <button type="submit" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-lg hover:bg-black transition-all uppercase tracking-widest text-xs">Guardar Cambios</button>
+                        </form>
+                    </div>
+
+                    <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-lg space-y-6">
+                        <div class="flex items-center gap-3 mb-2">
+                             <div class="p-2 bg-red-50 rounded-xl text-red-400"><i data-lucide="key" class="w-5 h-5"></i></div>
+                             <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight">Seguridad</h4>
+                        </div>
+                        <form id="password-form" class="space-y-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nueva Contraseña</label>
+                                <input name="password" type="password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-red-50 transition-all font-bold text-slate-700" placeholder="••••••••">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Confirmar Contraseña</label>
+                                <input name="confirm_password" type="password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-red-50 transition-all font-bold text-slate-700" placeholder="••••••••">
+                            </div>
+                            <button type="submit" class="w-full py-4 bg-red-600 text-white font-black rounded-2xl shadow-lg shadow-red-500/20 hover:bg-red-700 transition-all uppercase tracking-widest text-xs">Actualizar Contraseña</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+
+        document.getElementById('profile-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const { error } = await supabaseClient.from('profiles').update({ full_name: formData.get('full_name') }).eq('id', user.id);
+            if (!error) {
+                window.customAlert('Éxito', 'Perfil actualizado', 'success');
+                window.renderView('perfil');
+            }
+        };
+
+        document.getElementById('password-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const pass = formData.get('password');
+            if (pass !== formData.get('confirm_password')) {
+                window.customAlert('Error', 'Las contraseñas no coinciden', 'error'); return;
+            }
+            const { error } = await supabaseClient.auth.updateUser({ password: pass });
+            if (!error) window.customAlert('Éxito', 'Contraseña actualizada', 'success');
+        };
+    }
+
     async function renderUsuarios(container) {
         const { data: profiles, error } = await supabaseClient.from('profiles').select('*');
-        if (error) {
-            container.innerHTML = `<p class="p-10 text-red-500">Error cargando usuarios: ${error.message}</p>`;
-            return;
-        }
+        const currentUserRole = db.userRole;
 
         container.innerHTML = `
             <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
                 <table class="w-full">
                     <thead>
                         <tr class="bg-slate-50 text-left border-b border-slate-100">
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email Entrenador</th>
-                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol Actual</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email</th>
+                            <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol</th>
                             <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${profiles.map(u => `
                             <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                <td class="px-6 py-4 font-bold text-slate-800">${u.email}</td>
+                                <td class="px-6 py-4 font-bold text-slate-800">${u.full_name || 'Sin Nombre'}</td>
+                                <td class="px-6 py-4 text-xs text-slate-500">${u.email}</td>
                                 <td class="px-6 py-4">
                                     <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
                                         ${u.role}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 text-right">
-                                    <button onclick="window.toggleUserRole('${u.id}', '${u.role}')" class="px-4 py-2 bg-slate-50 text-slate-600 text-xs font-bold rounded-xl hover:bg-blue-600 hover:text-white transition-all">
-                                        Cambiar a ${u.role === 'ELITE' ? 'TÉCNICO' : 'ELITE'}
-                                    </button>
+                                    ${currentUserRole === 'ELITE' ? `
+                                        <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                    ` : '<span class="text-[10px] text-slate-300 italic">Solo lectura</span>'}
                                 </td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
-            <p class="mt-6 text-xs text-slate-400 italic px-6">* Solo los usuarios con rol ELITE pueden importar datos masivos y borrar registros globales.</p>
+            <p class="mt-6 text-xs text-slate-400 italic px-6">* Solo los usuarios con rol ELITE pueden editar perfiles de Staff y gestionar permisos globales.</p>
         `;
     }
 
@@ -2838,6 +3036,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { error } = await supabaseClient.from('profiles').update({ role: newRole }).eq('id', userId);
         if (error) alert("Error: " + error.message);
         else window.switchView('usuarios');
+    };
+
+    window.editUserAdmin = async (userId) => {
+        const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
+        
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Editar Perfil de Staff</h3>
+                <form id="admin-user-edit-form" class="space-y-6">
+                    <input type="hidden" name="id" value="${profile.id}">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
+                            <input name="full_name" value="${profile.full_name || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Rol de Permisos</label>
+                            <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
+                                <option ${profile.role === 'TECNICO' ? 'selected' : ''}>TECNICO</option>
+                                <option ${profile.role === 'ELITE' ? 'selected' : ''}>ELITE</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                        <p class="text-[10px] text-amber-700 font-bold leading-relaxed">
+                            <i data-lucide="info" class="w-3 h-3 inline mr-1"></i> Por seguridad, no puedes cambiar la contraseña directamente. Si el usuario la olvidó, debe usar la opción de "Recuperar Contraseña" en el login o puedes enviar un email de reseteo si tienes configurado el servicio de Auth.
+                        </p>
+                    </div>
+                    <div class="flex gap-4">
+                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">Cerrar</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Actualizar Staff</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('admin-user-edit-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const { error } = await supabaseClient.from('profiles').update({
+                full_name: formData.get('full_name'),
+                role: formData.get('role')
+            }).eq('id', userId);
+            
+            if (!error) {
+                window.customAlert('Éxito', 'Staff actualizado correctamente', 'success');
+                closeModal();
+                window.renderView('usuarios');
+            } else {
+                window.customAlert('Error', error.message, 'error');
+            }
+        };
     };
 
     let currentConvocatoriaTab = 'Ciclo';
@@ -3733,6 +3986,168 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
     }
+
+    // === NOTIFICATION CENTER ===
+    const initNotifications = async () => {
+        const notifBtn = document.getElementById('notif-btn');
+        const notifBtnMobile = document.getElementById('notif-btn-mobile');
+        const notifPanel = document.getElementById('notif-panel');
+        const notifBadge = document.getElementById('notif-badge');
+        const notifBadgeMobile = document.getElementById('notif-badge-mobile');
+        const notifList = document.getElementById('notif-list');
+        const notifCount = document.getElementById('notif-count');
+        const clearNotifsBtn = document.getElementById('clear-notifs');
+
+        if (!notifBtn || !notifPanel) return;
+
+        const togglePanel = () => {
+            notifPanel.classList.toggle('hidden');
+            if (!notifPanel.classList.contains('hidden')) {
+                notifBadge.classList.add('hidden');
+                if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
+                notifBtn.querySelector('i').classList.remove('animate-ring');
+            }
+        };
+
+        notifBtn.onclick = (e) => { e.stopPropagation(); togglePanel(); };
+        if (notifBtnMobile) notifBtnMobile.onclick = (e) => { e.stopPropagation(); togglePanel(); };
+
+        document.addEventListener('click', (e) => {
+            if (!notifPanel.contains(e.target) && !notifBtn.contains(e.target) && (!notifBtnMobile || !notifBtnMobile.contains(e.target))) {
+                notifPanel.classList.add('hidden');
+            }
+        });
+
+        window.refreshNotifications = async () => {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+                const allEventos = await db.getAll('eventos');
+                const allSesiones = await db.getAll('sesiones');
+                const currentUser = (await supabaseClient.auth.getUser()).data.user;
+
+                const agendaItems = [
+                    ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock' })),
+                    ...allSesiones.map(s => ({ ...s, type: 'sesion', color: 'blue', icon: 'calendar', nombre: s.titulo || 'Sesión' }))
+                ].filter(item => {
+                    const isTodayOrTomorrow = (item.fecha === today || item.fecha === tomorrowStr);
+                    const isMineOrShared = (item.createdBy === currentUser.id || (item.sharedWith && item.sharedWith.includes(currentUser.id)));
+                    return isTodayOrTomorrow && isMineOrShared && !item.completada;
+                })
+                 .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.hora.localeCompare(b.hora));
+
+                if (agendaItems.length > 0) {
+                    notifBadge.classList.remove('hidden');
+                    if (notifBadgeMobile) notifBadgeMobile.classList.remove('hidden');
+                    if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.add('animate-ring');
+                    notifCount.textContent = `${agendaItems.length} pendientes`;
+                    
+                    notifList.innerHTML = agendaItems.map(item => `
+                        <div class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group" onclick="window.switchView('${item.type === 'sesion' ? 'sesiones' : 'eventos'}')">
+                            <div class="w-10 h-10 ${item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'} rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white">
+                                <i data-lucide="${item.icon}" class="w-4 h-4"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-start mb-0.5">
+                                    <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today ? 'text-red-500' : 'text-slate-400'}">${item.fecha === today ? 'Hoy' : 'Mañana'} · ${item.hora || '--:--'}</span>
+                                </div>
+                                <h5 class="text-[11px] font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors">${item.nombre || 'Sin título'}</h5>
+                                <p class="text-[9px] text-slate-500 truncate">${item.lugar || item.equiponombre || 'Campo Principal'}</p>
+                            </div>
+                        </div>
+                    `).join('');
+                    if (window.lucide) lucide.createIcons();
+                } else {
+                    notifList.innerHTML = `
+                        <div class="py-12 text-center text-slate-300">
+                            <div class="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                                <i data-lucide="calendar-check" class="w-8 h-8 opacity-20 text-slate-400"></i>
+                            </div>
+                            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Todo al día</p>
+                            <p class="text-[9px] lowercase italic mt-1 text-slate-400/60">No hay planes para hoy ni mañana</p>
+                        </div>
+                    `;
+                    notifCount.textContent = '0 nuevas';
+                    notifBadge.classList.add('hidden');
+                    if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
+                    if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
+                    if (window.lucide) lucide.createIcons();
+                }
+            } catch (err) {
+                console.error("Notif refresh fail:", err);
+            }
+        };
+
+        if (clearNotifsBtn) {
+            clearNotifsBtn.onclick = () => {
+                notifBadge.classList.add('hidden');
+                if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
+                if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
+                notifPanel.classList.add('hidden');
+            };
+        }
+
+        // Trigger check at start
+        await window.refreshNotifications();
+        
+        // Refresh every 5 minutes
+        setInterval(window.refreshNotifications, 5 * 60 * 1000);
+    };
+
+    // === EMAIL NOTIFICATIONS ===
+    window.sendEmailNotification = async (type, item) => {
+        try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            if (!user || !user.email) return;
+
+            const isSession = type === 'sesiones';
+            const subject = `⚽ Recordatorio MS Coach: ${item.nombre || item.titulo}`;
+            const html = `
+                <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+                    <div style="background: #2563eb; padding: 32px; text-align: center;">
+                        <h1 style="color: white; margin: 0; font-size: 24px;">MS Coach</h1>
+                        <p style="color: #dbeafe; margin: 8px 0 0 0;">Recordatorio de Agenda</p>
+                    </div>
+                    <div style="padding: 32px;">
+                        <h2 style="margin: 0 0 16px 0; font-size: 20px;">${item.nombre || item.titulo}</h2>
+                        <div style="background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+                            <p style="margin: 0 0 8px 0;"><strong>Fecha:</strong> ${item.fecha}</p>
+                            <p style="margin: 0 0 8px 0;"><strong>Hora:</strong> ${item.hora}</p>
+                            <p style="margin: 0;"><strong>Lugar:</strong> ${item.lugar || item.equiponombre || 'Campo Principal'}</p>
+                        </div>
+                        ${item.notas ? `<p style="color: #64748b; font-size: 14px; line-height: 1.5;">${item.notas}</p>` : ''}
+                        <div style="margin-top: 32px; padding-top: 32px; border-t: 1px solid #e2e8f0; text-align: center;">
+                            <a href="https://mscoach.com" style="background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">Ver en el Panel</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Para que esto funcione, se requiere una Supabase Edge Function o un servicio como Resend.
+            // Implementación vía Edge Function (Recomendado):
+            /*
+            await supabaseClient.functions.invoke('send-email', {
+                body: { to: user.email, subject, html }
+            });
+            */
+            
+            // Simulación en consola por ahora (hasta configurar la clave de Resend/Edge Function)
+            console.log("SIMULACIÓN DE ENVÍO DE EMAIL:");
+            console.log(`Para: ${user.email}`);
+            console.log(`Asunto: ${subject}`);
+            
+            // Si el usuario tiene una Edge Function llamada 'send-email', se activaría aquí.
+            window.customAlert('Aviso Email', `Se ha programado el recordatorio para ${user.email}. (Asegúrate de tener configurada la Edge Function en Supabase)`, 'success');
+
+        } catch (err) {
+            console.error("Error sending email:", err);
+        }
+    };
+
+    initNotifications();
 
 });
 
