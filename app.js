@@ -1140,7 +1140,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <option ${evento.categoria === 'Reunión' ? 'selected' : ''}>Reunión</option>
                              <option ${evento.categoria === 'Partido' ? 'selected' : ''}>Partido</option>
                              <option ${evento.categoria === 'Scouting' ? 'selected' : ''}>Scouting</option>
-                             <option ${evento.categoria === 'Fisioterapia' ? 'selected' : ''}>Fisioterapia</option>
+                             <option ${evento.categoria === 'Mandar convocatorias' ? 'selected' : ''}>Mandar convocatorias</option>
+                             <option ${evento.categoria === 'Preparar equipos torneos' ? 'selected' : ''}>Preparar equipos torneos</option>
+                             <option ${evento.categoria === 'Preparar jugadores ciclos/sesiones' ? 'selected' : ''}>Preparar jugadores ciclos/sesiones</option>
                              <option ${evento.categoria === 'Otro' ? 'selected' : ''}>Otro</option>
                          </select>
                          <input name="hora" type="time" value="${evento.hora}" class="w-full p-3 border rounded-xl" required>
@@ -2734,7 +2736,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="grid grid-cols-2 gap-4">
                             <input name="nombre" placeholder="Título del evento" class="col-span-2 w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-amber-100" required>
                             <select name="categoria" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option>Reunión</option><option>Partido</option><option>Scouting</option><option>Fisioterapia</option><option>Otro</option>
+                                <option>Reunión</option><option>Partido</option><option>Scouting</option><option>Mandar convocatorias</option><option>Preparar equipos torneos</option><option>Preparar jugadores ciclos/sesiones</option><option>Otro</option>
                             </select>
                             <input name="hora" type="time" class="w-full p-3 border rounded-xl" required>
                             <input name="fecha" type="date" class="w-full p-3 border rounded-xl" required>
