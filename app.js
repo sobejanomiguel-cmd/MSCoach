@@ -1710,18 +1710,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="space-y-3">
                         <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
                         <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                            <!-- Injected by JS -->
-                        </div>
-                    </div>
-
-                    <div class="space-y-3">
-                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                        <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
                             ${users ? users.filter(u => u.id !== currentUser.id).map(u => `
                                 <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
                                     <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
                                     <div class="flex-1">
-                                        <p class="text-[10px] font-bold text-slate-700">${u.full_name}</p>
+                                        <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
                                         <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
                                     </div>
                                 </label>
@@ -3156,7 +3149,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </td>
                                     <td class="px-6 py-4 text-right">
                                         ${currentUserRole === 'ELITE' ? `
-                                            <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                            <div class="flex justify-end gap-2">
+                                                <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                <button onclick="window.deleteUserStaff('${u.id}')" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            </div>
                                         ` : '<span class="text-[10px] text-slate-300 italic">Lectura</span>'}
                                     </td>
                                 </tr>
