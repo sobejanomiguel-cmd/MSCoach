@@ -3198,7 +3198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const role = formData.get('role');
 
         const { data, error } = await supabaseClient.from('profiles').insert([
-            { name, email, role }
+            { id: crypto.randomUUID(), name, email, role }
         ]);
 
         if (error) {
