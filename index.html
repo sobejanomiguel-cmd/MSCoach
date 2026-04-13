@@ -127,6 +127,10 @@
                     <i data-lucide="scroll-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
                     <span class="font-medium">Convocatorias</span>
                 </a>
+                <a href="#" data-view="torneos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                    <i data-lucide="trophy" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                    <span class="font-medium">Torneos</span>
+                </a>
                 <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
                     <i data-lucide="check-square" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
                     <span class="font-medium">Asistencia</span>
@@ -212,9 +216,9 @@
                     <i data-lucide="play-circle" class="w-6 h-6"></i>
                     <span class="text-[10px] font-bold uppercase tracking-widest">Sesión</span>
                 </a>
-                <a href="#" data-view="jugadores" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
-                    <i data-lucide="users" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Club</span>
+                <a href="#" data-view="torneos" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
+                    <i data-lucide="trophy" class="w-6 h-6"></i>
+                    <span class="text-[10px] font-bold uppercase tracking-widest">Torneos</span>
                 </a>
             </nav>
         </main>
@@ -222,7 +226,7 @@
 
     <!-- Modals Container -->
     <div id="modal-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
-        <div id="modal-container" class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden transform scale-95 transition-transform duration-300">
+        <div id="modal-container" class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] transform scale-95 transition-transform duration-300 custom-scrollbar">
             <!-- Dynamic Modal Content -->
         </div>
     </div>
