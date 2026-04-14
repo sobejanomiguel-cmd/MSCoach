@@ -184,10 +184,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     if (mobileMenuBtn && sidebar) {
+        const overlay = document.getElementById('sidebar-overlay');
+        
+        const toggleSidebar = (show) => {
+            if (show) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay?.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay?.classList.add('hidden');
+            }
+        };
+
         mobileMenuBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('-translate-x-full');
-            sidebar.classList.toggle('active-mobile');
+            const isOpen = !sidebar.classList.contains('-translate-x-full');
+            toggleSidebar(!isOpen);
         });
+        
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+        if (closeSidebarBtn) {
+            closeSidebarBtn.addEventListener('click', () => toggleSidebar(false));
+        }
+        
+        if (overlay) {
+            overlay.addEventListener('click', () => toggleSidebar(false));
+        }
         
         // Close sidebar and multiselect menus when clicking outside
         document.addEventListener('click', (e) => {
@@ -215,6 +236,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         switchView(view);
         if (window.innerWidth < 768) {
             sidebar.classList.add('-translate-x-full');
+            document.getElementById('sidebar-overlay')?.classList.add('hidden');
         }
     }
 
