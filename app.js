@@ -4476,40 +4476,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         doc.rect(px + pw - 35, py + ph/2 - 25, 25, 50);
         doc.rect(px + pw - 18, py + ph/2 - 10, 8, 20);
 
-        // Draw Players
-        activeFormation.positions.forEach(pos => {
-            const playersInPos = (convocados || []).filter(player => {
-                const target = pos.pos;
-                const rawPos = player.posicion || '--';
-                const current = rawPos.includes(',') ? rawPos.split(',')[0].trim() : rawPos;
-
-                // Categorías de agrupación condicional (Igual que en HTML)
-                const groupingRules = [
-                    { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
-                    { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
-                    { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
-                    { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
-                ];
-
-                for (const rule of groupingRules) {
-                    if (rule.list.includes(target)) {
-                        const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
-                        if (countInFormation === 1) return rule.list.includes(current);
-                    }
+        // Draw Players - Intelligent Assignment
+        const assignments = activeFormation.positions.map(() => []);
+        const checkMatch = (pPos, targetSlot) => {
+            const groupingRules = [
+                { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+            ];
+            for (const rule of groupingRules) {
+                if (rule.list.includes(targetSlot)) {
+                    const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                    if (countInFormation === 1) return rule.list.includes(pPos);
                 }
+            }
+            const staticGroups = {
+                'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
+                'DBD': ['DBD', 'LD', 'CAD'],
+                'DBZ': ['DBZ', 'LI', 'CAI'],
+                'DCD': ['DCD', 'DFC', 'CD'],
+                'DCZ': ['DCZ', 'DFC', 'CZ']
+            };
+            if (staticGroups[targetSlot]) return staticGroups[targetSlot].includes(pPos);
+            return pPos === targetSlot;
+        };
 
-                // Grupos estáticos
-                const staticGroups = {
-                    'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
-                    'DBD': ['DBD', 'LD', 'CAD'],
-                    'DBZ': ['DBZ', 'LI', 'CAI'],
-                    'DCD': ['DCD', 'DFC', 'CD'],
-                    'DCZ': ['DCZ', 'DFC', 'CZ']
-                };
+        (convocados || []).forEach(player => {
+            const rawPos = player.posicion || '--';
+            const choices = rawPos.split(',').map(c => c.trim());
+            const p1 = choices[0];
+            const p2 = choices[1];
+            const p1Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p1, item.s.pos));
+            const bestP1 = p1Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
+            
+            if (bestP1 && assignments[bestP1.idx].length < 2) {
+                assignments[bestP1.idx].push(player);
+            } else if (p2) {
+                const p2Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p2, item.s.pos));
+                const bestP2 = p2Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
+                if (bestP2 && assignments[bestP2.idx].length < 2) {
+                    assignments[bestP2.idx].push(player);
+                } else if (bestP1) {
+                    assignments[bestP1.idx].push(player);
+                }
+            } else if (bestP1) {
+                assignments[bestP1.idx].push(player);
+            }
+        });
 
-                if (staticGroups[target]) return staticGroups[target].includes(current);
-                return current === target;
-            });
+        activeFormation.positions.forEach((pos, idx) => {
+            const playersInPos = assignments[idx];
+            
+            // Renaming logic for single slots
+            let displayPos = pos.pos;
+            const groupingRules = [
+                { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                { key: 'MC', list: ['MC. ', 'MCD', 'MCZ'] },
+                { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+            ];
+            for (const rule of groupingRules) {
+                if (rule.list.includes(pos.pos)) {
+                    const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                    if (countInFormation === 1) displayPos = rule.key;
+                }
+            }
             
             const realX = px + 10 + (pos.x * (pw - 20) / 100);
             const realY = py + 10 + (pos.y * (ph - 20) / 100);
@@ -4666,13 +4698,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     `}
                 </div>
 
-                ${activeFormation.positions.map(pos => {
-                    let displayPos = pos.pos;
-                    const playersInPos = (filteredPlayers || []).filter(player => {
-                        const target = pos.pos;
-                        const rawPos = player.posicion || '--';
-                        const current = rawPos.includes(',') ? rawPos.split(',')[0].trim() : rawPos;
-                        
+                ${(() => {
+                    const assignments = activeFormation.positions.map(() => []);
+                    
+                    // Helper logic for position matching (Unified)
+                    const checkMatch = (pPos, targetSlot) => {
                         // Categorías de agrupación condicional
                         const groupingRules = [
                             { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
@@ -4680,32 +4710,70 @@ document.addEventListener('DOMContentLoaded', async () => {
                             { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
                             { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
                         ];
-
                         for (const rule of groupingRules) {
-                            if (rule.list.includes(target)) {
+                            if (rule.list.includes(targetSlot)) {
                                 const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
-                                if (countInFormation === 1) {
-                                    if (target === pos.pos) displayPos = rule.key; // Usar el nombre de la categoría si es único
-                                    return rule.list.includes(current);
-                                }
+                                if (countInFormation === 1) return rule.list.includes(pPos);
                             }
                         }
-
-                        // Grupos estándar fijos (Siempre agrupar POR, LD, etc.)
                         const staticGroups = {
                             'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
                             'DBD': ['DBD', 'LD', 'CAD'],
                             'DBZ': ['DBZ', 'LI', 'CAI'],
-                            'DCD': ['DCD', 'DFC', 'CD'], // Nota: Estos podrían entrar en lógica de arriba si se prefiere
+                            'DCD': ['DCD', 'DFC', 'CD'],
                             'DCZ': ['DCZ', 'DFC', 'CZ']
                         };
+                        if (staticGroups[targetSlot]) return staticGroups[targetSlot].includes(pPos);
+                        return pPos === targetSlot;
+                    };
 
-                        if (staticGroups[target]) {
-                            return staticGroups[target].includes(current);
+                    // Intelligent Assignment Loop
+                    (filteredPlayers || []).forEach(player => {
+                        const rawPos = player.posicion || '--';
+                        const choices = rawPos.split(',').map(c => c.trim());
+                        const p1 = choices[0];
+                        const p2 = choices[1];
+
+                        // Find all possible slots for p1
+                        const p1Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p1, item.s.pos));
+                        
+                        // Try to find a p1 slot with < 2 players
+                        const bestP1 = p1Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
+                        
+                        if (bestP1 && assignments[bestP1.idx].length < 2) {
+                            assignments[bestP1.idx].push(player);
+                        } else if (p2) {
+                            // Slot 1 is busy (>=2), try p2
+                            const p2Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p2, item.s.pos));
+                            const bestP2 = p2Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
+                            if (bestP2 && assignments[bestP2.idx].length < 2) {
+                                assignments[bestP2.idx].push(player);
+                            } else {
+                                // Both busy or p2 invalid, force to p1
+                                if (bestP1) assignments[bestP1.idx].push(player);
+                            }
+                        } else if (bestP1) {
+                            assignments[bestP1.idx].push(player);
                         }
-
-                        return current === target;
                     });
+
+                    return activeFormation.positions.map((pos, idx) => {
+                        let displayPos = pos.pos;
+                        const playersInPos = assignments[idx];
+                        
+                        // Check if we should rename the label (for single-slot categories)
+                        const groupingRules = [
+                            { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                            { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                            { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                            { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+                        ];
+                        for (const rule of groupingRules) {
+                            if (rule.list.includes(pos.pos)) {
+                                const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                                if (countInFormation === 1) displayPos = rule.key;
+                            }
+                        }
 
                     // Map coordinates based on orientation
                     const left = isVert ? pos.y : pos.x;
@@ -4728,7 +4796,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                     `;
-                }).join('')}
+                }).join('')})()}
             </div>
         `;
     }
