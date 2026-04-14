@@ -2708,7 +2708,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Asegurar que los filtros existan globalmente
             if (!window.playerFilters) {
-                window.playerFilters = { search: '', team: 'TODOS', club: 'TODOS', position: 'TODOS' };
+                window.playerFilters = { search: '', team: 'TODOS', club: 'TODOS', position: 'TODOS', level: 'TODOS' };
             }
 
             container.innerHTML = `
@@ -2731,6 +2731,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <option value="TODOS">TODAS POSICIONES</option>
                             ${PLAYER_POSITIONS.map(p => `<option value="${p}" ${window.playerFilters.position == p ? 'selected' : ''}>${p}</option>`).join('')}
                         </select>
+                        <select id="player-level-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                            <option value="TODOS">TODOS NIVELES</option>
+                            ${[1,2,3,4,5].map(lvl => `<option value="${lvl}" ${window.playerFilters.level == lvl ? 'selected' : ''}>NIVEL ${'★'.repeat(lvl)}</option>`).join('')}
+                        </select>
                     </div>
                 </div>
 
@@ -2745,6 +2749,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const teamFilter = container.querySelector('#player-team-filter');
             const clubFilter = container.querySelector('#player-club-filter');
             const posFilter = container.querySelector('#player-pos-filter');
+            const levelFilter = container.querySelector('#player-level-filter');
 
             const updateTable = () => {
                 if (!tableContainer) return;
@@ -2758,7 +2763,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                       (teamVal === 'SIN_EQUIPO' ? !p.equipoid : p.equipoid == teamVal);
                     const matchesClub = window.playerFilters.club === 'TODOS' || p.equipoConvenido === window.playerFilters.club;
                     const matchesPos = window.playerFilters.position === 'TODOS' || (p.posicion || '').includes(window.playerFilters.position);
-                    return matchesSearch && matchesTeam && matchesClub && matchesPos;
+                    const matchesLevel = window.playerFilters.level === 'TODOS' || p.nivel == window.playerFilters.level;
+                    return matchesSearch && matchesTeam && matchesClub && matchesPos && matchesLevel;
                 });
 
                 tableContainer.innerHTML = `
@@ -2882,6 +2888,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (posFilter) {
                 posFilter.onchange = (e) => {
                     window.playerFilters.position = e.target.value;
+                    updateTable();
+                };
+            }
+
+            if (levelFilter) {
+                levelFilter.onchange = (e) => {
+                    window.playerFilters.level = e.target.value;
                     updateTable();
                 };
             }
@@ -4837,24 +4850,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         (convocados || []).forEach(player => {
             const rawPos = player.posicion || '--';
             const choices = rawPos.split(',').map(c => c.trim());
-            const p1 = choices[0];
-            const p2 = choices[1];
-            const p1Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p1, item.s.pos));
-            const bestP1 = p1Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
             
-            if (bestP1 && assignments[bestP1.idx].length < 2) {
-                assignments[bestP1.idx].push(player);
-            } else if (p2) {
-                const p2Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p2, item.s.pos));
-                const bestP2 = p2Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
-                if (bestP2 && assignments[bestP2.idx].length < 2) {
-                    assignments[bestP2.idx].push(player);
-                } else if (bestP1) {
-                    assignments[bestP1.idx].push(player);
-                }
-            } else if (bestP1) {
-                assignments[bestP1.idx].push(player);
+            let validSlots = [];
+            // P1
+            activeFormation.positions.forEach((s, idx) => {
+                if (checkMatch(choices[0], s.pos)) validSlots.push({ idx, priority: 1 });
+            });
+            // P2
+            if (choices[1]) {
+                activeFormation.positions.forEach((s, idx) => {
+                    if (checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
+                });
             }
+
+            if (validSlots.length === 0) return;
+
+            // Sort by occupancy, then priority
+            validSlots.sort((a, b) => {
+                const countA = assignments[a.idx].length;
+                const countB = assignments[b.idx].length;
+                if (countA !== countB) return countA - countB;
+                return a.priority - b.priority;
+            });
+
+            assignments[validSlots[0].idx].push(player);
         });
 
         activeFormation.positions.forEach((pos, idx) => {
@@ -5034,9 +5053,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 ${(() => {
                     const assignments = activeFormation.positions.map(() => []);
                     
-                    // Helper logic for position matching (Unified)
                     const checkMatch = (pPos, targetSlot) => {
-                        // Categorías de agrupación condicional
                         const groupingRules = [
                             { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
                             { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
@@ -5060,41 +5077,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         return pPos === targetSlot;
                     };
 
-                    // Intelligent Assignment Loop
                     (filteredPlayers || []).forEach(player => {
                         const rawPos = player.posicion || '--';
                         const choices = rawPos.split(',').map(c => c.trim());
-                        const p1 = choices[0];
-                        const p2 = choices[1];
-
-                        // Find all possible slots for p1
-                        const p1Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p1, item.s.pos));
                         
-                        // Try to find a p1 slot with < 2 players
-                        const bestP1 = p1Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
-                        
-                        if (bestP1 && assignments[bestP1.idx].length < 2) {
-                            assignments[bestP1.idx].push(player);
-                        } else if (p2) {
-                            // Slot 1 is busy (>=2), try p2
-                            const p2Slots = activeFormation.positions.map((s, idx) => ({s, idx})).filter(item => checkMatch(p2, item.s.pos));
-                            const bestP2 = p2Slots.sort((a, b) => assignments[a.idx].length - assignments[b.idx].length)[0];
-                            if (bestP2 && assignments[bestP2.idx].length < 2) {
-                                assignments[bestP2.idx].push(player);
-                            } else {
-                                // Both busy or p2 invalid, force to p1
-                                if (bestP1) assignments[bestP1.idx].push(player);
-                            }
-                        } else if (bestP1) {
-                            assignments[bestP1.idx].push(player);
+                        let validSlots = [];
+                        activeFormation.positions.forEach((s, idx) => {
+                            if (checkMatch(choices[0], s.pos)) validSlots.push({ idx, priority: 1 });
+                        });
+                        if (choices[1]) {
+                            activeFormation.positions.forEach((s, idx) => {
+                                if (checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
+                            });
                         }
+
+                        if (validSlots.length === 0) return;
+
+                        validSlots.sort((a, b) => {
+                            const countA = assignments[a.idx].length;
+                            const countB = assignments[b.idx].length;
+                            if (countA !== countB) return countA - countB;
+                            return a.priority - b.priority;
+                        });
+
+                        assignments[validSlots[0].idx].push(player);
                     });
 
                     return activeFormation.positions.map((pos, idx) => {
                         let displayPos = pos.pos;
                         const playersInPos = assignments[idx];
                         
-                        // Check if we should rename the label (for single-slot categories)
                         const groupingRules = [
                             { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
                             { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
