@@ -2708,20 +2708,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Asegurar que los filtros existan globalmente
             if (!window.playerFilters) {
-                window.playerFilters = { search: '', team: 'TODOS' };
+                window.playerFilters = { search: '', team: 'TODOS', club: 'TODOS', position: 'TODOS' };
             }
 
             container.innerHTML = `
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                    <div class="flex flex-1 gap-3 w-full">
-                        <div class="relative flex-1 max-w-md">
+                    <div class="flex flex-wrap flex-1 gap-3 w-full">
+                        <div class="relative flex-1 min-w-[300px]">
                             <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                            <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador por nombre o apellido..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
+                            <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
                         </div>
-                        <select id="player-team-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-xs font-bold text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm min-w-[200px]">
-                            <option value="TODOS">TODOS LOS EQUIPOS</option>
+                        <select id="player-team-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                            <option value="TODOS">TODOS EQUIPOS</option>
                             ${teams.sort((a,b) => a.nombre.localeCompare(b.nombre)).map(t => `<option value="${t.id}" ${window.playerFilters.team == t.id ? 'selected' : ''}>${t.nombre.toUpperCase()}</option>`).join('')}
-                            <option value="SIN_EQUIPO" ${window.playerFilters.team === 'SIN_EQUIPO' ? 'selected' : ''}>SIN EQUIPO ASIGNADO</option>
+                            <option value="SIN_EQUIPO" ${window.playerFilters.team === 'SIN_EQUIPO' ? 'selected' : ''}>LIBRES</option>
+                        </select>
+                        <select id="player-club-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                            <option value="TODOS">TODOS CLUBES</option>
+                            ${[...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort().map(c => `<option value="${c}" ${window.playerFilters.club == c ? 'selected' : ''}>${c.toUpperCase()}</option>`).join('')}
+                        </select>
+                        <select id="player-pos-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                            <option value="TODOS">TODAS POSICIONES</option>
+                            ${PLAYER_POSITIONS.map(p => `<option value="${p}" ${window.playerFilters.position == p ? 'selected' : ''}>${p}</option>`).join('')}
                         </select>
                     </div>
                 </div>
@@ -2735,6 +2743,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tableContainer = container.querySelector('#players-table-container');
             const searchInput = container.querySelector('#player-search-input');
             const teamFilter = container.querySelector('#player-team-filter');
+            const clubFilter = container.querySelector('#player-club-filter');
+            const posFilter = container.querySelector('#player-pos-filter');
 
             const updateTable = () => {
                 if (!tableContainer) return;
@@ -2746,7 +2756,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const matchesSearch = (p.nombre || '').toLowerCase().includes(searchVal);
                     const matchesTeam = teamVal === 'TODOS' || 
                                       (teamVal === 'SIN_EQUIPO' ? !p.equipoid : p.equipoid == teamVal);
-                    return matchesSearch && matchesTeam;
+                    const matchesClub = window.playerFilters.club === 'TODOS' || p.equipoConvenido === window.playerFilters.club;
+                    const matchesPos = window.playerFilters.position === 'TODOS' || (p.posicion || '').includes(window.playerFilters.position);
+                    return matchesSearch && matchesTeam && matchesClub && matchesPos;
                 });
 
                 tableContainer.innerHTML = `
@@ -2856,6 +2868,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (teamFilter) {
                 teamFilter.onchange = (e) => {
                     window.playerFilters.team = e.target.value;
+                    updateTable();
+                };
+            }
+
+            if (clubFilter) {
+                clubFilter.onchange = (e) => {
+                    window.playerFilters.club = e.target.value;
+                    updateTable();
+                };
+            }
+
+            if (posFilter) {
+                posFilter.onchange = (e) => {
+                    window.playerFilters.position = e.target.value;
                     updateTable();
                 };
             }
@@ -4617,7 +4643,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </select>
                                 </div>
                                 <div id="modal-pitch-view" class="animate-in fade-in duration-500">
-                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'vertical')}
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', window.innerWidth < 768 ? 'vertical' : 'horizontal')}
                                 </div>
                             </div>
                         </div>
@@ -5185,7 +5211,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             </div>
 
             <div class="max-w-6xl mx-auto shadow-2xl rounded-[3.5rem] overflow-hidden relative group">
-                ${renderTacticalPitchHtml(filteredPlayers, campogramaFilters.sistema)}
+                ${renderTacticalPitchHtml(filteredPlayers, campogramaFilters.sistema, window.innerWidth < 768 ? 'vertical' : 'horizontal')}
                 ${!hasActiveFilters ? `
                     <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center z-10 transition-all duration-500">
                         <div class="text-center p-8 bg-white/95 rounded-[2.5rem] shadow-2xl border border-white max-w-sm mx-4 transform group-hover:scale-105 transition-transform">
@@ -5436,7 +5462,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                                 
                                 <div class="animate-in fade-in zoom-in duration-700">
-                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433')}
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433', window.innerWidth < 768 ? 'vertical' : 'horizontal')}
                                 </div>
                                 <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100">
