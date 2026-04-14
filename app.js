@@ -1339,18 +1339,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         let tasks = await db.getAll('tareas');
         
         container.innerHTML = `
-            <div class="mb-8 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                <div class="flex flex-col md:flex-row gap-4">
+            <div class="mb-6 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                <div class="flex flex-col md:flex-row gap-3">
                     <div class="flex-1 relative">
                         <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Buscar por nombre de tarea..." class="w-full pl-11 pr-4 py-3 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-4 ring-blue-50 transition-all text-sm">
+                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Buscar por nombre de tarea..." class="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-transparent rounded-xl focus:bg-white focus:ring-4 ring-blue-50 transition-all text-sm">
                     </div>
-                    <div class="grid grid-cols-2 gap-3 md:w-[400px]">
-                        <select id="task-type-filter" class="px-4 py-3 bg-slate-50 border-transparent rounded-2xl text-xs font-bold text-slate-600 outline-none focus:bg-white transition-all">
+                    <div class="grid grid-cols-2 gap-2 md:w-[360px]">
+                        <select id="task-type-filter" class="px-3 py-2.5 bg-slate-50 border-transparent rounded-xl text-[10px] font-bold text-slate-600 outline-none focus:bg-white transition-all">
                             <option value="TODOS">TODOS LOS TIPOS</option>
                             ${TASK_TYPES.map(t => `<option value="${t}" ${taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select>
-                        <select id="task-cat-filter" class="px-4 py-3 bg-slate-50 border-transparent rounded-2xl text-xs font-bold text-slate-600 outline-none focus:bg-white transition-all">
+                        <select id="task-cat-filter" class="px-3 py-2.5 bg-slate-50 border-transparent rounded-xl text-[10px] font-bold text-slate-600 outline-none focus:bg-white transition-all">
                             <option value="TODAS">TODAS ETAPAS</option>
                             ${TASK_CATEGORIES.map(c => `<option value="${c}" ${taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
                         </select>
@@ -1958,8 +1958,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ${isEdit ? `<input type="hidden" name="id" value="${session.id}">` : ''}
                     <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Objetivo de la Sesión</label>
-                            <input name="titulo" value="${session.titulo || ''}" placeholder="Ej: Transiciones ofensivas rápidas" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre de la Sesión</label>
+                            <input name="titulo" value="${session.titulo || ''}" placeholder="Ej: S1 Arnedo 2010 (S=Sesión, 1=Num, Arnedo=Lugar, 2010=Equipo)" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
@@ -2201,12 +2201,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         printDiv.innerHTML = `
             <style>
                 @media print {
+                    html, body { 
+                        height: auto !important; 
+                        overflow: visible !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                    }
                     body * { visibility: hidden; }
                     .print-view, .print-view * { visibility: visible; }
-                    .print-view { position: absolute; left: 0; top: 0; width: 100%; height: auto; display: block !important; background: white !important; padding: 0 !important; }
+                    .print-view { 
+                        position: absolute; 
+                        left: 0; 
+                        top: 0; 
+                        width: 100%; 
+                        height: auto !important; 
+                        display: block !important; 
+                        background: white !important; 
+                        padding: 0 !important; 
+                        overflow: visible !important;
+                    }
                     .no-print { display: none !important; }
-                    .sheet-preview { margin: 0 !important; box-shadow: none !important; border: none !important; padding: 40px !important; border-radius: 0 !important; }
-                    .force-page-break { page-break-before: always; break-before: page; }
+                    .sheet-preview { 
+                        margin: 0 !important; 
+                        box-shadow: none !important; 
+                        border: none !important; 
+                        padding: 40px !important; 
+                        border-radius: 0 !important; 
+                    }
+                    .force-page-break { 
+                        page-break-before: always !important; 
+                        break-before: page !important; 
+                        display: block !important;
+                    }
                 }
                 .sheet-preview {
                     background: white;
@@ -2248,7 +2274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 <div class="grid grid-cols-5 gap-3 mb-10">
                     <div class="bg-slate-50 p-4 rounded-2xl col-span-2">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Sesión / Objetivo</p>
+                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Nombre de la Sesión</p>
                         <p class="text-sm font-bold text-slate-800 uppercase tracking-tight">${session.titulo || session.nombre}</p>
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl">
@@ -2265,7 +2291,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 gap-8 mb-12">
+                <div class="grid grid-cols-3 gap-8 mb-8">
                     <div class="col-span-2">
                         <div class="flex items-center gap-6 bg-slate-50 p-6 rounded-3xl border border-slate-100">
                             <div>
@@ -2284,67 +2310,98 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <div class="space-y-12">
-                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 border-b pb-2">Desglose de Tareas - Parte I</p>
-                    ${sessionTasks.slice(0, 3).map((t, idx) => `
-                        <div class="space-y-6 breakout-page">
-                            <h4 class="text-xl font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-4 py-1">${idx + 1}. ${t.name}</h4>
-                            ${t.image ? `<img src="${t.image}" class="w-full h-auto max-h-[400px] rounded-3xl object-contain border border-slate-100 shadow-sm bg-slate-50">` : ''}
-                            <div class="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
-                                <p class="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap mb-4">${t.description || 'Sin descripción.'}</p>
-                                ${t.video ? `
-                                    <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-start gap-8">
-                                        <div class="text-center">
-                                            <p class="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-2">Ver Video</p>
-                                            <a href="${t.video}" target="_blank" class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
-                                            </a>
+                <!-- NEW: Convocatoria Names List -->
+                <div class="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Listado de Jugadores Convocados</p>
+                    <div class="flex flex-wrap gap-x-3 gap-y-2">
+                        ${sessionPlayers.map(p => `
+                            <span class="text-[10px] font-bold text-slate-700 flex items-center gap-1.5">
+                                <span class="w-1 h-1 bg-blue-500 rounded-full"></span>
+                                ${p.nombre}
+                            </span>
+                        `).join('') || '<span class="text-[10px] text-slate-400 italic">No hay jugadores asignados a esta sesión</span>'}
+                    </div>
+                </div>
+
+                <div class="space-y-8">
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 border-b pb-2">Desglose de Tareas - Parte I</p>
+                    ${sessionTasks.slice(0, 1).map((t, idx) => `
+                        <div class="breakout-page">
+                            <h4 class="text-sm font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-3 py-1 mb-3">${idx + 1}. ${t.name}</h4>
+                            <div class="grid grid-cols-2 gap-4 items-start">
+                                <div class="space-y-2">
+                                    ${t.image ? `<img src="${t.image}" class="w-full h-[220px] rounded-2xl object-contain border border-slate-100 bg-slate-50 shadow-sm">` : `<div class="w-full h-[220px] bg-slate-50 rounded-2xl flex items-center justify-center border border-dashed border-slate-200"><i data-lucide="image" class="w-8 h-8 text-slate-300"></i></div>`}
+                                </div>
+                                <div class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col h-full min-h-[220px]">
+                                    <p class="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
+                                    <p class="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap flex-1">${t.description || 'Sin descripción.'}</p>
+                                    ${t.video ? `
+                                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                            <div class="flex items-center gap-2">
+                                                <a href="${t.video}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                                                </a>
+                                                <span class="text-[8px] font-black text-blue-600 uppercase">Video</span>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
+                                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
+                                            </div>
                                         </div>
-                                        <div class="text-center">
-                                            <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Escanear QR</p>
-                                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-16 h-16 bg-white p-1 border rounded-lg mx-auto">
-                                        </div>
-                                    </div>
-                                ` : ''}
+                                    ` : ''}
+                                </div>
                             </div>
                         </div>
                     `).join('')}
                 </div>
             </div>
 
-            ${sessionTasks.length > 3 ? `
-                <!-- Page 2 -->
-                <div class="sheet-preview force-page-break">
-                    <div class="space-y-12">
-                        <p class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 border-b pb-2">Desglose de Tareas - Parte II</p>
-                        ${sessionTasks.slice(3).map((t, idx) => `
-                            <div class="space-y-6 breakout-page">
-                                <h4 class="text-xl font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-4 py-1">${idx + 4}. ${t.name}</h4>
-                                ${t.image ? `<img src="${t.image}" class="w-full h-auto max-h-[400px] rounded-3xl object-contain border border-slate-100 shadow-sm bg-slate-50">` : ''}
-                                <div class="bg-slate-50/50 p-6 rounded-2xl border border-slate-100">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
-                                    <p class="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap mb-4">${t.description || 'Sin descripción.'}</p>
-                                    ${t.video ? `
-                                        <div class="mt-4 pt-4 border-t border-slate-100 flex items-center justify-start gap-8">
-                                            <div class="text-center">
-                                                <p class="text-[8px] font-black text-blue-600 uppercase tracking-widest mb-2">Ver Video</p>
-                                                <a href="${t.video}" target="_blank" class="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
-                                                </a>
+            <!-- Additional Pages (2 tasks per page) -->
+            ${(() => {
+                let extraPages = '';
+                const remaining = sessionTasks.slice(1);
+                for (let i = 0; i < remaining.length; i += 2) {
+                    const chunk = remaining.slice(i, i + 2);
+                    extraPages += `
+                        <div class="sheet-preview force-page-break" style="padding: 40px !important;">
+                            <div class="space-y-6">
+                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 border-b pb-2">Desglose de Tareas - Parte ${Math.floor(i/2) + 2}</p>
+                                ${chunk.map((t, idx) => {
+                                    const totalIdx = i + idx + 2;
+                                    return `
+                                    <div class="breakout-page border-b border-slate-50 pb-6 last:border-0">
+                                        <h4 class="text-sm font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-3 py-1 mb-3">${totalIdx}. ${t.name}</h4>
+                                        <div class="grid grid-cols-2 gap-4 items-start">
+                                            <div class="space-y-2">
+                                                ${t.image ? `<img src="${t.image}" class="w-full h-[220px] rounded-2xl object-contain border border-slate-100 bg-slate-50 shadow-sm">` : `<div class="w-full h-[220px] bg-slate-50 rounded-2xl flex items-center justify-center border border-dashed border-slate-200"><i data-lucide="image" class="w-8 h-8 text-slate-300"></i></div>`}
                                             </div>
-                                            <div class="text-center">
-                                                <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Escanear QR</p>
-                                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-16 h-16 bg-white p-1 border rounded-lg mx-auto">
-                                            </div>
+                                            <div class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col h-full min-h-[220px]">
+                                                <p class="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
+                                                <p class="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap flex-1">${t.description || 'Sin descripción.'}</p>
+                                                ${t.video ? `
+                                                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                        <div class="flex items-center gap-2">
+                                                            <a href="${t.video}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+                                                            </a>
+                                                            <span class="text-[8px] font-black text-blue-600 uppercase">Video</span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                            <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
+                                                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
+                                                        </div>
+                                                    </div>
+                                                ` : ''}
                                         </div>
-                                    ` : ''}
+                                    </div>
                                 </div>
+                                `;}).join('')}
                             </div>
-                        `).join('')}
-                    </div>
-                </div>
-            ` : ''}
+                        </div>
+                    `;
+                }
+                return extraPages;
+            })()}
 
             <footer class="mt-20 py-10 text-center no-print border-t border-slate-100">
                 <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">RS CENTRO Tactician • Pro Reporting System • Powering Performance</p>
