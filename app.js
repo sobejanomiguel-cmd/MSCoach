@@ -2238,7 +2238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="sheet-preview">
                 <header class="flex justify-between items-center border-b-8 border-blue-600 pb-8 mb-10">
                     <div class="flex items-center gap-6">
-                        <img src="${headerShield}" class="w-24 h-24 object-contain">
+                        <img src="${headerShield}" class="w-[77px] h-[77px] object-contain">
                     </div>
                     <div class="text-right">
                         <h1 class="text-4xl font-black text-blue-900 uppercase leading-none">RS CENTRO</h1>
@@ -2376,7 +2376,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return `
                     <div onclick="window.editTeam(${e.id})" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-200 transition-all">
                         <div class="flex items-center gap-4 mb-6">
-                            ${e.escudo ? `<img src="${e.escudo}" class="w-14 h-14 object-contain rounded-xl">` : `<div class="w-14 h-14 bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
+                            ${e.escudo ? `<img src="${e.escudo}" class="w-[45px] h-[45px] object-contain rounded-xl">` : `<div class="w-[45px] h-[45px] bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
                             <div>
                                 <h4 class="font-bold text-slate-800">${e.nombre}</h4>
                                 <p class="text-xs text-slate-500">${e.categoria || 'Año no def.'}</p>
@@ -2447,7 +2447,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
                             <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
                                 <div id="edit-crest-preview">
-                                    ${team.escudo ? `<img src="${team.escudo}" class="h-16 w-16 object-contain">` : `<i data-lucide="shield" class="w-10 h-10 text-slate-300"></i>`}
+                                    ${team.escudo ? `<img src="${team.escudo}" class="h-[51px] w-[51px] object-contain">` : `<i data-lucide="shield" class="w-10 h-10 text-slate-300"></i>`}
                                 </div>
                                 <input type="file" id="edit-team-crest-input" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700">
                             </div>
@@ -4626,7 +4626,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         // Añadir Logo si existe
         if (team && team.escudo) {
             try {
-                doc.addImage(team.escudo, 'PNG', 15, 15, 25, 25);
+                doc.addImage(team.escudo, 'PNG', 15, 15, 20, 20);
             } catch (e) { console.error("Logo error:", e); }
         }
 
