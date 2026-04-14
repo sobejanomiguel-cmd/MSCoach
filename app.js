@@ -5433,15 +5433,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!notifBtn || !notifPanel) return;
 
-        const togglePanel = () => {
-            notifPanel.classList.toggle('hidden');
-            if (!notifPanel.classList.contains('hidden')) {
+        const togglePanel = async () => {
+            const isClosing = !notifPanel.classList.contains('hidden');
+            if (isClosing) {
+                notifPanel.classList.add('hidden');
+            } else {
+                // Opening: refresh first to get latest IDs
+                await window.refreshNotifications();
+                notifPanel.classList.remove('hidden');
+                
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 const ringIcon = notifBtn.querySelector('i');
                 if (ringIcon) ringIcon.classList.remove('animate-ring');
 
-                // Mark all current as seen
+                // Mark current items as seen
                 const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
                 const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
                 const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
@@ -5483,6 +5489,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (agendaItems.length > 0) {
                     const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
                     const hasUnseen = agendaItems.some(item => !seenNotifs.includes(`${item.type}_${item.id}`));
+
+                    // Si el panel está abierto, marcamos todo como visto inmediatamente
+                    if (!notifPanel.classList.contains('hidden')) {
+                        const currentIds = agendaItems.map(item => `${item.type}_${item.id}`);
+                        const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
+                        localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(updatedSeen));
+                    }
 
                     if (hasUnseen && notifPanel.classList.contains('hidden')) {
                         notifBadge.classList.remove('hidden');
