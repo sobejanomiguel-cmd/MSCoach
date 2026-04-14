@@ -1006,10 +1006,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function renderCalendario(container) {
         try {
-            const sessions = await db.getAll('sesiones');
-            let eventos = [];
-            try { eventos = await db.getAll('eventos'); } catch(e) { console.warn('Store eventos no listo'); }
-            const convocatorias = await db.getAll('convocatorias');
+            const currentUser = (await supabaseClient.auth.getUser()).data.user;
+            if (!currentUser) return;
+
+            const allSessions = await db.getAll('sesiones');
+            const allEventos = await db.getAll('eventos');
+            const allConvocatorias = await db.getAll('convocatorias');
+
+            const sessions = allSessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
+            const eventos = allEventos.filter(e => e.createdBy === currentUser.id || (e.sharedWith && e.sharedWith.includes(currentUser.id)));
+            const convocatorias = allConvocatorias.filter(c => c.createdBy === currentUser.id || (c.sharedWith && c.sharedWith.includes(currentUser.id)));
             
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -1149,10 +1155,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     async function renderEventos(container) {
-        const events = await db.getAll('eventos');
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
+        const allEvents = await db.getAll('eventos');
+        const tasks = allEvents.filter(e => e.createdBy === currentUser.id || (e.sharedWith && e.sharedWith.includes(currentUser.id)));
+        
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                ${events.map(e => `
+                ${tasks.map(e => `
                     <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:border-blue-100 transition-all group relative overflow-hidden">
                         <div class="flex items-start gap-4">
                             <input type="checkbox" ${e.completada ? 'checked' : ''} onclick="window.toggleTaskStatus(${e.id})" class="mt-1 w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer">
@@ -1704,8 +1713,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = (await db.getAll('equipos')).sort((a,b) => (parseInt(a.categoria)||999)- (parseInt(b.categoria)||999));
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
 
-        // Filtrar sesiones
-        const filteredSessions = sessions.filter(s => {
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
+        
+        // Filtrar sesiones por privacidad primero
+        const mySessions = sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
+
+        // Filtrar sesiones por filtros secundarios
+        const filteredSessions = mySessions.filter(s => {
             const matchesTeam = sessionFilters.team === 'TODOS' || s.equipoid == sessionFilters.team;
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
             return matchesTeam && matchesCoach;
@@ -4254,6 +4268,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
 
+    window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
+        if (!window.formationsState) window.formationsState = {};
+        window.formationsState[type.toLowerCase()] = formationId;
+        
+        if (type === 'Torneo') {
+            window.viewTorneoRendimiento(id);
+        } else {
+            window.viewConvocatoria(id);
+        }
+    };
+
     window.viewConvocatoria = async (id) => {
         const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
         if (error) return;
@@ -4261,10 +4286,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
         const team = teams.find(t => t.id == conv.equipoid);
-        const convocados = players.filter(p => conv.playerids.includes(p.id.toString()));
+        const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
+        const convocados = players.filter(p => pids.includes(p.id.toString()));
 
+        modalContainer.className = "bg-white w-full max-w-7xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
-            <div class="p-8">
+            <div class="p-8 md:p-12">
                 <div class="flex justify-between items-start mb-8">
                     <div>
                         <div class="flex gap-2 mb-2">
@@ -4277,34 +4304,58 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all"><i data-lucide="x"></i></button>
                 </div>
 
-                <div class="space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    <div class="grid grid-cols-12 px-4 py-2 border-b text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <div class="col-span-1">#</div>
-                        <div class="col-span-5">Jugador</div>
-                        <div class="col-span-3 text-center">Posición</div>
-                        <div class="col-span-3 text-right">Año</div>
-                    </div>
-                    ${convocados.length > 0 ? convocados.map((p, i) => `
-                        <div class="grid grid-cols-12 items-center p-4 bg-white hover:bg-slate-50 border-b border-slate-50 transition-colors">
-                            <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
-                            <div class="col-span-5 font-bold text-slate-800">${p.nombre}</div>
-                            <div class="col-span-3 text-center text-xs font-bold text-slate-500">${p.posicion || '--'}</div>
-                            <div class="col-span-3 text-right text-xs font-bold text-slate-500">${p.anionacimiento || '--'}</div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <!-- List side -->
+                    <div class="space-y-4">
+                        <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="grid grid-cols-12 px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                                <div class="col-span-1">#</div>
+                                <div class="col-span-7">Jugador</div>
+                                <div class="col-span-4 text-right">Posición</div>
+                            </div>
+                            <div class="divide-y divide-slate-50 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                ${convocados.length > 0 ? convocados.map((p, i) => `
+                                    <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
+                                        <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
+                                        <div class="col-span-7 font-bold text-slate-800 text-sm">${p.nombre}</div>
+                                        <div class="col-span-4 text-right text-[10px] font-black text-slate-500 uppercase">${p.posicion || '--'}</div>
+                                    </div>
+                                `).join('') : '<p class="text-center py-20 text-slate-400 italic">No hay jugadores convocados.</p>'}
+                            </div>
                         </div>
-                    `).join('') : '<p class="text-center py-10 text-slate-400 italic">No hay jugadores en esta convocatoria.</p>'}
-                </div>
+                        
+                        <div class="flex gap-4">
+                             <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
+                                <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
+                                Descargar PDF
+                             </button>
+                             <button onclick="closeModal()" class="px-8 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-all">Cerrar</button>
+                        </div>
+                    </div>
 
-                <div class="mt-8 flex gap-4">
-                     <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
-                        <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
-                        Descargar PDF
-                     </button>
-                     <button onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-600 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cerrar</button>
+                    <!-- Pitch side -->
+                    <div class="space-y-4">
+                        <div class="bg-slate-900/5 p-6 rounded-[2.5rem] border border-slate-100">
+                            <div class="flex justify-between items-center mb-6">
+                                <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Esquema Táctico</h4>
+                                <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-white border border-slate-100 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm cursor-pointer">
+                                    ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                        const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+                                        return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            
+                            <div id="modal-pitch-view" class="animate-in fade-in duration-500">
+                                ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'vertical')}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
         modalOverlay.classList.add('active');
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     };
 
     window.exportConvocatoria = async (id) => {
@@ -4386,6 +4437,107 @@ document.addEventListener('DOMContentLoaded', async () => {
             },
             margin: { left: 15, right: 15 }
         });
+
+        // --- ADD TACTICAL PITCH (CAMPOGRAMA) ON NEW PAGE ---
+        doc.addPage();
+        
+        // Titulo de la página
+        doc.setFontSize(16);
+        doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+        doc.text("DISPOSICIÓN TÁCTICA", 15, 25);
+        
+        const formationId = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+        const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
+        doc.setFontSize(10);
+        doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+        doc.text(`SISTEMA: ${activeFormation.name}`, 15, 32);
+
+        // Draw Pitch Background
+        const px = 15, py = 40, pw = 180, ph = 120;
+        doc.setFillColor(26, 77, 46); // Dark green
+        doc.roundedRect(px, py, pw, ph, 5, 5, 'F');
+        
+        // Draw Pitch Lines
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.3);
+        
+        // Outer line
+        doc.rect(px + 10, py + 10, pw - 20, ph - 20);
+        // Middle line
+        doc.line(px + pw/2, py + 10, px + pw/2, py + ph - 10);
+        // Center circle
+        doc.circle(px + pw/2, py + ph/2, 12);
+        
+        // Areas
+        // Left Area
+        doc.rect(px + 10, py + ph/2 - 25, 25, 50);
+        doc.rect(px + 10, py + ph/2 - 10, 8, 20);
+        // Right Area
+        doc.rect(px + pw - 35, py + ph/2 - 25, 25, 50);
+        doc.rect(px + pw - 18, py + ph/2 - 10, 8, 20);
+
+        // Draw Players
+        activeFormation.positions.forEach(pos => {
+            const playersInPos = (convocados || []).filter(player => {
+                const target = pos.pos;
+                const rawPos = player.posicion || '--';
+                const current = rawPos.includes(',') ? rawPos.split(',')[0].trim() : rawPos;
+
+                // Categorías de agrupación condicional (Igual que en HTML)
+                const groupingRules = [
+                    { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                    { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                    { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                    { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+                ];
+
+                for (const rule of groupingRules) {
+                    if (rule.list.includes(target)) {
+                        const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                        if (countInFormation === 1) return rule.list.includes(current);
+                    }
+                }
+
+                // Grupos estáticos
+                const staticGroups = {
+                    'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
+                    'DBD': ['DBD', 'LD', 'CAD'],
+                    'DBZ': ['DBZ', 'LI', 'CAI'],
+                    'DCD': ['DCD', 'DFC', 'CD'],
+                    'DCZ': ['DCZ', 'DFC', 'CZ']
+                };
+
+                if (staticGroups[target]) return staticGroups[target].includes(current);
+                return current === target;
+            });
+            
+            const realX = px + 10 + (pos.x * (pw - 20) / 100);
+            const realY = py + 10 + (pos.y * (ph - 20) / 100);
+
+            // Always render Position Icon (Circle)
+            doc.setFillColor(255, 255, 255);
+            doc.circle(realX, realY, 4, 'F');
+            
+            // Position Text
+            doc.setFontSize(5);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont("helvetica", "bold");
+            doc.text(pos.pos, realX, realY + 0.5, { align: 'center' });
+
+            // Render Player Names (if any)
+            playersInPos.forEach((player, idx) => {
+                // Player Name Tag (Stacked)
+                const offsetY = 5 + (idx * 5); // Shift down for each player
+                doc.setFillColor(30, 41, 59); // Slate 800
+                doc.rect(realX - 8, realY + offsetY, 16, 4, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(4.5);
+                const shortName = player.nombre.split(' ')[0].substring(0, 10).toUpperCase();
+                doc.text(shortName, realX, realY + offsetY + 2.8, { align: 'center' });
+            });
+        });
+
+        doc.setFont("helvetica", "normal"); // Reset font
 
         // Footer
         const pageCount = doc.internal.getNumberOfPages();
@@ -4471,6 +4623,116 @@ document.addEventListener('DOMContentLoaded', async () => {
         ]}
     };
 
+    function renderTacticalPitchHtml(filteredPlayers, formationId = 'F11_433', orientation = 'horizontal') {
+        const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
+        const isVert = orientation === 'vertical';
+        
+        const aspect = isVert ? 'aspect-[2/3]' : 'aspect-[3/2]';
+        const bgGradient = isVert ? 
+            'repeating-linear-gradient(0deg, #1a4d2e, #1a4d2e 40px, #164328 40px, #164328 80px)' :
+            'repeating-linear-gradient(90deg, #1a4d2e, #1a4d2e 40px, #164328 40px, #164328 80px)';
+        
+        return `
+            <div class="relative w-full ${aspect} bg-[#1a4d2e] rounded-[2.5rem] p-4 shadow-xl overflow-hidden border-[10px] border-[#133a22] group/pitch">
+                <!-- Grass Stripes -->
+                <div class="absolute inset-0 pointer-events-none" style="background: ${bgGradient};"></div>
+                
+                <!-- Pitch Lines -->
+                <div class="absolute inset-4 border-2 border-white/20 rounded-[1.5rem] pointer-events-none">
+                    ${isVert ? `
+                        <!-- Vertical Pitch Lines -->
+                        <div class="absolute top-1/2 left-0 right-0 h-[2px] bg-white/20"></div>
+                        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-white/20 rounded-full"></div>
+                        <!-- Bottom Area -->
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 h-[18%] w-[68%] border-2 border-white/20 border-b-0"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 h-[6%] w-[32%] border-2 border-white/20 border-b-0"></div>
+                        <div class="absolute bottom-[18%] left-1/2 -translate-x-1/2 h-[8%] w-[30%] border-2 border-white/20 border-b-0 rounded-t-full"></div>
+                        <!-- Top Area -->
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 h-[18%] w-[68%] border-2 border-white/20 border-t-0"></div>
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 h-[6%] w-[32%] border-2 border-white/20 border-t-0"></div>
+                        <div class="absolute top-[18%] left-1/2 -translate-x-1/2 h-[8%] w-[30%] border-2 border-white/20 border-t-0 rounded-b-full"></div>
+                    ` : `
+                        <!-- Horizontal Pitch Lines -->
+                        <div class="absolute left-1/2 top-0 bottom-0 w-[2px] bg-white/20"></div>
+                        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-white/20 rounded-full"></div>
+                        <!-- Left Area -->
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-2 border-white/20 border-l-0"></div>
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-2 border-white/20 border-l-0"></div>
+                        <div class="absolute left-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-2 border-white/20 border-l-0 rounded-r-full"></div>
+                        <!-- Right Area -->
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-2 border-white/20 border-r-0"></div>
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-2 border-white/20 border-r-0"></div>
+                        <div class="absolute right-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-2 border-white/20 border-r-0 rounded-l-full"></div>
+                    `}
+                </div>
+
+                ${activeFormation.positions.map(pos => {
+                    let displayPos = pos.pos;
+                    const playersInPos = (filteredPlayers || []).filter(player => {
+                        const target = pos.pos;
+                        const rawPos = player.posicion || '--';
+                        const current = rawPos.includes(',') ? rawPos.split(',')[0].trim() : rawPos;
+                        
+                        // Categorías de agrupación condicional
+                        const groupingRules = [
+                            { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                            { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                            { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                            { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+                        ];
+
+                        for (const rule of groupingRules) {
+                            if (rule.list.includes(target)) {
+                                const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                                if (countInFormation === 1) {
+                                    if (target === pos.pos) displayPos = rule.key; // Usar el nombre de la categoría si es único
+                                    return rule.list.includes(current);
+                                }
+                            }
+                        }
+
+                        // Grupos estándar fijos (Siempre agrupar POR, LD, etc.)
+                        const staticGroups = {
+                            'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
+                            'DBD': ['DBD', 'LD', 'CAD'],
+                            'DBZ': ['DBZ', 'LI', 'CAI'],
+                            'DCD': ['DCD', 'DFC', 'CD'], // Nota: Estos podrían entrar en lógica de arriba si se prefiere
+                            'DCZ': ['DCZ', 'DFC', 'CZ']
+                        };
+
+                        if (staticGroups[target]) {
+                            return staticGroups[target].includes(current);
+                        }
+
+                        return current === target;
+                    });
+
+                    // Map coordinates based on orientation
+                    const left = isVert ? pos.y : pos.x;
+                    const top = isVert ? (100 - pos.x) : pos.y;
+
+                    return `
+                        <div class="absolute flex flex-col items-center" style="left: ${left}%; top: ${top}%; transform: translate(-50%, -50%); z-index: 10;">
+                            <div class="w-8 h-8 bg-white/95 rounded-full flex items-center justify-center shadow-lg mb-1 border-2 border-slate-900/10">
+                                <span class="text-[9px] font-black text-slate-800">${displayPos}</span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 w-[75px]">
+                                ${playersInPos.map(player => `
+                                    <div class="bg-slate-900 border border-white/10 px-2 py-1.5 rounded-xl shadow-xl overflow-hidden">
+                                        <p class="text-[8px] font-black text-white text-center uppercase truncate">${player.nombre.split(' ')[0]}</p>
+                                        <div class="flex justify-center gap-0.5 mt-0.5">
+                                            ${Array(Number(player.nivel || 3)).fill(0).map(() => `<div class="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>`).join('')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
     async function renderCampograma(container) {
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
@@ -4486,9 +4748,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             return teamMatch && levelMatch && posMatch && yearMatch && clubMatch;
         });
 
-        const activeFormation = FORMATIONS[campogramaFilters.sistema];
-
-        // Helper to render custom multiselect
         const renderMultiSelect = (label, options, selectedValues, onToggle, id) => {
             const labelText = selectedValues.length === 0 ? `TODOS (${options.length})` : `${selectedValues.length} SELECCIONADOS`;
             return `
@@ -4540,84 +4799,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             </div>
 
-            <div class="max-w-6xl mx-auto">
-                <div class="relative w-full aspect-[3/2] bg-[#1a4d2e] rounded-[3.5rem] p-8 shadow-2xl overflow-hidden border-[20px] border-[#133a22] group">
-                    <div class="absolute inset-0 pointer-events-none" style="background: repeating-linear-gradient(90deg, #1a4d2e, #1a4d2e 90px, #164328 90px, #164328 180px);"></div>
-                    <div class="absolute inset-10 border-[5px] border-white/20 rounded-[2.5rem] pointer-events-none">
-                        <!-- Middle Line -->
-                        <div class="absolute left-1/2 top-0 bottom-0 w-[5px] bg-white/20"></div>
-                        <!-- Center Circle -->
-                        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-[5px] border-white/20 rounded-full"></div>
-                        
-                        <!-- Left Area (Area Grande) -->
-                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-[5px] border-white/20 border-l-0"></div>
-                        <!-- Left Goal Box (Area Pequeña) -->
-                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-[5px] border-white/20 border-l-0"></div>
-                        <!-- Left D (Semicircle) -->
-                        <div class="absolute left-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-[5px] border-white/20 border-l-0 rounded-r-full"></div>
-                        
-                        <!-- Right Area (Area Grande) -->
-                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[18%] h-[68%] border-[5px] border-white/20 border-r-0"></div>
-                        <!-- Right Goal Box (Area Pequeña) -->
-                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-[6%] h-[32%] border-[5px] border-white/20 border-r-0"></div>
-                        <!-- Right D (Semicircle) -->
-                        <div class="absolute right-[18%] top-1/2 -translate-y-1/2 w-[8%] h-[30%] border-[5px] border-white/20 border-r-0 rounded-l-full"></div>
-                    </div>
-
-                    <!-- Position Slots with Impact Sizes -->
-                    ${activeFormation.positions.map(p => {
-                        let displayPos = p.pos;
-                        const playersInPos = filteredPlayers.filter(player => {
-                            const target = p.pos;
-                            const current = player.posicion || '--';
-                            
-                            // Grupos de posiciones relacionadas
-                            const groups = {
-                                'DC': { list: ['DC', 'DCD', 'DCZ'], label: 'DC' },
-                                'DCD': { list: ['DC', 'DCD', 'DCZ'], label: 'DC' },
-                                'DCZ': { list: ['DC', 'DCD', 'DCZ'], label: 'DC' },
-                                'MC': { list: ['MC', 'MCD', 'MCZ', 'MCDD'], label: 'MC' },
-                                'MCD': { list: ['MC', 'MCD', 'MCZ', 'MCDD'], label: 'MC' },
-                                'MCZ': { list: ['MC', 'MCD', 'MCZ', 'MCDD'], label: 'MC' },
-                                'MP': { list: ['MP', 'MPD', 'MPZ'], label: 'MP' },
-                                'MPD': { list: ['MP', 'MPD', 'MPZ'], label: 'MP' },
-                                'MPZ': { list: ['MP', 'MPD', 'MPZ'], label: 'MP' },
-                                'AC': { list: ['AC', 'ACD', 'ACZ'], label: 'AC' },
-                                'ACD': { list: ['AC', 'ACD', 'ACZ'], label: 'AC' },
-                                'ACZ': { list: ['AC', 'ACD', 'ACZ'], label: 'AC' }
-                            };
-
-                            if (groups[target]) {
-                                const group = groups[target];
-                                const countInFormation = activeFormation.positions.filter(pos => group.list.includes(pos.pos)).length;
-                                
-                                if (countInFormation === 1) {
-                                    displayPos = group.label;
-                                    return group.list.includes(current);
-                                }
-                            }
-                            
-                            return current === target;
-                        }).slice(0, 2);
-                        return `
-                            <div class="absolute flex flex-col items-center" style="left: ${p.x}%; top: ${p.y}%; transform: translate(-50%, -50%);">
-                                <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-2xl border-4 border-slate-900/10 mb-2 transform hover:rotate-12 transition-transform cursor-context-menu">
-                                    <span class="text-[10px] font-black text-slate-800">${displayPos}</span>
-                                </div>
-                                <div class="flex flex-col gap-1 w-[100px]">
-                                    ${playersInPos.map(player => `
-                                        <div onclick="window.viewPlayer(${player.id})" class="bg-slate-900 border border-white/10 px-2 py-1.5 rounded-xl cursor-pointer hover:bg-blue-600 hover:scale-105 transition-all shadow-xl group/player">
-                                            <p class="text-[8px] font-black text-white text-center uppercase tracking-wider truncate group-hover/player:tracking-normal transition-all">${player.nombre.split(' ')[0]}</p>
-                                            <div class="flex justify-center gap-0.5 mt-1 opacity-60 group-hover:opacity-100">
-                                                ${Array(Number(player.nivel || 3)).fill(0).map(() => `<span class="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>`).join('')}
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
+            <div class="max-w-6xl mx-auto shadow-2xl rounded-[3.5rem] overflow-hidden">
+                ${renderTacticalPitchHtml(filteredPlayers, campogramaFilters.sistema)}
             </div>
 
             <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -4631,7 +4814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                  </div>
             </div>
         `;
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     }
 
     window.updateCampogramaFilter = (key, value) => {
@@ -4682,7 +4865,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.switchView('campograma');
     };
 
-    window.closeModal = () => modalOverlay.classList.remove('active');
+    window.closeModal = () => {
+        modalOverlay.classList.remove('active');
+        // Reset modal classes to default
+        setTimeout(() => {
+            modalContainer.className = "bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform scale-95 transition-transform duration-300 custom-scrollbar";
+            modalContainer.innerHTML = '';
+        }, 300);
+    };
     
     // --- SECCIÓN DE TORNEOS ---
     async function renderTorneos(container) {
@@ -4740,98 +4930,136 @@ document.addEventListener('DOMContentLoaded', async () => {
             const team = (conv.equipoid && conv.equipoid !== 'null') ? await db.get('equipos', conv.equipoid) : null;
             const teamPlayers = team ? players.filter(p => p.equipoid == team.id) : [];
 
-        modalContainer.innerHTML = `
-            <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                <div class="flex justify-between items-start mb-8">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Rendimiento en Torneo</h3>
-                        <div class="flex items-center gap-2 mt-1">
-                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.nombre}</span>
-                            <span class="text-slate-400 font-bold text-xs">${conv.fecha}</span>
+            modalContainer.className = "bg-white w-full max-w-7xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+            modalContainer.innerHTML = `
+                <div class="p-8 md:p-12">
+                    <div class="flex justify-between items-start mb-8">
+                        <div>
+                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Análisis de Rendimiento</h3>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.nombre}</span>
+                                <span class="text-slate-400 font-bold text-xs">Torneo • ${conv.fecha}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="toggle-edit-conv" class="px-4 py-2 bg-slate-100 text-slate-500 font-bold rounded-xl text-xs hover:bg-slate-200 transition-all flex items-center gap-2">
+                                <i data-lucide="users" class="w-4 h-4"></i>
+                                Gestionar Convocados
+                            </button>
+                            <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                         </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button id="toggle-edit-conv" class="px-4 py-2 bg-slate-100 text-slate-500 font-bold rounded-xl text-xs hover:bg-slate-200 transition-all flex items-center gap-2">
-                            <i data-lucide="users" class="w-4 h-4"></i>
-                            Gestionar Convocados
-                        </button>
-                        <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
-                    </div>
-                </div>
 
-                <div id="conv-management-area" class="hidden mb-8 p-6 bg-slate-50 rounded-[2rem] border border-blue-100 animate-in slide-in-from-top duration-300">
-                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <i data-lucide="user-plus" class="w-4 h-4 text-blue-500"></i>
-                        Añadir / Quitar Jugadores de ${team ? team.nombre : 'la plantilla'}
-                    </h4>
-                    <div class="relative mb-4">
-                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                        <input type="text" id="torneo-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2 bg-white border border-slate-100 rounded-xl text-xs outline-none focus:ring-2 ring-blue-50">
-                    </div>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar" id="conv-edit-list">
-                        ${teamPlayers.map(p => {
-                            const isConvocado = pids.includes(p.id.toString());
-                            return `
-                                <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all torneo-player-label">
-                                    <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-[10px] font-bold text-slate-700 truncate torneo-player-name">${p.nombre}</p>
-                                        <p class="text-[8px] text-slate-400 font-black uppercase">${p.posicion || '--'}</p>
-                                    </div>
-                                </label>
-                            `;
-                        }).join('') || '<p class="col-span-full text-center text-[10px] text-slate-400 italic">No hay jugadores vinculados a este equipo.</p>'}
-                    </div>
-                    <div class="mt-4 pt-4 border-t border-slate-200 flex justify-end">
-                        <button id="save-conv-changes" class="px-6 py-2 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20">Aplicar Cambios</button>
-                    </div>
-                </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Left: Evaluation Form (Smaller) -->
+                        <div class="lg:col-span-1 space-y-8">
+                            <div id="conv-management-area" class="hidden p-6 bg-slate-50 rounded-[2rem] border border-blue-100 animate-in slide-in-from-top duration-300 mb-8">
+                                <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <i data-lucide="user-plus" class="w-4 h-4 text-blue-500"></i>
+                                    Plantilla de ${team ? team.nombre : 'Jugadores'}
+                                </h4>
+                                <div class="relative mb-4">
+                                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                    <input type="text" id="torneo-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2 bg-white border border-slate-100 rounded-xl text-xs outline-none focus:ring-2 ring-blue-50">
+                                </div>
+                                <div class="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar" id="conv-edit-list">
+                                    ${teamPlayers.map(p => {
+                                        const isConvocado = pids.includes(p.id.toString());
+                                        return `
+                                            <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all torneo-player-label">
+                                                <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-[10px] font-bold text-slate-700 truncate torneo-player-name">${p.nombre}</p>
+                                                    <p class="text-[8px] text-slate-400 font-black uppercase">${p.posicion || '--'}</p>
+                                                </div>
+                                            </label>
+                                        `;
+                                    }).join('') || '<p class="col-span-full text-center text-[10px] text-slate-400 italic">No hay jugadores vinculados a este equipo.</p>'}
+                                </div>
+                                <div class="mt-4 pt-4 border-t border-slate-200 flex justify-end">
+                                    <button id="save-conv-changes" class="px-6 py-2 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20">Aplicar Cambios</button>
+                                </div>
+                            </div>
 
-                <form id="torneo-rendimiento-form" class="space-y-8">
-                    <input type="hidden" name="convocatoriaId" value="${conv.id}">
-                    <div class="space-y-4">
-                        ${convocados.length > 0 ? convocados.map(p => {
-                            const evalData = rendimiento[p.id] || { score: '', comment: '' };
-                            return `
-                                <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100 hover:bg-white transition-all group">
-                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                                        <div class="flex items-center gap-4">
-                                            <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-sm">${p.posicion || '--'}</div>
-                                            <div>
-                                                <h5 class="text-lg font-bold text-slate-800">${p.nombre}</h5>
-                                                <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">DORSAL: ${p.dorsal || '--'}</p>
+                            <form id="torneo-rendimiento-form" class="space-y-6">
+                                <input type="hidden" name="convocatoriaId" value="${conv.id}">
+                                <div class="space-y-4">
+                                    ${convocados.length > 0 ? convocados.map(p => {
+                                        const evalData = rendimiento[p.id] || { score: '', comment: '' };
+                                        return `
+                                            <div class="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-blue-200 transition-all group shadow-sm">
+                                                <div class="flex flex-col gap-4 mb-4">
+                                                    <div class="flex items-center gap-4">
+                                                        <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs uppercase shadow-lg">${p.posicion || '--'}</div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <h5 class="text-sm font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h5>
+                                                        </div>
+                                                    </div>
+                                                    <div class="flex items-center justify-between gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                                                        <span class="text-[9px] font-black text-slate-400 uppercase px-2">Nota Torneo</span>
+                                                        <select name="score_${p.id}" class="bg-white border-none text-blue-600 font-black p-2 rounded-xl focus:ring-4 ring-blue-100 outline-none w-20 text-center shadow-sm">
+                                                            <option value="">-</option>
+                                                            ${Array.from({length: 10}, (_, i) => i + 1).map(n => `<option value="${n}" ${evalData.score == n ? 'selected' : ''}>${n}</option>`).join('')}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <textarea name="comment_${p.id}" rows="2" class="w-full p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-xs outline-none focus:ring-4 ring-blue-100 transition-all placeholder:italic" placeholder="Análisis...">${evalData.comment || ''}</textarea>
+                                                </div>
                                             </div>
+                                        `;
+                                    }).join('') : `
+                                        <div class="py-24 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-100">
+                                            <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 text-slate-200 shadow-sm"><i data-lucide="users" class="w-10 h-10"></i></div>
+                                            <p class="text-xs text-slate-400 mt-2 font-black uppercase">Sin jugadores</p>
                                         </div>
-                                        <div class="flex items-center gap-2">
-                                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nota:</label>
-                                            <select name="score_${p.id}" class="bg-white border text-blue-600 font-black p-2 rounded-xl focus:ring-4 ring-blue-100 outline-none w-20 text-center">
-                                                <option value="">-</option>
-                                                ${Array.from({length: 10}, (_, i) => i + 1).map(n => `<option value="${n}" ${evalData.score == n ? 'selected' : ''}>${n}</option>`).join('')}
-                                            </select>
-                                        </div>
-                                    </div>
+                                    `}
+                                </div>
+
+                                <div class="pt-8">
+                                    <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase text-[10px] tracking-widest">Guardar Cambios</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Right: Tactical Pitch (Larger) -->
+                        <div class="lg:col-span-2 space-y-6">
+                            <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm sticky top-0">
+                                <div class="flex justify-between items-center mb-8 px-4">
                                     <div>
-                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Comentarios del Entrenador</label>
-                                        <textarea name="comment_${p.id}" rows="2" class="w-full p-4 border border-slate-200 rounded-2xl bg-white text-sm outline-none focus:ring-4 ring-blue-100 transition-all placeholder:italic" placeholder="Escribe aquí tu análisis...">${evalData.comment || ''}</textarea>
+                                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Pizarra Táctica</h4>
+                                        <p class="text-xl font-black text-slate-800 uppercase tracking-tight">Esquema del Equipo</p>
+                                    </div>
+                                    <div class="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100">
+                                        <span class="text-[10px] font-black text-slate-400 uppercase px-2">Sistema</span>
+                                        <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Torneo')" class="p-3 bg-white border border-slate-100 rounded-xl text-xs font-black uppercase outline-none shadow-sm cursor-pointer">
+                                            ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                                const current = (window.formationsState && window.formationsState.torneo) || 'F11_433';
+                                                return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                            }).join('')}
+                                        </select>
                                     </div>
                                 </div>
-                            `;
-                        }).join('') : `
-                            <div class="py-20 text-center bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-100">
-                                <p class="text-slate-400 font-bold mb-2">No hay jugadores convocados todavía</p>
-                                <p class="text-[10px] text-slate-300 uppercase tracking-widest">Utiliza el botón superior para añadir jugadores de la plantilla</p>
+                                
+                                <div class="animate-in fade-in zoom-in duration-700">
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433')}
+                                </div>
+                                <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Convocados</p>
+                                        <p class="text-2xl font-black text-slate-800">${convocados.length}</p>
+                                    </div>
+                                     <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Evaluados</p>
+                                        <p class="text-2xl font-black text-blue-600">${Object.keys(rendimiento).length}</p>
+                                    </div>
+                                </div>
                             </div>
-                        `}
+                        </div>
                     </div>
-
-                    <div class="flex gap-4 mt-8 sticky bottom-0 bg-white/80 backdrop-blur-sm p-4 rounded-3xl border border-slate-100 shadow-2xl">
-                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Guardar Evaluaciones</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        modalOverlay.classList.add('active');
+                </div>
+            `;
+            modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
 
         // Toggle conv management
@@ -5138,7 +5366,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!notifPanel.classList.contains('hidden')) {
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
-                notifBtn.querySelector('i').classList.remove('animate-ring');
+                const ringIcon = notifBtn.querySelector('i');
+                if (ringIcon) ringIcon.classList.remove('animate-ring');
+
+                // Mark all current as seen
+                const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+                const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
+                const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
+                localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(updatedSeen));
             }
         };
 
@@ -5161,6 +5396,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const allEventos = await db.getAll('eventos');
                 const allSesiones = await db.getAll('sesiones');
                 const currentUser = (await supabaseClient.auth.getUser()).data.user;
+                if (!currentUser) return;
 
                 const agendaItems = [
                     ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock' })),
@@ -5173,13 +5409,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                  .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.hora.localeCompare(b.hora));
 
                 if (agendaItems.length > 0) {
-                    notifBadge.classList.remove('hidden');
-                    if (notifBadgeMobile) notifBadgeMobile.classList.remove('hidden');
-                    if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.add('animate-ring');
+                    const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+                    const hasUnseen = agendaItems.some(item => !seenNotifs.includes(`${item.type}_${item.id}`));
+
+                    if (hasUnseen && notifPanel.classList.contains('hidden')) {
+                        notifBadge.classList.remove('hidden');
+                        if (notifBadgeMobile) notifBadgeMobile.classList.remove('hidden');
+                        const ringIcon = notifBtn.querySelector('i');
+                        if (ringIcon) ringIcon.classList.add('animate-ring');
+                    }
+
                     notifCount.textContent = `${agendaItems.length} pendientes`;
                     
-                    notifList.innerHTML = agendaItems.map(item => `
-                        <div class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group" onclick="window.switchView('${item.type === 'sesion' ? 'sesiones' : 'eventos'}')">
+                    notifList.innerHTML = agendaItems.map(item => {
+                        const isSeen = seenNotifs.includes(`${item.type}_${item.id}`);
+                        return `
+                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative" onclick="window.switchView('${item.type === 'sesion' ? 'sesiones' : 'eventos'}')">
+                            ${!isSeen ? '<div class="absolute right-3 top-3 w-2 h-2 bg-blue-500 rounded-full"></div>' : ''}
                             <div class="w-10 h-10 ${item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'} rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white">
                                 <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                             </div>
@@ -5191,7 +5437,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-[9px] text-slate-500 truncate">${item.lugar || item.equiponombre || 'Campo Principal'}</p>
                             </div>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                     if (window.lucide) lucide.createIcons();
                 } else {
                     notifList.innerHTML = `
@@ -5206,7 +5453,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     notifCount.textContent = '0 nuevas';
                     notifBadge.classList.add('hidden');
                     if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
-                    if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
+                    const ringIcon = notifBtn.querySelector('i');
+                    if (ringIcon) ringIcon.classList.remove('animate-ring');
                     if (window.lucide) lucide.createIcons();
                 }
             } catch (err) {
