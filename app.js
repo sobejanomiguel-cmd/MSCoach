@@ -1106,13 +1106,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         action = `window.viewConvocatoria(${item.id})`;
                                     }
 
+                                    const tableName = item.type === 'sesion' ? 'sesiones' : (item.type === 'convocatoria' ? 'convocatorias' : 'eventos');
                                     return `
-                                        <div onclick="${action}" class="p-4 rounded-2xl border ${bgColor} hover:bg-white transition-all cursor-pointer group">
-                                            <div class="flex justify-between items-center mb-1">
-                                                <span class="text-[10px] font-black text-slate-400 uppercase">${item.hora || 'Todo el día'}</span>
-                                                <i data-lucide="${icon}" class="w-3 h-3 text-slate-300"></i>
+                                        <div class="p-4 rounded-2xl border ${bgColor} hover:bg-white transition-all cursor-pointer group flex items-start gap-3 ${item.completada ? 'opacity-40 grayscale-[0.5]' : ''}">
+                                            <input type="checkbox" ${item.completada ? 'checked' : ''} 
+                                                onclick="event.stopPropagation(); window.toggleTaskStatus(${item.id}, '${tableName}')" 
+                                                class="mt-1 w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                                            <div onclick="${action}" class="flex-1">
+                                                <div class="flex justify-between items-center mb-1">
+                                                    <span class="text-[10px] font-black text-slate-400 uppercase">${item.hora || 'Todo el día'}</span>
+                                                    <i data-lucide="${icon}" class="w-3 h-3 text-slate-300"></i>
+                                                </div>
+                                                <p class="font-bold text-slate-800 text-sm leading-tight ${item.completada ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
                                             </div>
-                                            <p class="font-bold text-slate-800 text-sm leading-tight">${item.titulo || item.nombre}</p>
                                         </div>
                                     `;
                                 }).join('') : `<div class="py-12 text-center text-slate-300 italic text-sm">Sin eventos planeados</div>`}
@@ -1143,14 +1149,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    window.toggleTaskStatus = async (id) => {
-        const events = await db.getAll('eventos');
-        const task = events.find(e => e.id == id);
-        if (task) {
-            task.completada = !task.completada;
-            await db.update('eventos', task);
-            if (window.refreshNotifications) window.refreshNotifications();
-            window.switchView(currentView);
+    window.toggleTaskStatus = async (id, table = 'eventos') => {
+        try {
+            const items = await db.getAll(table);
+            const item = items.find(e => e.id == id);
+            if (item) {
+                item.completada = !item.completada;
+                await db.update(table, item);
+                if (window.refreshNotifications) window.refreshNotifications();
+                if (typeof renderCalendario === 'function' && currentView === 'calendario') {
+                    const container = document.getElementById('content-container');
+                    renderCalendario(container);
+                } else {
+                    window.switchView(currentView);
+                }
+            }
+        } catch (err) {
+            console.error("Error toggling status:", err);
         }
     };
 
@@ -1752,9 +1767,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <!-- Sessions Table List -->
-                <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-x-auto">
-                    <table class="w-full min-w-[900px]">
+                <!-- Sessions Table List (Desktop) -->
+                <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-x-auto">
+                    <table class="w-full">
                         <thead>
                             <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                 <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha / Hora</th>
@@ -1782,7 +1797,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 </div>
                                                 <div>
                                                     <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${s.hora || '--:--'}</p>
-                                                    <p class="text-[9px] font-bold text-slate-400 lowercase italic">Planificada</p>
+                                                    <p class="text-[9px] font-bold text-slate-400 lowercase italic">Planificada ${s.completada ? '✅' : ''}</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -1798,7 +1813,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </div>
                                         </td>
                                         <td class="px-6 py-5">
-                                            <p class="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight">${s.titulo || 'Sesión programada'}</p>
+                                            <p class="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through' : ''}">${s.titulo || 'Sesión programada'}</p>
                                             <div class="flex items-center gap-3 mt-0.5">
                                                 <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
                                             </div>
@@ -1821,17 +1836,55 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                     </tr>
                                 `;
-                            }).join('') || `<tr><td colspan="5" class="py-24 text-center">
-                                <div class="flex flex-col items-center gap-3 opacity-30">
-                                    <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-2 border border-slate-100">
-                                        <i data-lucide="calendar-range" class="w-10 h-10 text-slate-300"></i>
-                                    </div>
-                                    <p class="text-sm font-bold text-slate-800">No hay sesiones registradas</p>
-                                    <button onclick="document.getElementById('add-btn').click()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">Crear Primera Sesión</button>
-                                </div>
-                            </td></tr>`}
+                            }).join('') || `<tr><td colspan="5" class="py-24 text-center">Sin datos</td></tr>`}
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Sessions Mobile View (Cards) -->
+                <div class="md:hidden space-y-4">
+                    ${filteredSessions.length > 0 ? filteredSessions.map(s => {
+                        const d = new Date(s.fecha);
+                        const day = d.getDate();
+                        const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
+                        const taskCount = (s.taskids || []).filter(id => id).length;
+                        
+                        return `
+                            <div onclick="window.viewSession(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center">
+                                            <span class="text-[7px] font-black leading-none">${month}</span>
+                                            <span class="text-sm font-black leading-none mt-0.5">${day}</span>
+                                        </div>
+                                        <div>
+                                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${s.equiponombre}</span>
+                                            <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-8 h-8 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                                        <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-8 h-8 bg-red-50 text-red-300 rounded-lg flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                    </div>
+                                </div>
+                                <h4 class="text-base font-black text-slate-800 uppercase tracking-tight mb-3 ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sin título'}</h4>
+                                <div class="flex items-center justify-between pt-4 border-t border-slate-50">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-500"></i>
+                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${taskCount} Ejercicios</span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5">
+                                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-300"></i>
+                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[100px]">${s.lugar || 'S/A'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('') : `
+                        <div class="py-20 text-center bg-white rounded-[2rem] border border-dashed border-slate-200">
+                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay sesiones</p>
+                        </div>
+                    `}
                 </div>
             </div>
         `;
@@ -2618,12 +2671,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 tableContainer.innerHTML = `
-                    <div class="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                    <!-- Desktop View (Table) -->
+                    <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
                         <table class="w-full border-collapse">
                             <thead>
                                 <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Futbolista</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo MS</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
@@ -2671,9 +2725,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </td>
                                         </tr>
                                     `;
-                                }).join('') || `<tr><td colspan="6" class="py-24 text-center text-slate-300 italic">No hay jugadores para mostrar con los filtros actuales.</td></tr>`}
+                                }).join('') || `<tr><td colspan="6" class="py-24 text-center">No hay jugadores</td></tr>`}
                             </tbody>
                         </table>
+                    </div>
+
+                    <!-- Mobile View (Cards) -->
+                    <div class="md:hidden space-y-3">
+                        ${filtered.length > 0 ? filtered.map(p => {
+                            const team = teams.find(t => t.id == p.equipoid);
+                            let levelVal = parseInt(p.nivel) || 1;
+                            return `
+                                <div onclick="window.viewPlayer(${p.id})" class="bg-white p-4 rounded-[1.5rem] border border-slate-100 shadow-sm flex items-center gap-3 active:scale-[0.98] transition-all">
+                                    <div class="relative">
+                                        ${p.foto ? 
+                                            `<img src="${p.foto}" class="w-14 h-14 rounded-2xl object-cover">` :
+                                            `<div class="w-14 h-14 rounded-2xl bg-slate-50 text-slate-300 flex items-center justify-center font-black text-lg">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
+                                        }
+                                        <div class="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] font-black border-2 border-white">${p.dorsal || '--'}</div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="font-bold text-slate-800 text-sm truncate">${p.nombre}</h4>
+                                        <div class="flex items-center gap-2 mt-0.5">
+                                            <span class="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded">${p.posicion || 'S/P'}</span>
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase truncate">${team ? team.nombre : 'Libre'}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col items-end gap-2">
+                                         <div class="flex text-amber-400 text-[8px]">${'★'.repeat(levelVal)}</div>
+                                         <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('') : `
+                             <div class="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-100">
+                                 <p class="text-xs text-slate-400">Sin resultados</p>
+                             </div>
+                        `}
                     </div>
                 `;
                 if (window.lucide) lucide.createIcons();
@@ -3031,9 +3119,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const updateBoard = () => {
             const list = document.getElementById('asistencia-list');
-            if (!list) return;
+            const listMobile = document.getElementById('asistencia-list-mobile');
+            if (!list && !listMobile) return;
 
-            // Filtramos jugadores basándonos en la convocatoria si existe, sino por equipo
             let targetPlayers = [];
             if (selectedConvId) {
                 const conv = convocatorias.find(c => c.id == selectedConvId);
@@ -3045,20 +3133,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             if (targetPlayers.length === 0) {
-                list.innerHTML = `
-                    <tr>
-                        <td colspan="3" class="py-20 text-center">
-                            <i data-lucide="users" class="w-12 h-12 text-slate-100 mx-auto mb-4"></i>
-                            <p class="text-slate-400 font-bold">No hay jugadores para mostrar</p>
-                            <p class="text-[10px] text-slate-300 uppercase tracking-widest mt-1">Selecciona un equipo o evento válido</p>
-                        </td>
-                    </tr>
-                `;
-                lucide.createIcons();
+                const emptyHtml = `<div class="py-20 text-center"><p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Sin jugadores asignados</p></div>`;
+                if (list) list.innerHTML = `<tr><td colspan="3">${emptyHtml}</td></tr>`;
+                if (listMobile) listMobile.innerHTML = emptyHtml;
+                if (window.lucide) lucide.createIcons();
                 return;
             }
 
-            list.innerHTML = targetPlayers.map(j => {
+            const desktopHtml = targetPlayers.map(j => {
                 const status = attendanceData[j.id] || 'presente';
                 return `
                     <tr class="border-b border-slate-50">
@@ -3067,7 +3149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <td class="px-6 py-4 text-right">
                             <div class="flex justify-end gap-1">
                                 ${['presente', 'ausente', 'tarde', 'lesion'].map(s => `
-                                    <button onclick="window.setPlayerStatus(${j.id}, '${s}')" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${status === s ? 'bg-slate-800 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}">
+                                    <button onclick="window.setPlayerStatus(${j.id}, '${s}')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${status === s ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border text-slate-400 hover:bg-slate-50'}">
                                         ${s}
                                     </button>
                                 `).join('')}
@@ -3076,6 +3158,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </tr>
                 `;
             }).join('');
+
+            const mobileHtml = targetPlayers.map(j => {
+                const status = attendanceData[j.id] || 'presente';
+                return `
+                    <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs">${j.dorsal || '--'}</div>
+                            <span class="font-bold text-slate-800 text-sm">${j.nombre}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${['presente', 'ausente', 'tarde', 'lesion'].map(s => `
+                                <button onclick="window.setPlayerStatus(${j.id}, '${s}')" class="py-3 px-2 rounded-xl text-[10px] font-black uppercase border transition-all ${status === s ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}">
+                                    ${s}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            if (list) list.innerHTML = desktopHtml;
+            if (listMobile) listMobile.innerHTML = mobileHtml;
+            if (window.lucide) lucide.createIcons();
         };
 
         window.setPlayerStatus = (pId, s) => { attendanceData[pId] = s; updateBoard(); };
@@ -3106,7 +3211,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <button id="save-report" class="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg shadow-blue-500/20 hover:scale-105 transition-all text-[10px] uppercase tracking-widest whitespace-nowrap">Guardar Informe</button>
                         </div>
                     </div>
-                    <div class="overflow-x-auto">
+                    
+                    <!-- Desktop View Table -->
+                    <div class="hidden md:block overflow-x-auto">
                         <table class="w-full">
                             <thead class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 <tr>
@@ -3118,9 +3225,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tbody id="asistencia-list"></tbody>
                         </table>
                     </div>
+
+                    <!-- Mobile View Cards -->
+                    <div class="md:hidden p-4 space-y-3 bg-slate-50/50" id="asistencia-list-mobile">
+                        <!-- Injected via updateBoard -->
+                    </div>
                 </div>
             `;
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
 
             const teamSel = container.querySelector('#team-sel');
             const convSel = container.querySelector('#conv-sel');
@@ -3129,7 +3241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             teamSel.onchange = (e) => { 
                 selectedTeamId = e.target.value; 
-                selectedConvId = null; // Reset conv if team change manually
+                selectedConvId = null;
                 updateBoard(); 
             };
             
@@ -4272,7 +4384,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
 
-    window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
+window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!window.formationsState) window.formationsState = {};
         window.formationsState[type.toLowerCase()] = formationId;
         
@@ -4283,7 +4395,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    window.viewConvocatoria = async (id) => {
+    window.toggleConvEdit = (id) => {
+        const display = document.getElementById('conv-info-display');
+        const edit = document.getElementById('conv-info-edit');
+        if (display && edit) {
+            display.classList.toggle('hidden');
+            edit.classList.toggle('hidden');
+        }
+    };
+
+    window.saveConvEdit = async (e, id) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            const { error } = await supabaseClient.from('convocatorias').update({
+                nombre: data.nombre,
+                tipo: data.tipo,
+                lugar: data.lugar
+            }).eq('id', id);
+
+            if (error) throw error;
+
+            window.customAlert('¡Actualizado!', 'La información de la convocatoria ha sido guardada.', 'success');
+            window.viewConvocatoria(id); // Reload modal
+        } catch (err) {
+            console.error(err);
+            alert("Error al actualizar: " + err.message);
+        }
+    };
+
+    window.viewConvocatoria = async (id, activeTab = 'pizarra') => {
         const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
         if (error) return;
 
@@ -4295,71 +4438,151 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         modalContainer.className = "bg-white w-full max-w-7xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
-            <div class="p-8 md:p-12">
+            <div class="p-4 md:p-12">
                 <div class="flex justify-between items-start mb-8">
-                    <div>
-                        <div class="flex gap-2 mb-2">
-                            <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.tipo}</span>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span id="conv-type-badge" class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.tipo}</span>
                             <span class="px-2 py-1 bg-slate-100 text-slate-500 rounded text-[10px] font-black uppercase tracking-widest">${team ? team.nombre : 'Equipo General'}</span>
+                            <button onclick="window.toggleConvEdit(${conv.id})" class="p-1.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Editar información">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                            </button>
                         </div>
-                        <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
-                        <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                        <div id="conv-info-display">
+                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
+                            <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                        </div>
+                        <div id="conv-info-edit" class="hidden animate-in fade-in slide-in-from-top-2 duration-300 bg-slate-50 p-6 rounded-3xl mt-4 border border-slate-200">
+                            <form onsubmit="window.saveConvEdit(event, ${conv.id})" class="grid grid-cols-2 gap-4">
+                                <div class="col-span-2">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Nombre del Evento</label>
+                                    <input name="nombre" value="${conv.nombre}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Tipo</label>
+                                    <select name="tipo" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none cursor-pointer">
+                                        <option value="Ciclo" ${conv.tipo === 'Ciclo' ? 'selected' : ''}>Ciclo</option>
+                                        <option value="Sesión" ${conv.tipo === 'Sesión' ? 'selected' : ''}>Sesión</option>
+                                        <option value="Zubieta" ${conv.tipo === 'Zubieta' ? 'selected' : ''}>Zubieta</option>
+                                        <option value="Torneo" ${conv.tipo === 'Torneo' ? 'selected' : ''}>Torneo</option>
+                                        <option value="Partido" ${conv.tipo === 'Partido' ? 'selected' : ''}>Partido</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Lugar</label>
+                                    <input name="lugar" value="${conv.lugar || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                </div>
+                                <div class="col-span-2 flex gap-2 pt-2">
+                                    <button type="submit" class="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all">Guardar</button>
+                                    <button type="button" onclick="window.toggleConvEdit(${conv.id})" class="px-4 py-3 bg-slate-200 text-slate-600 font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-slate-300 transition-all">Cancelar</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                     <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all"><i data-lucide="x"></i></button>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <!-- List side -->
-                    <div class="space-y-4">
-                        <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="grid grid-cols-12 px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                                <div class="col-span-1">#</div>
-                                <div class="col-span-7">Jugador</div>
-                                <div class="col-span-4 text-right">Posición</div>
-                            </div>
-                            <div class="divide-y divide-slate-50 max-h-[600px] overflow-y-auto custom-scrollbar">
-                                ${convocados.length > 0 ? convocados.map((p, i) => `
-                                    <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
-                                        <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
-                                        <div class="col-span-7 font-bold text-slate-800 text-sm">${p.nombre}</div>
-                                        <div class="col-span-4 text-right text-[10px] font-black text-slate-500 uppercase">${p.posicion || '--'}</div>
-                                    </div>
-                                `).join('') : '<p class="text-center py-20 text-slate-400 italic">No hay jugadores convocados.</p>'}
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-4">
-                             <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
-                                <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
-                                Descargar PDF
-                             </button>
-                             <button onclick="closeModal()" class="px-8 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-all">Cerrar</button>
-                        </div>
-                    </div>
+                <!-- Tabs -->
+                <div class="flex gap-8 border-b border-slate-100 mb-10">
+                    <button onclick="window.viewConvocatoria(${id}, 'pizarra')" class="pb-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative ${activeTab === 'pizarra' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600 opacity-60'}">
+                        Pizarra Táctica
+                        ${activeTab === 'pizarra' ? '<div class="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-300"></div>' : ''}
+                    </button>
+                    <button onclick="window.viewConvocatoria(${id}, 'sesiones')" class="pb-4 text-[10px] font-black uppercase tracking-[0.2em] transition-all relative ${activeTab === 'sesiones' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600 opacity-60'}">
+                        Sesiones de Trabajo
+                        ${activeTab === 'sesiones' ? '<div class="absolute bottom-0 left-0 right-0 h-1 bg-blue-600 rounded-full animate-in slide-in-from-left duration-300"></div>' : ''}
+                    </button>
+                </div>
 
-                    <!-- Pitch side -->
-                    <div class="space-y-4">
-                        <div class="bg-slate-900/5 p-6 rounded-[2.5rem] border border-slate-100">
-                            <div class="flex justify-between items-center mb-6">
-                                <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Esquema Táctico</h4>
-                                <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-white border border-slate-100 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm cursor-pointer">
-                                    ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                        const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
-                                        return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                    }).join('')}
-                                </select>
+                ${activeTab === 'pizarra' ? `
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
+                        <!-- List side -->
+                        <div class="space-y-4">
+                            <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                                <div class="grid grid-cols-12 px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                                    <div class="col-span-1">#</div>
+                                    <div class="col-span-11">Jugador / Posición</div>
+                                </div>
+                                <div class="divide-y divide-slate-50 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                    ${convocados.length > 0 ? convocados.map((p, i) => `
+                                        <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
+                                            <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
+                                            <div class="col-span-11 flex justify-between items-center">
+                                                <span class="font-bold text-slate-800 text-sm">${p.nombre}</span>
+                                                <span class="text-[9px] font-black text-slate-400 uppercase">${p.posicion || '--'}</span>
+                                            </div>
+                                        </div>
+                                    `).join('') : '<p class="text-center py-20 text-slate-400 italic">No hay jugadores convocados.</p>'}
+                                </div>
                             </div>
                             
-                            <div id="modal-pitch-view" class="animate-in fade-in duration-500">
-                                ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'vertical')}
+                            <div class="flex gap-4">
+                                 <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
+                                    <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
+                                    Descargar PDF
+                                 </button>
+                                 <button onclick="closeModal()" class="px-8 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-all">Cerrar</button>
+                            </div>
+                        </div>
+
+                        <!-- Pitch side -->
+                        <div class="space-y-4">
+                            <div class="bg-slate-900/5 p-6 rounded-[2.5rem] border border-slate-100">
+                                <div class="flex justify-between items-center mb-6">
+                                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Esquema Táctico</h4>
+                                    <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-white border border-slate-100 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm cursor-pointer">
+                                        ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                            const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+                                            return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                        }).join('')}
+                                    </select>
+                                </div>
+                                <div id="modal-pitch-view" class="animate-in fade-in duration-500">
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'vertical')}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                ` : `
+                    <div id="async-sessions-container">
+                         <div class="py-20 text-center"><div class="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div></div>
+                    </div>
+                `}
             </div>
         `;
+
         modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
+
+        // Handle async sessions loading
+        if (activeTab === 'sesiones') {
+            const container = document.getElementById('async-sessions-container');
+            const allSesiones = await db.getAll('sesiones');
+            const relatedSesiones = allSesiones.filter(s => s.fecha === conv.fecha && s.equipoid == conv.equipoid);
+            
+            if (relatedSesiones.length === 0) {
+                container.innerHTML = `
+                    <div class="py-20 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-100">
+                        <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                            <i data-lucide="calendar-x" class="w-8 h-8 text-slate-300"></i>
+                        </div>
+                        <p class="text-xs font-black text-slate-400 uppercase tracking-widest">No hay sesiones este día</p>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        ${relatedSesiones.map(s => `
+                            <div class="p-8 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:border-blue-100 transition-all group">
+                                <h4 class="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">${s.titulo || 'Sesión'}</h4>
+                                <button onclick="closeModal(); window.switchView('sesiones')" class="w-full py-4 bg-slate-900 text-white text-[10px] font-black uppercase rounded-2xl">Ver Sesión</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            if (window.lucide) lucide.createIcons();
+        }
     };
 
     window.exportConvocatoria = async (id) => {
@@ -5549,10 +5772,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (clearNotifsBtn) {
             clearNotifsBtn.onclick = () => {
+                const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+                const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
+                const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
+                localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(updatedSeen));
+                
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
                 notifPanel.classList.add('hidden');
+                window.refreshNotifications(); // Refresh to update seen dots
             };
         }
 
