@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const viewMeta = {
-        'dashboard': { title: 'MS Coach', subtitle: 'Resumen general de tu actividad.', addButtonEnabled: false },
+        'dashboard': { title: 'RS CENTRO', subtitle: 'Resumen general de tu actividad.', addButtonEnabled: false },
         'calendario': { title: 'Calendario Maestro', subtitle: 'Planificación de sesiones y tareas diarias.', addButtonEnabled: false },
         'campograma': { title: 'Campograma Táctico', subtitle: 'Análisis de profundidad por sistema y posición.', addButtonEnabled: false },
         'eventos': { title: 'Agenda y Tareas', subtitle: 'Listado de tareas de gestión y recordatorios.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true },
@@ -2219,7 +2219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <img src="${headerShield}" class="w-24 h-24 object-contain">
                     </div>
                     <div class="text-right">
-                        <h1 class="text-4xl font-black text-blue-900 uppercase leading-none">MS Coach</h1>
+                        <h1 class="text-4xl font-black text-blue-900 uppercase leading-none">RS CENTRO</h1>
                         <p class="text-blue-600 font-bold text-lg mt-1 tracking-widest uppercase">Plan de Entrenamiento</p>
                     </div>
                 </header>
@@ -2325,7 +2325,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ` : ''}
 
             <footer class="mt-20 py-10 text-center no-print border-t border-slate-100">
-                <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">MS Coach Tactician • Pro Reporting System • Powering Performance</p>
+                <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">RS CENTRO Tactician • Pro Reporting System • Powering Performance</p>
             </footer>
         `;
         
@@ -4804,7 +4804,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             doc.setPage(i);
             doc.setFontSize(8);
             doc.setTextColor(148, 163, 184);
-            doc.text(`Generado por MS Coach - Página ${i} de ${pageCount}`, 150, 285);
+            doc.text(`Generado por RS CENTRO - Página ${i} de ${pageCount}`, 150, 285);
         }
 
         doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
@@ -5799,11 +5799,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             if (!user || !user.email) return;
 
             const isSession = type === 'sesiones';
-            const subject = `⚽ Recordatorio MS Coach: ${item.nombre || item.titulo}`;
+            const subject = `⚽ Recordatorio RS CENTRO: ${item.nombre || item.titulo}`;
             const html = `
                 <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
                     <div style="background: #2563eb; padding: 32px; text-align: center;">
-                        <h1 style="color: white; margin: 0; font-size: 24px;">MS Coach</h1>
+                        <h1 style="color: white; margin: 0; font-size: 24px;">RS CENTRO</h1>
                         <p style="color: #dbeafe; margin: 8px 0 0 0;">Recordatorio de Agenda</p>
                     </div>
                     <div style="padding: 32px;">
