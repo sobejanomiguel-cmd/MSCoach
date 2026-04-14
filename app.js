@@ -2816,7 +2816,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <textarea name="notas" class="w-full p-6 bg-slate-50 border-none rounded-3xl h-48 font-medium text-slate-700 outline-none focus:ring-4 ring-blue-50 transition-all">${player.notas || ''}</textarea>
                                 </div>
                                 <div class="col-span-full pt-4 flex gap-4">
-                                    <button type="submit" class="flex-1 py-5 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-[1.02] transition-all uppercase tracking-widest text-xs">Guardar Cambios en Ficha</button>
+                                    <button type="submit" class="flex-[3] py-5 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-[1.02] transition-all uppercase tracking-widest text-xs">Guardar Cambios en Ficha</button>
+                                    <button type="button" onclick="window.deletePlayer(${player.id})" class="flex-1 py-5 bg-rose-50 text-rose-500 font-black rounded-3xl hover:bg-rose-100 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        Borrar
+                                    </button>
                                 </div>
                             </form>
                         </div>
