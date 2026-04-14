@@ -4870,7 +4870,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 doc.rect(realX - 8, realY + offsetY, 16, 4, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(4.5);
-                const shortName = player.nombre.split(' ')[0].substring(0, 10).toUpperCase();
+                const parts = player.nombre.trim().split(/\s+/);
+                const shortName = (parts.length > 1 ? `${parts[0]}. ${parts[1][0]}` : parts[0]).toUpperCase();
                 doc.text(shortName, realX, realY + offsetY + 2.8, { align: 'center' });
             });
         });
@@ -4893,7 +4894,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         sistema: 'F11_433',
         equipos: [],
         posiciones: [],
-        niveles: [3, 4, 5],
+        niveles: [],
         years: [],
         clubesConvenidos: []
     };
@@ -5093,7 +5094,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div class="flex flex-col gap-0.5 w-[75px]">
                                 ${playersInPos.map(player => `
                                     <div class="bg-slate-900 border border-white/10 px-2 py-1.5 rounded-xl shadow-xl overflow-hidden">
-                                        <p class="text-[8px] font-black text-white text-center uppercase truncate">${player.nombre.split(' ')[0]}</p>
+                                        <p class="text-[8px] font-black text-white text-center uppercase truncate">${(() => {
+                                            const parts = player.nombre.trim().split(/\s+/);
+                                            return parts.length > 1 ? `${parts[0]}. ${parts[1][0]}` : parts[0];
+                                        })()}</p>
                                         <div class="flex justify-center gap-0.5 mt-0.5">
                                             ${Array(Number(player.nivel || 3)).fill(0).map(() => `<div class="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>`).join('')}
                                         </div>
@@ -5113,7 +5117,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const years = [...new Set(players.map(p => p.anionacimiento).filter(y => y))].sort((a,b) => b-a);
         const clubs = [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort();
         
-        const filteredPlayers = players.filter(p => {
+        const hasActiveFilters = 
+            campogramaFilters.equipos.length > 0 || 
+            campogramaFilters.posiciones.length > 0 || 
+            campogramaFilters.years.length > 0 || 
+            campogramaFilters.clubesConvenidos.length > 0 || 
+            campogramaFilters.niveles.length > 0;
+
+        const filteredPlayers = !hasActiveFilters ? [] : players.filter(p => {
             const teamMatch = campogramaFilters.equipos.length === 0 || campogramaFilters.equipos.includes((p.equipoid || "").toString());
             const levelMatch = campogramaFilters.niveles.length === 0 || campogramaFilters.niveles.includes(Number(p.nivel || 3));
             const posMatch = campogramaFilters.posiciones.length === 0 || campogramaFilters.posiciones.includes(p.posicion);
@@ -5173,8 +5184,17 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
             </div>
 
-            <div class="max-w-6xl mx-auto shadow-2xl rounded-[3.5rem] overflow-hidden">
+            <div class="max-w-6xl mx-auto shadow-2xl rounded-[3.5rem] overflow-hidden relative group">
                 ${renderTacticalPitchHtml(filteredPlayers, campogramaFilters.sistema)}
+                ${!hasActiveFilters ? `
+                    <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center z-10 transition-all duration-500">
+                        <div class="text-center p-8 bg-white/95 rounded-[2.5rem] shadow-2xl border border-white max-w-sm mx-4 transform group-hover:scale-105 transition-transform">
+                            <i data-lucide="filter" class="w-12 h-12 text-blue-600 mx-auto mb-4"></i>
+                            <h3 class="text-lg font-black text-slate-800 uppercase mb-2">Campograma Vacío</h3>
+                            <p class="text-xs text-slate-500 font-bold uppercase tracking-tight leading-relaxed">Por favor, utiliza los filtros superiores para seleccionar los equipos o criterios que deseas analizar.</p>
+                        </div>
+                    </div>
+                ` : ''}
             </div>
 
             <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
