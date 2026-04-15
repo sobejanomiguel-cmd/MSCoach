@@ -1,6 +1,6 @@
 const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
-window.renderPositionSelector = (selectedPositions = [], id = "pos") => {
+window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCallback = "") => {
     const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
                  selectedPositions.length === 1 ? selectedPositions[0] : 
                  `${selectedPositions[0]} + ${selectedPositions.length - 1}`;
@@ -8,7 +8,7 @@ window.renderPositionSelector = (selectedPositions = [], id = "pos") => {
     return `
         <div class="relative group/ms">
             <button type="button" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-modal-menu' && m.classList.add('hidden')); document.getElementById('${id}-modal-menu').classList.toggle('hidden')" 
-                class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 text-xs uppercase tracking-widest flex justify-between items-center hover:bg-white hover:border-blue-200 transition-all shadow-sm">
+                class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 text-[10px] uppercase tracking-widest flex justify-between items-center hover:bg-white hover:border-blue-200 transition-all shadow-sm">
                 <span>${label}</span>
                 <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400"></i>
             </button>
@@ -18,7 +18,7 @@ window.renderPositionSelector = (selectedPositions = [], id = "pos") => {
                         const isSelected = selectedPositions.includes(pos);
                         return `
                             <label class="flex items-center gap-2 p-2 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                                <input type="checkbox" name="posicion" value="${pos}" ${isSelected ? 'checked' : ''} onchange="this.closest('.group\\/ms').querySelector('button span').innerText = [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 0 ? 'SELECCIONAR POSICIONES' : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 1 ? [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')][0].value : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')][0].value + ' + ' + ([...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length - 1)" class="w-4 h-4 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                <input type="checkbox" name="posicion" value="${pos}" ${isSelected ? 'checked' : ''} onchange="const val = [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].map(i => i.value).join(', '); this.closest('.group\\/ms').querySelector('button span').innerText = val === '' ? 'SELECCIONAR POSICIONES' : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 1 ? val : val.split(', ')[0] + ' + ' + ([...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length - 1); ${onChangeCallback ? `${onChangeCallback}(val)` : ''}" class="w-4 h-4 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
                                 <span class="text-[10px] font-black ${isSelected ? 'text-blue-600' : 'text-slate-500'} uppercase font-outfit">${pos}</span>
                             </label>
                         `;
@@ -2787,7 +2787,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                 return `
                                     ${renderFilter('team', 'Equipos', teams.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t=>({value:t.id, label:t.nombre})).concat([{value:'SIN_EQUIPO', label:'Libres'}]), window.playerFilters.teams)}
-                                    ${renderFilter('club', 'Clubes', [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
+                                    ${renderFilter('club', 'Clubes', [...new Set(players.map(p => (p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase()).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
                                     ${renderFilter('pos', 'Posiciones', PLAYER_POSITIONS.map(p=>({value:p, label:p})), window.playerFilters.positions)}
                                     ${renderFilter('level', 'Niveles', [1,2,3,4,5].map(lvl=>({value:lvl, label:`Nivel ${'★'.repeat(lvl)}`})), window.playerFilters.levels)}
                                 `;
@@ -2821,7 +2821,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                        (window.playerFilters.teams.includes('SIN_EQUIPO') && !p.equipoid) ||
                                        (window.playerFilters.teams.includes(p.equipoid?.toString()));
                     
-                    const matchesClub = window.playerFilters.clubs.length === 0 || window.playerFilters.clubs.includes(p.equipoConvenido);
+                    const matchesClub = window.playerFilters.clubs.length === 0 || window.playerFilters.clubs.includes((p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase());
                     const matchesPos = window.playerFilters.positions.length === 0 || window.playerFilters.positions.some(pos => (p.posicion || '').includes(pos));
                     const matchesLevel = window.playerFilters.levels.length === 0 || window.playerFilters.levels.includes(p.nivel?.toString());
                     
@@ -2835,7 +2835,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <thead>
                                 <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Futbolista</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo MS</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club Convenido</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
@@ -2850,34 +2851,54 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     if (levelVal > 5) levelVal = 5;
 
                                     return `
-                                        <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
-                                            <td class="px-8 py-5 flex items-center gap-4">
+                                        <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all group">
+                                            <td class="px-8 py-4 flex items-center gap-4 min-w-[280px]">
                                                 ${p.foto ? 
                                                     `<img src="${p.foto}" class="w-10 h-10 rounded-xl object-cover shadow-sm group-hover:scale-105 transition-all">` :
                                                     `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
                                                 }
-                                                <div>
-                                                    <p class="text-sm font-bold text-slate-800">${p.nombre || 'Sin nombre'}</p>
-                                                    <p class="text-[9px] font-black text-slate-300 uppercase tracking-widest">${p.anionacimiento || '---'}</p>
+                                                <div class="flex-1">
+                                                    <input value="${p.nombre || ''}" onblur="window.updatePlayerInline(${p.id}, 'nombre', this.value)" 
+                                                        class="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-800 outline-none focus:bg-slate-50 focus:px-2 focus:py-1 rounded-lg transition-all">
+                                                    <input type="number" value="${p.anionacimiento || ''}" onblur="window.updatePlayerInline(${p.id}, 'anionacimiento', this.value)" 
+                                                        class="w-full bg-transparent border-none p-0 text-[9px] font-black text-slate-300 uppercase tracking-widest outline-none focus:bg-slate-50 focus:px-2 focus:py-0.5 rounded-lg transition-all mt-0.5" placeholder="AÑO">
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-5">
-                                                <span class="text-[11px] font-bold text-slate-500">${team ? team.nombre : '<span class="text-slate-300 italic">Libre</span>'}</span>
+                                            <td class="px-6 py-4">
+                                                <select onchange="window.updatePlayerInline(${p.id}, 'equipoid', this.value)" 
+                                                    class="bg-transparent border-none text-[11px] font-bold text-slate-500 outline-none cursor-pointer hover:text-blue-600 transition-colors p-1 rounded-lg focus:bg-slate-100">
+                                                    <option value="">LIBRE</option>
+                                                    ${teams.map(t => `<option value="${t.id}" ${p.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                                                </select>
                                             </td>
-                                            <td class="px-6 py-5 text-center">
-                                                <span class="text-[10px] font-bold text-slate-400 uppercase">${p.pie || '--'}</span>
+                                            <td class="px-6 py-4">
+                                                <select onchange="window.updatePlayerInline(${p.id}, 'equipoConvenido', this.value)" 
+                                                    class="bg-transparent border-none text-[10px] font-bold text-slate-400 outline-none cursor-pointer hover:text-blue-500 transition-colors p-1 rounded-lg focus:bg-slate-100 max-w-[150px] truncate">
+                                                    <option value="">NINGUNO</option>
+                                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${p.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                                </select>
                                             </td>
-                                            <td class="px-6 py-5">
-                                                <span class="px-2 py-1 bg-slate-100 rounded text-[9px] font-black text-slate-500 uppercase">${p.posicion || '--'}</span>
+                                            <td class="px-6 py-4 text-center">
+                                                <select onchange="window.updatePlayerInline(${p.id}, 'pie', this.value)" 
+                                                    class="bg-transparent border-none text-[10px] font-bold text-slate-400 uppercase outline-none cursor-pointer text-center p-1 rounded-lg focus:bg-slate-100">
+                                                    <option value="--" ${p.pie === '--' ? 'selected' : ''}>--</option>
+                                                    <option value="DIESTRO" ${p.pie === 'DIESTRO' ? 'selected' : ''}>DIESTRO</option>
+                                                    <option value="ZURDO" ${p.pie === 'ZURDO' ? 'selected' : ''}>ZURDO</option>
+                                                    <option value="AMBIDIESTRO" ${p.pie === 'AMBIDIESTRO' ? 'selected' : ''}>AMB</option>
+                                                </select>
                                             </td>
-                                            <td class="px-6 py-5 text-center">
-                                                <div class="flex items-center justify-center gap-0.5 text-amber-400 text-[10px]">
-                                                    ${'★'.repeat(levelVal)}
-                                                </div>
+                                            <td class="px-6 py-4">
+                                                ${window.renderPositionSelector((p.posicion || '').split(',').map(s=>s.trim()), `inline-pos-${p.id}`, `(val) => window.updatePlayerInline(${p.id}, 'posicion', val)`)}
                                             </td>
-                                            <td class="px-8 py-5 text-right">
+                                            <td class="px-6 py-4 text-center">
+                                                <select onchange="window.updatePlayerInline(${p.id}, 'nivel', this.value)" 
+                                                    class="bg-transparent border-none text-[10px] font-bold text-amber-400 outline-none cursor-pointer text-center p-1 rounded-lg focus:bg-slate-100">
+                                                    ${[1,2,3,4,5].map(n => `<option value="${n}" ${levelVal == n ? 'selected' : ''}>${'★'.repeat(n)}</option>`).join('')}
+                                                </select>
+                                            </td>
+                                            <td class="px-8 py-4 text-right">
                                                 <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.viewPlayer(${p.id})" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"><i data-lucide="eye" class="w-4 h-4"></i></button>
                                                     <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-red-300 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                                 </div>
                                             </td>
@@ -2907,6 +2928,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <div class="flex items-center gap-2 mt-0.5">
                                             <span class="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded">${p.posicion || 'S/P'}</span>
                                             <span class="text-[9px] font-bold text-slate-400 uppercase truncate">${team ? team.nombre : 'Libre'}</span>
+                                            ${p.equipoConvenido ? `<span class="text-[9px] font-bold text-emerald-600 uppercase truncate bg-emerald-50 px-1.5 py-0.5 rounded">${p.equipoConvenido}</span>` : ''}
                                         </div>
                                     </div>
                                     <div class="flex flex-col items-end gap-2">
@@ -3209,6 +3231,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 alert("Error al guardar ficha.");
             }
         };
+    };
+
+    window.updatePlayerInline = async (id, field, value) => {
+        try {
+            const payload = { id: Number(id) };
+            if (field === 'nivel' || field === 'equipoid') {
+                payload[field] = value ? Number(value) : null;
+            } else {
+                payload[field] = value;
+            }
+            await db.update('jugadores', payload);
+            // Si es un cambio que afecta a filtros o nombres, refrescamos la vista suavemente
+            if (field === 'equipoid' || field === 'equipoConvenido' || field === 'posicion') {
+                const container = document.getElementById('main-content');
+                if (container) await renderJugadores(container.firstChild);
+            }
+        } catch (err) {
+            console.error("Error inline update:", err);
+        }
     };
 
     window.deletePlayer = async (id) => {
@@ -4732,9 +4773,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <!-- List side -->
                         <div class="space-y-4">
                             <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                                <div class="grid grid-cols-12 px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                                    <div class="col-span-1">#</div>
-                                    <div class="col-span-11">Jugador / Posición</div>
+                                <div class="flex justify-between items-center px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                                    <div class="flex gap-4">
+                                        <span>#</span>
+                                        <span>Jugador / Posición</span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1 rounded-full text-[9px]">
+                                        <i data-lucide="users" class="w-3 h-3 text-blue-100"></i>
+                                        <span>${convocados.length} CONVOCADOS</span>
+                                    </div>
                                 </div>
                                 <div class="divide-y divide-slate-50 max-h-[600px] overflow-y-auto custom-scrollbar">
                                     ${convocados.length > 0 ? convocados.map((p, i) => `
@@ -4930,7 +4977,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 fillColor: [248, 250, 252]
             },
             columnStyles: {
-                0: { halign: 'center', cellWidth: 10 },
+                0: { halign: 'center', cellWidth: 15 },
                 2: { halign: 'center' },
                 3: { halign: 'center' },
                 4: { halign: 'center' }
