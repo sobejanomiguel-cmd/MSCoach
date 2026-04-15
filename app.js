@@ -4545,6 +4545,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.viewConvocatoria = async (id, activeTab = 'pizarra') => {
+        modalOverlay.classList.add('p-0');
+        modalOverlay.classList.remove('md:p-8', 'p-4');
+
         const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
         if (error) return;
 
@@ -4554,7 +4557,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
         const convocados = players.filter(p => pids.includes(p.id.toString()));
 
-        modalContainer.className = "bg-white w-full max-w-7xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+        modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
             <div class="p-4 md:p-12">
                 <div class="flex justify-between items-start mb-8">
@@ -5301,6 +5304,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         modalOverlay.classList.remove('active');
         // Reset modal classes to default
         setTimeout(() => {
+            modalOverlay.classList.add('md:p-8', 'p-4');
+            modalOverlay.classList.remove('p-0');
             modalContainer.className = "bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform scale-95 transition-transform duration-300 custom-scrollbar";
             modalContainer.innerHTML = '';
         }, 300);
@@ -5351,6 +5356,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     }
 
     window.viewTorneoRendimiento = async (id) => {
+        modalOverlay.classList.add('p-0');
+        modalOverlay.classList.remove('md:p-8', 'p-4');
+
         try {
             const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
             if (error) throw error;
@@ -5362,7 +5370,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const team = (conv.equipoid && conv.equipoid !== 'null') ? await db.get('equipos', conv.equipoid) : null;
             const teamPlayers = team ? players.filter(p => p.equipoid == team.id) : [];
 
-            modalContainer.className = "bg-white w-full max-w-7xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+            modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
             modalContainer.innerHTML = `
                 <div class="p-8 md:p-12">
                     <div class="flex justify-between items-start mb-8">
