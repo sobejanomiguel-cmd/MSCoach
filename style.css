@@ -26,6 +26,16 @@ body {
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
     background-color: var(--bg-main);
+    text-transform: uppercase; /* Global uppercase transformation */
+}
+
+input, select, textarea {
+    text-transform: uppercase;
+}
+
+/* Exception for email fields to avoid confusion */
+input[type="email"] {
+    text-transform: none !important;
 }
 
 .font-outfit { font-family: 'Outfit', sans-serif; }

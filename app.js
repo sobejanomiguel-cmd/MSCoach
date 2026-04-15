@@ -1,3 +1,32 @@
+const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
+window.renderPositionSelector = (selectedPositions = [], id = "pos") => {
+    const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
+                 selectedPositions.length === 1 ? selectedPositions[0] : 
+                 `${selectedPositions[0]} + ${selectedPositions.length - 1}`;
+    
+    return `
+        <div class="relative group/ms">
+            <button type="button" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-modal-menu' && m.classList.add('hidden')); document.getElementById('${id}-modal-menu').classList.toggle('hidden')" 
+                class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-800 text-xs uppercase tracking-widest flex justify-between items-center hover:bg-white hover:border-blue-200 transition-all shadow-sm">
+                <span>${label}</span>
+                <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400"></i>
+            </button>
+            <div id="${id}-modal-menu" class="hidden absolute z-[60] top-full left-0 w-full bg-white border border-slate-100 shadow-2xl rounded-3xl mt-2 p-4 max-h-64 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
+                <div class="grid grid-cols-3 gap-1">
+                    ${PLAYER_POSITIONS.map(pos => {
+                        const isSelected = selectedPositions.includes(pos);
+                        return `
+                            <label class="flex items-center gap-2 p-2 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                <input type="checkbox" name="posicion" value="${pos}" ${isSelected ? 'checked' : ''} onchange="this.closest('.group\\/ms').querySelector('button span').innerText = [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 0 ? 'SELECCIONAR POSICIONES' : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 1 ? [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')][0].value : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')][0].value + ' + ' + ([...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length - 1)" class="w-4 h-4 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                <span class="text-[10px] font-black ${isSelected ? 'text-blue-600' : 'text-slate-500'} uppercase font-outfit">${pos}</span>
+                            </label>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+};
 window.customAlert = (title, message, type = 'info') => {
     const colors = {
         success: 'bg-emerald-500',
@@ -73,6 +102,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const toggleAuthBtn = document.getElementById('toggle-auth');
     const appEl = document.getElementById('app');
     let isLogin = true;
+    
+    // Load formation preferences
+    const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
+    window.formationsState = {
+        convocatoria: savedPrefs.convocatoria || 'F11_433',
+        torneo: savedPrefs.torneo || 'F11_433',
+        campograma: savedPrefs.campograma || 'F11_433'
+    };
 
     // Initial Auth Check
     const checkAuth = async () => {
@@ -2659,24 +2696,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <input type="hidden" name="equipoid" value="${equipoid}">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2"><input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required></div>
-                        <input name="dorsal" type="number" placeholder="Dorsal" class="w-full p-3 border rounded-xl">
-                        <select name="posicion" class="w-full p-3 border rounded-xl">
-                            <option value="PO">PO (Portero)</option>
-                            <option value="DBD">DBD (Lateral Dcho)</option>
-                            <option value="DBZ">DBZ (Lateral Izq)</option>
-                            <option value="DCD">DCD (Central Dcho)</option>
-                            <option value="DCZ">DCZ (Central Izq)</option>
-                            <option value="MCD">MCD (Mediocentro Dcho)</option>
-                            <option value="MCZ">MCZ (Mediocentro Izq)</option>
-                            <option value="MVD">MVD (Interior Dcho)</option>
-                            <option value="MVZ">MVZ (Interior Izq)</option>
-                            <option value="MBD">MBD (Extremo Dcho)</option>
-                            <option value="MBZ">MBZ (Extremo Izq)</option>
-                            <option value="MPD">MPD (Mediapunta Dcho)</option>
-                            <option value="MPZ">MPZ (Mediapunta Izq)</option>
-                            <option value="ACD">ACD (Delantero Dcho)</option>
-                            <option value="ACZ">ACZ (Delantero Izq)</option>
-                        </select>
+                        <div class="col-span-2">
+                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Posiciones del Jugador</label>
+                             ${window.renderPositionSelector()}
+                        </div>
                         <select name="sexo" class="w-full p-3 border rounded-xl bg-white outline-none">
                             <option value="Masculino">Masculino</option>
                             <option value="Femenino">Femenino</option>
@@ -2694,7 +2717,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
         document.getElementById('new-player-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.target).entries());
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.posicion = formData.getAll('posicion').join(', ');
             await db.add('jugadores', data);
             window.viewTeamPlayers(equipoid);
         });
@@ -2708,7 +2733,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Asegurar que los filtros existan globalmente
             if (!window.playerFilters) {
-                window.playerFilters = { search: '', team: 'TODOS', club: 'TODOS', position: 'TODOS', level: 'TODOS' };
+                window.playerFilters = { 
+                    search: '', 
+                    teams: [], 
+                    clubs: [], 
+                    positions: [], 
+                    levels: [] 
+                };
             }
 
             container.innerHTML = `
@@ -2718,23 +2749,49 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
                             <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
                         </div>
-                        <select id="player-team-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
-                            <option value="TODOS">TODOS EQUIPOS</option>
-                            ${teams.sort((a,b) => a.nombre.localeCompare(b.nombre)).map(t => `<option value="${t.id}" ${window.playerFilters.team == t.id ? 'selected' : ''}>${t.nombre.toUpperCase()}</option>`).join('')}
-                            <option value="SIN_EQUIPO" ${window.playerFilters.team === 'SIN_EQUIPO' ? 'selected' : ''}>LIBRES</option>
-                        </select>
-                        <select id="player-club-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
-                            <option value="TODOS">TODOS CLUBES</option>
-                            ${[...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort().map(c => `<option value="${c}" ${window.playerFilters.club == c ? 'selected' : ''}>${c.toUpperCase()}</option>`).join('')}
-                        </select>
-                        <select id="player-pos-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
-                            <option value="TODOS">TODAS POSICIONES</option>
-                            ${PLAYER_POSITIONS.map(p => `<option value="${p}" ${window.playerFilters.position == p ? 'selected' : ''}>${p}</option>`).join('')}
-                        </select>
-                        <select id="player-level-filter" class="px-4 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
-                            <option value="TODOS">TODOS NIVELES</option>
-                            ${[1,2,3,4,5].map(lvl => `<option value="${lvl}" ${window.playerFilters.level == lvl ? 'selected' : ''}>NIVEL ${'★'.repeat(lvl)}</option>`).join('')}
-                        </select>
+                        
+                        <!-- Multi-Select Filters -->
+                        <div class="flex flex-wrap gap-2">
+                            ${(() => {
+                                const renderFilter = (id, label, options, currentValues) => {
+                                    const displayText = currentValues.length === 0 ? `TODOS ${label}` : `${currentValues.length} ${label}`;
+                                    return `
+                                        <div class="relative group/ms">
+                                            <button id="${id}-btn" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-menu' && m.classList.add('hidden')); document.getElementById('${id}-menu').classList.toggle('hidden')" 
+                                                class="px-5 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm flex items-center gap-2 hover:border-blue-200">
+                                                <span>${displayText.toUpperCase()}</span>
+                                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                                            </button>
+                                            <div id="${id}-menu" class="hidden absolute top-full left-0 mt-2 w-64 bg-white border border-slate-100 rounded-3xl shadow-2xl z-[100] p-4 max-h-72 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
+                                                <div class="space-y-1">
+                                                    <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                                        <input type="checkbox" onchange="window.togglePlayerFilter('${id}', 'TODOS')" ${currentValues.length === 0 ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                                        <span class="text-xs font-black text-slate-400 uppercase">Todos</span>
+                                                    </label>
+                                                    <div class="h-px bg-slate-50 my-2"></div>
+                                                    ${options.map(opt => {
+                                                        const isSelected = currentValues.includes(opt.value.toString());
+                                                        return `
+                                                            <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                                                <input type="checkbox" onchange="window.togglePlayerFilter('${id}', '${opt.value}')" ${isSelected ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                                                <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'} uppercase">${opt.label}</span>
+                                                            </label>
+                                                        `;
+                                                    }).join('')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                };
+
+                                return `
+                                    ${renderFilter('team', 'Equipos', teams.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t=>({value:t.id, label:t.nombre})).concat([{value:'SIN_EQUIPO', label:'Libres'}]), window.playerFilters.teams)}
+                                    ${renderFilter('club', 'Clubes', [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
+                                    ${renderFilter('pos', 'Posiciones', PLAYER_POSITIONS.map(p=>({value:p, label:p})), window.playerFilters.positions)}
+                                    ${renderFilter('level', 'Niveles', [1,2,3,4,5].map(lvl=>({value:lvl, label:`Nivel ${'★'.repeat(lvl)}`})), window.playerFilters.levels)}
+                                `;
+                            })()}
+                        </div>
                     </div>
                 </div>
 
@@ -2755,15 +2812,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!tableContainer) return;
 
                 const searchVal = (window.playerFilters.search || '').toLowerCase();
-                const teamVal = window.playerFilters.team;
-
+                
                 const filtered = (players || []).filter(p => {
                     const matchesSearch = (p.nombre || '').toLowerCase().includes(searchVal);
-                    const matchesTeam = teamVal === 'TODOS' || 
-                                      (teamVal === 'SIN_EQUIPO' ? !p.equipoid : p.equipoid == teamVal);
-                    const matchesClub = window.playerFilters.club === 'TODOS' || p.equipoConvenido === window.playerFilters.club;
-                    const matchesPos = window.playerFilters.position === 'TODOS' || (p.posicion || '').includes(window.playerFilters.position);
-                    const matchesLevel = window.playerFilters.level === 'TODOS' || p.nivel == window.playerFilters.level;
+                    
+                    const matchesTeam = window.playerFilters.teams.length === 0 || 
+                                       (window.playerFilters.teams.includes('SIN_EQUIPO') && !p.equipoid) ||
+                                       (window.playerFilters.teams.includes(p.equipoid?.toString()));
+                    
+                    const matchesClub = window.playerFilters.clubs.length === 0 || window.playerFilters.clubs.includes(p.equipoConvenido);
+                    const matchesPos = window.playerFilters.positions.length === 0 || window.playerFilters.positions.some(pos => (p.posicion || '').includes(pos));
+                    const matchesLevel = window.playerFilters.levels.length === 0 || window.playerFilters.levels.includes(p.nivel?.toString());
+                    
                     return matchesSearch && matchesTeam && matchesClub && matchesPos && matchesLevel;
                 });
 
@@ -2864,6 +2924,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (window.lucide) lucide.createIcons();
             };
 
+            window.togglePlayerFilter = async (type, value) => {
+                const filterKey = type === 'team' ? 'teams' : type === 'club' ? 'clubs' : type === 'pos' ? 'positions' : 'levels';
+                if (value === 'TODOS') {
+                    window.playerFilters[filterKey] = [];
+                } else {
+                    const idx = window.playerFilters[filterKey].indexOf(value.toString());
+                    if (idx > -1) window.playerFilters[filterKey].splice(idx, 1);
+                    else window.playerFilters[filterKey].push(value.toString());
+                }
+                await renderJugadores(container);
+                // Mantener el menú abierto tras el re-render
+                const menu = document.getElementById(`${type}-menu`);
+                if (menu) menu.classList.remove('hidden');
+            };
+
             if (searchInput) {
                 searchInput.oninput = (e) => {
                     window.playerFilters.search = e.target.value;
@@ -2871,33 +2946,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 };
             }
 
-            if (teamFilter) {
-                teamFilter.onchange = (e) => {
-                    window.playerFilters.team = e.target.value;
-                    updateTable();
-                };
-            }
-
-            if (clubFilter) {
-                clubFilter.onchange = (e) => {
-                    window.playerFilters.club = e.target.value;
-                    updateTable();
-                };
-            }
-
-            if (posFilter) {
-                posFilter.onchange = (e) => {
-                    window.playerFilters.position = e.target.value;
-                    updateTable();
-                };
-            }
-
-            if (levelFilter) {
-                levelFilter.onchange = (e) => {
-                    window.playerFilters.level = e.target.value;
-                    updateTable();
-                };
-            }
+            updateTable();
 
             updateTable();
             if (window.lucide) lucide.createIcons();
@@ -2995,9 +3044,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                                     </select>
                                 </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Posición Principal</label>
-                                    <input name="posicion" value="${player.posicion || ''}" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all">
+                                <div class="col-span-full">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Posiciones Técnicas (Multiselección)</label>
+                                    ${window.renderPositionSelector((player.posicion || '').split(',').map(s=>s.trim()), 'edit-pos')}
                                 </div>
                                 <div>
                                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Año de Nacimiento</label>
@@ -3128,6 +3177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
+            data.posicion = formData.getAll('posicion').join(', ');
             
             const upId = Number(data.id);
             const updatePayload = {
@@ -3699,17 +3749,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                 </select>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Dorsal</label>
-                                <input name="dorsal" type="number" placeholder="nº" class="w-full p-3 border rounded-xl">
-                            </div>
                             <div class="col-span-2">
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posición Principal</label>
-                                 <select name="posicion" class="w-full p-3 border rounded-xl bg-white">
-                                    <option>PO</option><option>DBD</option><option>DBZ</option><option>DCD</option><option>DCZ</option>
-                                    <option>MBD</option><option>MBZ</option><option>MCD</option><option>MCZ</option><option>MVD</option>
-                                    <option>MVZ</option><option>MPD</option><option>MPZ</option><option>ACD</option><option>ACZ</option>
-                                </select>
+                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posiciones del Jugador (Multiselección)</label>
+                                 ${window.renderPositionSelector([], 'reg-pos')}
                             </div>
                             <div class="col-span-2">
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
@@ -3760,6 +3802,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
+
+            if (viewId === 'jugadores') {
+                data.posicion = formData.getAll('posicion').join(', ');
+            }
 
             
             try {
@@ -3839,10 +3885,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     data.equiponombre = t ? t.nombre : 'Equipo';
                 }
 
-                // Handle sharedWith
-                data.sharedWith = formData.getAll('sharedWith');
-                const currentUser = (await supabaseClient.auth.getUser()).data.user;
-                data.createdBy = currentUser.id;
+                // Solo añadir metadatos de staff (compartir y creador) para entidades que lo permiten
+                const entitiesWithStaffMeta = ['tareas', 'sesiones', 'convocatorias', 'eventos', 'asistencia'];
+                if (entitiesWithStaffMeta.includes(viewId)) {
+                    data.sharedWith = formData.getAll('sharedWith');
+                    const currentUser = (await supabaseClient.auth.getUser()).data.user;
+                    if (currentUser) data.createdBy = currentUser.id;
+                }
 
                 await db.add(viewId, data);
 
@@ -4504,7 +4553,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!window.formationsState) window.formationsState = {};
-        window.formationsState[type.toLowerCase()] = formationId;
+        const sectionKey = type.toLowerCase();
+        window.formationsState[sectionKey] = formationId;
+        
+        // Persistir preferencia
+        const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
+        savedPrefs[sectionKey] = formationId;
+        localStorage.setItem('ms_coach_formation_prefs', JSON.stringify(savedPrefs));
         
         if (type === 'Torneo') {
             window.viewTorneoRendimiento(id);
@@ -5029,7 +5084,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     let campogramaFilters = {
-        sistema: 'F11_433',
+        sistema: window.formationsState?.campograma || 'F11_433',
         equipos: [],
         posiciones: [],
         niveles: [],
@@ -5037,7 +5092,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         clubesConvenidos: []
     };
 
-    const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
 
     const FORMATIONS = {
         // --- FÚTBOL 11 ---
@@ -5344,6 +5398,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.updateCampogramaFilter = (key, value) => {
         campogramaFilters[key] = value;
+        if (key === 'sistema') {
+            const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
+            savedPrefs.campograma = value;
+            localStorage.setItem('ms_coach_formation_prefs', JSON.stringify(savedPrefs));
+            if (window.formationsState) window.formationsState.campograma = value;
+        }
         renderView('campograma');
     };
 
