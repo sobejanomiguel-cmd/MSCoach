@@ -4531,6 +4531,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const { error } = await supabaseClient.from('convocatorias').update({
                 nombre: data.nombre,
                 tipo: data.tipo,
+                fecha: data.fecha,
+                hora: data.hora,
                 lugar: data.lugar
             }).eq('id', id);
 
@@ -4556,6 +4558,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const team = teams.find(t => t.id == conv.equipoid);
         const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
         const convocados = players.filter(p => pids.includes(p.id.toString()));
+        const teamPlayers = team ? players.filter(p => p.equipoid == team.id) : [];
 
         modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
@@ -4568,11 +4571,50 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <button onclick="window.toggleConvEdit(${conv.id})" class="p-1.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Editar información">
                                 <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
                             </button>
+                            <button id="toggle-player-mgmt" class="p-1.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all flex items-center gap-2 px-3" title="Gestionar Jugadores">
+                                <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                                <span class="text-[9px] font-black uppercase tracking-widest">Gestionar Jugadores</span>
+                            </button>
                         </div>
                         <div id="conv-info-display">
                             <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
                             <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
                         </div>
+
+                        <!-- Player Management Area -->
+                        <div id="player-mgmt-area" class="hidden animate-in fade-in slide-in-from-top-2 duration-300 bg-blue-50/30 p-8 rounded-[3rem] mt-6 border border-blue-100/50">
+                            <div class="flex justify-between items-center mb-6">
+                                <div>
+                                    <h4 class="text-xs font-black text-blue-600 uppercase tracking-widest">Gestión de Plantilla</h4>
+                                    <p class="text-slate-400 text-[10px] font-bold mt-1">Selecciona los jugadores para esta convocatoria</p>
+                                </div>
+                                <div class="relative w-64">
+                                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                    <input type="text" id="mgmt-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-100 rounded-2xl text-[10px] font-bold outline-none focus:ring-4 ring-blue-50/50">
+                                </div>
+                            </div>
+                            
+                            <div id="mgmt-player-list" class="grid grid-cols-2 lg:grid-cols-4 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar p-1">
+                                ${teamPlayers.map(p => {
+                                    const isConvocado = pids.includes(p.id.toString());
+                                    return `
+                                        <label class="flex items-center gap-3 p-4 bg-white rounded-2xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all mgmt-player-label shadow-sm hover:shadow-md">
+                                            <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-lg text-blue-600 border-slate-200 focus:ring-blue-100">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-[11px] font-black text-slate-700 truncate mgmt-player-name uppercase tracking-tight">${p.nombre}</p>
+                                                <p class="text-[9px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || '--'}</p>
+                                            </div>
+                                        </label>
+                                    `;
+                                }).join('') || '<p class="col-span-full text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">No hay jugadores vinculados a este equipo.</p>'}
+                            </div>
+
+                            <div class="mt-8 pt-6 border-t border-blue-100/50 flex justify-end gap-3">
+                                <button onclick="document.getElementById('player-mgmt-area').classList.add('hidden')" class="px-6 py-3 bg-white text-slate-400 font-black rounded-xl text-[10px] uppercase tracking-widest hover:text-slate-600 transition-all border border-slate-100">Cancelar</button>
+                                <button id="save-conv-players" class="px-8 py-3 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all">Aplicar Cambios</button>
+                            </div>
+                        </div>
+
                         <div id="conv-info-edit" class="hidden animate-in fade-in slide-in-from-top-2 duration-300 bg-slate-50 p-6 rounded-3xl mt-4 border border-slate-200">
                             <form onsubmit="window.saveConvEdit(event, ${conv.id})" class="grid grid-cols-2 gap-4">
                                 <div class="col-span-2">
@@ -4590,6 +4632,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </select>
                                 </div>
                                 <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Fecha</label>
+                                    <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora</label>
+                                    <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                </div>
+                                <div class="col-span-2">
                                     <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Lugar</label>
                                     <input name="lugar" value="${conv.lugar || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
                                 </div>
@@ -4674,6 +4724,46 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
+
+        // Toggle Player Management
+        const toggleMgmtBtn = document.getElementById('toggle-player-mgmt');
+        const mgmtArea = document.getElementById('player-mgmt-area');
+        if (toggleMgmtBtn && mgmtArea) {
+            toggleMgmtBtn.onclick = () => {
+                mgmtArea.classList.toggle('hidden');
+                if (window.lucide) lucide.createIcons();
+            };
+        }
+
+        const mgmtPlayerSearch = document.getElementById('mgmt-player-search');
+        if (mgmtPlayerSearch) {
+            mgmtPlayerSearch.oninput = (e) => {
+                const term = e.target.value.toLowerCase();
+                const list = document.getElementById('mgmt-player-list');
+                const labels = list.querySelectorAll('.mgmt-player-label');
+                labels.forEach(label => {
+                    const name = label.querySelector('.mgmt-player-name').textContent.toLowerCase();
+                    label.style.display = name.includes(term) ? 'flex' : 'none';
+                });
+            };
+        }
+
+        const savePlayersBtn = document.getElementById('save-conv-players');
+        if (savePlayersBtn) {
+            savePlayersBtn.onclick = async () => {
+                const checks = mgmtArea.querySelectorAll('input[type="checkbox"]');
+                const newPids = Array.from(checks).filter(c => c.checked).map(c => c.getAttribute('data-pid'));
+                
+                try {
+                    const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', id);
+                    if (error) throw error;
+                    window.customAlert('¡Convocatoria Actualizada!', 'Los jugadores han sido modificados correctamente.', 'success');
+                    window.viewConvocatoria(id, activeTab); // Reload the modal
+                } catch (err) {
+                    alert("Error actualizando: " + err.message);
+                }
+            };
+        }
 
         // Handle async sessions loading
         if (activeTab === 'sesiones') {
