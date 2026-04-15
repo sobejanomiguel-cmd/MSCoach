@@ -1322,7 +1322,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <input type="checkbox" name="sharedWith" value="${u.id}" ${evento.sharedWith && evento.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
                                         <div class="flex-1">
                                             <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
-                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
                                         </div>
                                     </label>
                                 `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
@@ -1788,7 +1787,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = (await db.getAll('equipos')).sort((a,b) => (parseInt(a.categoria)||999)- (parseInt(b.categoria)||999));
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
 
-        const currentUser = (await supabaseClient.auth.getUser()).data.user;
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
+        if (!currentUser) return;
         
         // Filtrar sesiones por privacidad primero
         const mySessions = sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
@@ -2063,11 +2064,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="flex justify-between items-center mb-4">
                             <label class="block text-xs font-bold text-slate-400 uppercase">Convocatoria de Jugadores</label>
                             <div class="flex items-center gap-2">
-                                <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest">Vincular:</span>
-                                <select id="session-modal-conv-select" class="p-2 bg-slate-100 border-none rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 ring-blue-100 min-w-[150px]">
+                            <div class="flex flex-col items-end gap-2">
+                                <div class="relative w-full md:w-64">
+                                    <i data-lucide="search" class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-300"></i>
+                                    <input type="text" id="session-modal-conv-search" placeholder="Filtrar convocatoria..." class="w-full pl-7 pr-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[9px] font-bold outline-none focus:ring-2 ring-blue-50">
+                                </div>
+                                <select id="session-modal-conv-select" class="p-2 bg-slate-100 border-none rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 ring-blue-100 w-full min-w-[200px]">
                                     <option value="">-- MODO MANUAL --</option>
-                                    ${convs ? convs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha})</option>`).join('') : ''}
+                                    <!-- Options injected via updateConvsByTeam -->
                                 </select>
+                            </div>
                             </div>
                         </div>
                         <div class="relative mb-2">
@@ -2088,7 +2094,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
                                         <div class="flex-1">
                                             <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
-                                            <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
                                         </div>
                                     </label>
                                 `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
@@ -2106,6 +2111,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const teamSelect = document.getElementById('session-modal-team-select');
         const playersList = document.getElementById('session-modal-players-list');
+        const convSelect = document.getElementById('session-modal-conv-select');
+        const convSearch = document.getElementById('session-modal-conv-search');
+        const sessionPlayerSearch = document.getElementById('session-modal-player-search');
 
         // Filtros slots
         [1,2,3,4,5,6].forEach(num => {
@@ -2137,7 +2145,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (window.lucide) lucide.createIcons();
         };
 
-        const sessionPlayerSearch = document.getElementById('session-modal-player-search');
         if (sessionPlayerSearch) {
             sessionPlayerSearch.oninput = (e) => {
                 const term = e.target.value.toLowerCase();
@@ -2149,11 +2156,49 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
         }
 
-        teamSelect.onchange = updatePlayers;
-        if (session.equipoid) updatePlayers();
+        if (convSearch && convSelect) {
+            convSearch.oninput = (e) => {
+                const term = e.target.value.toLowerCase();
+                const options = convSelect.querySelectorAll('option');
+                options.forEach(opt => {
+                    if (opt.value === "") return;
+                    const text = opt.textContent.toLowerCase();
+                    if (text.includes(term)) {
+                        opt.style.display = 'block';
+                        opt.disabled = false;
+                    } else {
+                        opt.style.display = 'none';
+                        opt.disabled = true;
+                    }
+                });
+            };
+        }
 
-        // Convocatoria linking
-        const convSelect = document.getElementById('session-modal-conv-select');
+        const updateConvsByTeam = () => {
+            const equipoid = teamSelect.value;
+            if (!convSelect) return;
+            
+            let filteredConvs = convs || [];
+            if (equipoid) {
+                filteredConvs = (convs || []).filter(c => c.equipoid == equipoid);
+            }
+
+            const currentVal = convSelect.value;
+            convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` + 
+                filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha})</option>`).join('');
+            if (currentVal) convSelect.value = currentVal;
+        };
+
+        teamSelect.onchange = () => {
+            updatePlayers();
+            updateConvsByTeam();
+        };
+
+        if (session.equipoid) {
+            updatePlayers();
+            updateConvsByTeam();
+        }
+
         convSelect.onchange = () => {
             const opt = convSelect.selectedOptions[0];
             if (!opt || !opt.value) return;
@@ -2652,41 +2697,185 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.viewTeamPlayers = async (equipoid) => {
-        const teams = await db.getAll('equipos');
-        const team = teams.find(t => t.id == equipoid);
-        const players = (await db.getAll('jugadores')).filter(p => p.equipoid == equipoid);
-        
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h3 class="text-2xl font-bold text-slate-800">${team.nombre}</h3>
-                        <p class="text-slate-500">${team.categoria || 'Año no def.'}</p>
+        try {
+            const teams = await db.getAll('equipos');
+            const team = teams.find(t => t.id == equipoid);
+            if (!team) return;
+
+            const allPlayers = await db.getAll('jugadores');
+            const teamPlayers = allPlayers.filter(p => p.equipoid == equipoid);
+            
+            const allSessions = await db.getAll('sesiones');
+            const teamSessions = allSessions.filter(s => s.equipoid == equipoid).sort((a,b) => b.fecha.localeCompare(a.fecha));
+            
+            const allTasks = await db.getAll('tareas');
+            const sessionTaskIds = [...new Set(teamSessions.flatMap(s => s.taskids || []))];
+            const teamTasks = sessionTaskIds.map(tid => allTasks.find(t => t.id == tid)).filter(Boolean);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'animate-in fade-in slide-in-from-right duration-500 max-w-7xl mx-auto pb-20';
+            wrapper.innerHTML = `
+                <!-- Header -->
+                <div class="flex justify-between items-center mb-10 px-4 pt-8">
+                    <div class="flex items-center gap-6">
+                        <button onclick="window.switchView('equipos')" class="p-3 bg-white rounded-2xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"><i data-lucide="arrow-left"></i></button>
+                        <div>
+                            <h2 class="text-4xl font-black text-slate-900 tracking-tight uppercase">${team.nombre}</h2>
+                            <p class="text-xs font-black text-blue-600 uppercase tracking-[0.2em] mt-1">${team.categoria || 'Sin Categoría'} • ${teamPlayers.length} Jugadores</p>
+                        </div>
                     </div>
-                    <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <div class="flex gap-3">
+                         <button onclick="window.addPlayerToTeam(${equipoid})" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:scale-105 transition-all text-[11px] uppercase tracking-widest">Añadir Jugador</button>
+                    </div>
                 </div>
-                <div class="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    ${players.map(p => `
-                        <div class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group">
-                            <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100">${p.dorsal || '--'}</div>
-                            <div class="flex-1">
-                                <h4 class="font-bold text-slate-800">${p.nombre}</h4>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
+
+                <!-- Main Content Row: 3 Columns -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 mb-8">
+                    
+                    <!-- Column 1: Players -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <i data-lucide="users" class="w-4 h-4 text-blue-500"></i>
+                            Plantilla / Jugadores
+                        </h4>
+                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            ${teamPlayers.map(p => `
+                                <div onclick="window.viewPlayer(${p.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
+                                    <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all">${p.dorsal || '--'}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
+                                    </div>
+                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all"></i>
+                                </div>
+                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin jugadores registrados</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Tasks Worked -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <i data-lucide="target" class="w-4 h-4 text-emerald-500"></i>
+                            Tareas / Ejercicios Trabajados
+                        </h4>
+                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            ${teamTasks.map(t => `
+                                <div class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-emerald-100 transition-all group cursor-default">
+                                    <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center font-black text-[9px] uppercase">${t.type?.substring(0,3) || 'TAR'}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.name}</h4>
+                                        <div class="flex gap-2 mt-1">
+                                            <span class="text-[8px] font-black text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-tighter">${t.type || 'General'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Aún no se han trabajado tareas</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Column 3: Sessions -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-4 h-4 text-indigo-500"></i>
+                            Historial de Sesiones
+                        </h4>
+                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                            ${teamSessions.map(s => `
+                                <div onclick="window.viewSession(${s.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
+                                    <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-indigo-600 shadow-sm border border-slate-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">${s.fecha.split('-')[2]}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase">${s.fecha} • ${s.hora || '--:--'}</p>
+                                    </div>
+                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-indigo-400 transition-all"></i>
+                                </div>
+                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin sesiones registradas</p>'}
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="px-4">
+                    <div class="bg-slate-900 p-10 rounded-[4rem] shadow-2xl relative overflow-hidden">
+                        <i data-lucide="map" class="absolute -bottom-10 -right-10 w-64 h-64 text-white/5"></i>
+                        <div class="flex justify-between items-center mb-10 relative z-10">
+                            <div>
+                                <h4 class="text-xs font-black text-blue-400 uppercase tracking-[0.2em]">Mapa Táctico de Plantilla</h4>
+                                <p class="text-[10px] text-white/40 font-bold mt-1">Visualización de todos los jugadores según posición técnica</p>
                             </div>
-                            <div class="text-right">
-                                <span class="px-3 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-full">EN FORMA</span>
+                            <div class="flex items-center gap-3">
+                                <select onchange="window.updateTeamPitch(this.value, ${equipoid})" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                    ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                        const current = (window.formationsState && window.formationsState.team) || 'F11_433';
+                                        return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                    }).join('')}
+                                </select>
+                                <button onclick="window.openFullScreenPitch(${equipoid}, '${(window.formationsState && window.formationsState.team) || 'F11_433'}')" class="bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                    <i data-lucide="maximize" class="w-4 h-4"></i>
+                                    Versión Panorámica
+                                </button>
                             </div>
                         </div>
-                    `).join('') || '<p class="text-center py-10 text-slate-400 italic">No hay jugadores en este equipo.</p>'}
+                        
+                        <div id="team-pitch-container" class="relative z-10 w-full overflow-x-auto min-h-[500px] flex items-center justify-center">
+                            <div class="w-full max-w-[1000px]">
+                                ${renderTacticalPitchHtml(teamPlayers, (window.formationsState && window.formationsState.team) || 'F11_433', 'horizontal')}
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <button onclick="window.addPlayerToTeam(${equipoid})" class="w-full mt-6 py-4 bg-blue-50 text-blue-600 font-bold rounded-2xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2">
-                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
-                    Añadir Jugador
-                </button>
+            `;
+
+            contentContainer.innerHTML = '';
+            contentContainer.appendChild(wrapper);
+            if (window.lucide) lucide.createIcons();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        } catch (err) {
+            console.error("Error viewTeamPlayers:", err);
+            window.customAlert('Error', 'No se pudo cargar la vista de equipo.', 'error');
+        }
+    };
+
+    window.updateTeamPitch = (formationId, equipoid) => {
+        if (!window.formationsState) window.formationsState = {};
+        window.formationsState.team = formationId;
+        window.viewTeamPlayers(equipoid);
+    };
+
+    window.openFullScreenPitch = async (type, id, formation) => {
+        let players = [];
+        if (type === 'team') {
+            const allPlayers = await db.getAll('jugadores');
+            players = allPlayers.filter(p => p.equipoid == id);
+        } else {
+            // Convocatoria or Torneo
+            const convs = await db.getAll('convocatorias');
+            const conv = convs.find(c => c.id == id);
+            if (conv) {
+                const allPlayers = await db.getAll('jugadores');
+                players = allPlayers.filter(p => conv.playerids && conv.playerids.includes(p.id.toString()));
+            }
+        }
+        
+        const fsDiv = document.createElement('div');
+        fsDiv.className = 'fixed inset-0 z-[1000] bg-slate-900 p-10 flex flex-col animate-in fade-in zoom-in duration-300';
+        fsDiv.innerHTML = `
+            <div class="flex justify-between items-center mb-10">
+                <div>
+                    <h2 class="text-white text-3xl font-black uppercase tracking-tight">Pizarra Táctica Panorámica</h2>
+                    <p class="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Vista del sistema: ${FORMATIONS[formation]?.name || formation}</p>
+                </div>
+                <button onclick="this.parentElement.parentElement.remove()" class="p-5 bg-white/5 text-white rounded-full hover:bg-white/20 transition-all border border-white/10"><i data-lucide="x" class="w-10 h-10"></i></button>
+            </div>
+            <div class="flex-1 flex items-center justify-center">
+                <div class="w-full max-w-[1600px] transform scale-110">
+                    ${renderTacticalPitchHtml(players, formation, 'horizontal')}
+                </div>
             </div>
         `;
-        lucide.createIcons(); modalOverlay.classList.add('active');
-        
+        document.body.appendChild(fsDiv);
+        if (window.lucide) lucide.createIcons();
     };
 
     window.addPlayerToTeam = (equipoid) => {
@@ -2996,13 +3185,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         const playerAsistencias = asistencia.filter(a => a.data && a.data[id]);
 
         const stats = {
-            presente: playerAsistencias.filter(a => a.data[id] === 'presente').length,
+            asiste: playerAsistencias.filter(a => a.data[id] === 'asiste' || a.data[id] === 'presente').length,
             ausente: playerAsistencias.filter(a => a.data[id] === 'ausente').length,
-            tarde: playerAsistencias.filter(a => a.data[id] === 'tarde').length,
-            lesion: playerAsistencias.filter(a => a.data[id] === 'lesion').length,
+            sin_motivo: playerAsistencias.filter(a => a.data[id] === 'sin_motivo').length,
+            enfermo: playerAsistencias.filter(a => a.data[id] === 'enfermo').length,
+            lesionado: playerAsistencias.filter(a => a.data[id] === 'lesionado' || a.data[id] === 'lesion').length,
+            seleccion: playerAsistencias.filter(a => a.data[id] === 'seleccion').length,
+            zubieta: playerAsistencias.filter(a => a.data[id] === 'zubieta').length,
+            otro: playerAsistencias.filter(a => a.data[id] === 'otro').length,
             total: playerAsistencias.length
         };
-        const attendanceRate = stats.total > 0 ? Math.round((stats.presente / stats.total) * 100) : 0;
+        const attendanceRate = stats.total > 0 ? Math.round((stats.asiste / stats.total) * 100) : 0;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'animate-in fade-in slide-in-from-right duration-500';
@@ -3121,15 +3314,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <span class="text-6xl font-black">${attendanceRate}%</span>
                                 <span class="text-blue-400 font-bold mb-2">Ratio</span>
                             </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div class="bg-white/10 p-4 rounded-2xl">
-                                    <p class="text-[9px] font-black text-white/40 uppercase mb-1">Presencias</p>
-                                    <p class="text-xl font-bold text-emerald-400">${stats.presente}</p>
+                            <div class="grid grid-cols-2 gap-4 mb-8">
+                                <div class="bg-emerald-500/10 p-4 rounded-2xl border border-emerald-500/20">
+                                    <p class="text-[9px] font-black text-emerald-400 uppercase mb-1">Presencias</p>
+                                    <p class="text-2xl font-black text-emerald-400">${stats.asiste}</p>
                                 </div>
-                                <div class="bg-white/10 p-4 rounded-2xl">
-                                    <p class="text-[9px] font-black text-white/40 uppercase mb-1">Ausencias</p>
-                                    <p class="text-xl font-bold text-rose-400">${stats.ausente + stats.lesion}</p>
+                                <div class="bg-rose-500/10 p-4 rounded-2xl border border-rose-500/20">
+                                    <p class="text-[9px] font-black text-rose-400 uppercase mb-1">Ausencias</p>
+                                    <p class="text-2xl font-black text-rose-400">${stats.total - stats.asiste}</p>
                                 </div>
+                            </div>
+                            
+                            <h5 class="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-4 border-b border-white/5 pb-2">Desglose Detallado</h5>
+                            <div class="grid grid-cols-2 gap-y-3 gap-x-6">
+                                ${[
+                                    { label: 'Asiste', val: stats.asiste, color: 'text-emerald-400' },
+                                    { label: 'Ausente', val: stats.ausente, color: 'text-rose-400' },
+                                    { label: 'Sin Motivo', val: stats.sin_motivo, color: 'text-rose-400/70' },
+                                    { label: 'Enfermo', val: stats.enfermo, color: 'text-amber-400' },
+                                    { label: 'Lesionado', val: stats.lesionado, color: 'text-amber-500' },
+                                    { label: 'Selección', val: stats.seleccion, color: 'text-blue-400' },
+                                    { label: 'Zubieta', val: stats.zubieta, color: 'text-indigo-400' },
+                                    { label: 'Otro', val: stats.otro, color: 'text-slate-400' }
+                                ].map(s => `
+                                    <div class="flex justify-between items-center text-[11px]">
+                                        <span class="font-bold text-white/50">${s.label}</span>
+                                        <span class="font-black ${s.color}">${s.val}</span>
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
 
@@ -3143,11 +3355,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${playerConvs.filter(c => c.tipo === 'Torneo').map(c => {
                                     const evalData = c.rendimiento && c.rendimiento[id] ? c.rendimiento[id] : null;
                                     return `
-                                        <div class="p-5 bg-slate-50 rounded-2xl border border-slate-100 group">
+                                        <div onclick="window.viewTorneoRendimiento(${c.id})" class="p-5 bg-slate-50 rounded-2xl border border-slate-100/50 hover:border-blue-200 hover:bg-white hover:shadow-xl transition-all group cursor-pointer">
                                             <div class="flex justify-between items-start mb-3">
                                                 <div>
-                                                    <p class="text-[9px] font-bold text-blue-600 uppercase opacity-60">${c.fecha}</p>
-                                                    <p class="text-xs font-black text-slate-800 uppercase tracking-tight">${c.nombre}</p>
+                                                    <p class="text-[9px] font-bold text-blue-600 uppercase opacity-60 tracking-widest">${c.fecha}</p>
+                                                    <p class="text-xs font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
                                                 </div>
                                                 <div class="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs">
                                                     ${evalData ? evalData.score : '--'}
@@ -3168,14 +3380,38 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </h4>
                             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                 ${playerSesiones.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(s => `
-                                    <div class="flex items-center gap-4 p-3 hover:bg-slate-50 rounded-xl transition-all">
-                                        <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-black text-[10px]">${s.fecha.split('-')[2]}</div>
+                                    <div onclick="window.viewSession(${s.id})" class="flex items-center gap-4 p-3 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-emerald-100 group">
+                                        <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${s.fecha.split('-')[2]}</div>
                                         <div class="min-w-0">
-                                            <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</p>
+                                            <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-emerald-600 transition-colors">${s.titulo || s.nombre}</p>
                                             <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(s.fecha).toLocaleDateString('es', { month: 'short', year: 'numeric' })}</p>
                                         </div>
                                     </div>
                                 `).join('') || '<p class="text-center py-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sin sesiones</p>'}
+                            </div>
+                        </div>
+
+                        <!-- Convocatorias History -->
+                        <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm mt-8">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <i data-lucide="clipboard-list" class="w-4 h-4 text-blue-500"></i>
+                                Historial de Convocatorias
+                            </h4>
+                            <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                ${playerConvs.filter(c => c.tipo !== 'Torneo').sort((a,b) => b.fecha.localeCompare(a.fecha)).map(c => `
+                                    <div onclick="window.viewConvocatoria(${c.id})" class="flex items-center gap-4 p-3 hover:bg-blue-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-blue-100 group">
+                                        <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${c.fecha.split('-')[2]}</div>
+                                        <div class="min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span class="px-1 text-[7px] font-black bg-blue-100 text-blue-600 rounded uppercase tracking-tighter">${c.tipo}</span>
+                                                <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                                            </div>
+                                            <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(c.fecha).toLocaleDateString('es', { month: 'short', year: 'numeric' })}</p>
+                                        </div>
+                                    </div>
+                                `).join('') || '<p class="text-center py-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sin convocatorias</p>'}
+                            </div>
+                        </div>
                             </div>
                         </div>
                     </div>
@@ -3347,7 +3583,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     targetPlayers = players.filter(p => conv.playerids.includes(p.id.toString()));
                 }
             } else if (selectedTeamId) {
-                targetPlayers = players.filter(j => j.equipoid == selectedTeamId);
+                // If no specific convocatoria is selected, check if there's one for this team on this date
+                const matchingConv = convocatorias.find(c => c.fecha === selectedDate && (c.equipoid == selectedTeamId || (c.equipoid && c.equipoid.toString().split(',').includes(selectedTeamId.toString()))));
+                if (matchingConv && matchingConv.playerids) {
+                    targetPlayers = players.filter(p => matchingConv.playerids.includes(p.id.toString()));
+                } else {
+                    targetPlayers = players.filter(j => j.equipoid == selectedTeamId);
+                }
+            }
+            
+            // If we have no target players yet but have only a date, we could show players from ALL convocatorias of the day?
+            // User said "only summoned on that day". If no team selected, maybe show nothing until a team/conv is picked.
+            if (!selectedTeamId && !selectedConvId && selectedDate) {
+                 const dayConvs = convocatorias.filter(c => c.fecha === selectedDate);
+                 const allPids = [...new Set(dayConvs.flatMap(c => c.playerids || []))];
+                 if (allPids.length > 0) {
+                     targetPlayers = players.filter(p => allPids.includes(p.id.toString()));
+                 }
             }
 
             if (targetPlayers.length === 0) {
@@ -3358,17 +3610,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
+            const statuses = [
+                { id: 'asiste', label: 'Asiste' },
+                { id: 'ausente', label: 'Ausente' },
+                { id: 'sin_motivo', label: 'Sin Motivo' },
+                { id: 'enfermo', label: 'Enfermo' },
+                { id: 'lesionado', label: 'Lesionado' },
+                { id: 'seleccion', label: 'Seleccion' },
+                { id: 'zubieta', label: 'Zubieta' },
+                { id: 'otro', label: 'Otro' }
+            ];
+
             const desktopHtml = targetPlayers.map(j => {
-                const status = attendanceData[j.id] || 'presente';
+                const status = attendanceData[j.id] || 'asiste';
                 return `
                     <tr class="border-b border-slate-50">
                         <td class="px-6 py-4 font-bold text-slate-400">${j.dorsal || '--'}</td>
                         <td class="px-6 py-4 font-bold text-slate-800">${j.nombre}</td>
-                        <td class="px-6 py-4 text-right">
-                            <div class="flex justify-end gap-1">
-                                ${['presente', 'ausente', 'tarde', 'lesion'].map(s => `
-                                    <button onclick="window.setPlayerStatus(${j.id}, '${s}')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${status === s ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border text-slate-400 hover:bg-slate-50'}">
-                                        ${s}
+                        <td class="px-6 py-4">
+                            <div class="flex flex-wrap justify-end gap-1">
+                                ${statuses.map(s => `
+                                    <button onclick="window.setPlayerStatus(${j.id}, '${s.id}')" class="px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${status === s.id ? 'bg-slate-900 text-white shadow-md' : 'bg-white border text-slate-400 hover:bg-slate-50'}">
+                                        ${s.label}
                                     </button>
                                 `).join('')}
                             </div>
@@ -3378,7 +3641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }).join('');
 
             const mobileHtml = targetPlayers.map(j => {
-                const status = attendanceData[j.id] || 'presente';
+                const status = attendanceData[j.id] || 'asiste';
                 return `
                     <div class="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                         <div class="flex items-center gap-3 mb-4">
@@ -3386,9 +3649,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <span class="font-bold text-slate-800 text-sm">${j.nombre}</span>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            ${['presente', 'ausente', 'tarde', 'lesion'].map(s => `
-                                <button onclick="window.setPlayerStatus(${j.id}, '${s}')" class="py-3 px-2 rounded-xl text-[10px] font-black uppercase border transition-all ${status === s ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}">
-                                    ${s}
+                            ${statuses.map(s => `
+                                <button onclick="window.setPlayerStatus(${j.id}, '${s.id}')" class="py-2 px-1 rounded-xl text-[8px] font-black uppercase border transition-all ${status === s.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-100 text-slate-400'}">
+                                    ${s.label}
                                 </button>
                             `).join('')}
                         </div>
@@ -3765,7 +4028,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
                                             <div class="flex-1">
                                                 <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
-                                                <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${u.role}</p>
                                             </div>
                                         </label>
                                     `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
@@ -4338,40 +4600,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.newConvocatoria = async (forcedTab = null) => {
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
+        const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
         const activeTab = forcedTab || currentConvocatoriaTab;
         
         modalContainer.innerHTML = `
             <div class="p-8">
                 <h3 class="text-2xl font-bold text-slate-800 mb-6">Crear Convocatoria: <span class="text-blue-600">${activeTab}</span></h3>
                 <form id="new-convocatoria-form" class="space-y-6">
-                    <input type="hidden" name="tipo" value="${activeTab}">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2">
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
-                             <input name="nombre" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
+                        <input type="hidden" name="tipo" value="${activeTab}">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="col-span-1 md:col-span-2">
+                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
+                                 <input name="nombre" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
+                            </div>
+                            <div class="col-span-1 md:col-span-2">
+                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipos</label>
+                                 <div id="conv-equipos-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto p-4 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
+                                     ${teams.map(t => `
+                                         <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                             <input type="checkbox" name="equipoids" value="${t.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 team-checkbox">
+                                             <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre}</span>
+                                         </label>
+                                     `).join('')}
+                                 </div>
+                            </div>
+                            
+                            ${activeTab === 'Ciclo' ? `
+                                <!-- SESION 1 -->
+                                <div class="col-span-1 md:col-span-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                                    <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3">Sesión 1</p>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <input name="fecha" type="date" class="p-3 border rounded-xl outline-none text-xs" required>
+                                        <input name="hora" type="time" class="p-3 border rounded-xl outline-none text-xs" required>
+                                        <input name="lugar" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 1">
+                                    </div>
+                                </div>
+                                <!-- SESION 2 -->
+                                <div class="col-span-1 md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sesión 2</p>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <input name="fecha2" type="date" class="p-3 border rounded-xl outline-none text-xs">
+                                        <input name="hora2" type="time" class="p-3 border rounded-xl outline-none text-xs">
+                                        <input name="lugar2" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 2">
+                                    </div>
+                                </div>
+                                <!-- SESION 3 -->
+                                <div class="col-span-1 md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sesión 3</p>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <input name="fecha3" type="date" class="p-3 border rounded-xl outline-none text-xs">
+                                        <input name="hora3" type="time" class="p-3 border rounded-xl outline-none text-xs">
+                                        <input name="lugar3" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 3">
+                                    </div>
+                                </div>
+                            ` : `
+                                <div>
+                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
+                                     <input name="fecha" type="date" class="w-full p-3 border rounded-xl outline-none" required>
+                                </div>
+                                <div>
+                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
+                                     <input name="hora" type="time" class="w-full p-3 border rounded-xl outline-none" required>
+                                </div>
+                                <div class="col-span-2">
+                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
+                                     <input name="lugar" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
+                                </div>
+                            `}
                         </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                             <select id="conv-equipo" name="equipoid" class="w-full p-3 border rounded-xl bg-white outline-none" required>
-                                 <option value="">Selecciona equipo...</option>
-                                 ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                             </select>
-                        </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
-                             <input name="fecha" type="date" class="w-full p-3 border rounded-xl outline-none" required>
-                        </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
-                             <input name="hora" type="time" class="w-full p-3 border rounded-xl outline-none" required>
-                        </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                             <input name="lugar" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
-                        </div>
-                    </div>
 
                     <div id="player-selector-container" class="hidden space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex items-center justify-between">
@@ -4386,6 +4686,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <!-- Los jugadores se cargarán aquí -->
                         </div>
                     </div>
+
+                    ${(users) ? `
+                        <div class="space-y-3 pt-4 border-t border-slate-100">
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
+                                ${(users && currentUser) ? users.filter(u => u.id !== currentUser.id).map(u => `
+                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <div class="flex-1">
+                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
+                                        </div>
+                                    </label>
+                                `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                            </div>
+                        </div>
+                    ` : ''}
 
                     <div class="flex gap-4 mt-6">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
@@ -4415,7 +4731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <input type="checkbox" name="playerids" value="${p.id}" class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600">
                             <span class="text-sm font-bold text-slate-700 conv-player-name">${p.nombre}</span>
                         </div>
-                        <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'} (${p.anionacimiento || '--'})</span>
+                        <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</span>
                     </label>
                 `).join('');
             } else {
@@ -4423,20 +4739,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
 
-        equipoSelect.onchange = (e) => {
-            const teamId = e.target.value;
-            if (!teamId) {
-                playerContainer.classList.add('hidden');
-                return;
-            }
+        const teamCheckboxes = document.querySelectorAll('.team-checkbox');
+        
+        teamCheckboxes.forEach(cb => {
+            cb.onchange = () => {
+                const selectedTeamIds = Array.from(teamCheckboxes).filter(c => c.checked).map(c => c.value);
+                
+                if (selectedTeamIds.length === 0) {
+                    playerContainer.classList.add('hidden');
+                    return;
+                }
 
-            const team = teams.find(t => t.id == teamId);
-            teamLabel.textContent = team ? team.nombre : '';
-            playerContainer.classList.remove('hidden');
-            
-            currentFilteredPlayers = players.filter(p => p.equipoid == teamId);
-            renderFilteredList();
-        };
+                const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
+                teamLabel.textContent = selectedTeams.map(t => t.nombre).join(', ');
+                playerContainer.classList.remove('hidden');
+                
+                currentFilteredPlayers = players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()));
+                renderFilteredList();
+            };
+        });
 
         searchInput.oninput = (e) => renderFilteredList(e.target.value);
         
@@ -4451,23 +4772,41 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.playerids = formData.getAll('playerids');
+            data.sharedWith = formData.getAll('sharedWith');
+            const selectedTeams = formData.getAll('equipoids');
+            data.equipoid = selectedTeams.length > 0 ? parseInt(selectedTeams[0]) : null;
+            data.createdBy = currentUser.id;
+
+            // BUNDLE EXTRA INFO Proactively
+            const extra = {
+                s2: { f: data.fecha2, h: data.hora2, l: data.lugar2 },
+                s3: { f: data.fecha3, h: data.hora3, l: data.lugar3 },
+                sw: data.sharedWith,
+                eids: selectedTeams
+            };
             
-            const { error } = await supabaseClient.from('convocatorias').insert(data);
-            if (error) alert("Error: " + error.message);
-            else {
-                closeModal();
-                window.switchView(activeTab === 'Torneo' ? 'torneos' : 'convocatorias');
-            }
+            const bundledData = { ...data };
+            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids'].forEach(f => delete bundledData[f]);
+            bundledData.lugar = `${data.lugar || ''} ||| ${JSON.stringify(extra)}`;
+
+            const { error } = await supabaseClient.from('convocatorias').insert(bundledData);
+            if (error) throw error;
+            
+            closeModal();
+            window.switchView(activeTab === 'Torneo' ? 'torneos' : 'convocatorias');
         };
 
     };
 
     window.editConvocatoria = async (id) => {
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
         const { data: conv, error: convErr } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
         if (convErr) return;
 
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
+        const { data: users } = await supabaseClient.from('profiles').select('*');
         const activeTab = conv.tipo;
         
         modalContainer.innerHTML = `
@@ -4481,12 +4820,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
                              <input name="nombre" value="${conv.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
                         </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                             <select id="edit-conv-equipo" name="equipoid" class="w-full p-3 border rounded-xl bg-white outline-none" required>
-                                 <option value="">Selecciona equipo...</option>
-                                 ${teams.map(t => `<option value="${t.id}" ${conv.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
-                             </select>
+                        <div class="col-span-2">
+                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipos</label>
+                             <div id="edit-conv-equipos-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto p-4 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
+                                 ${teams.map(t => {
+                                     const isSelected = (conv.equipoids && conv.equipoids.includes(t.id.toString())) || (conv.equipoid == t.id);
+                                     return `
+                                         <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                             <input type="checkbox" name="equipoids" value="${t.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 edit-team-checkbox">
+                                             <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre}</span>
+                                         </label>
+                                     `;
+                                 }).join('')}
+                             </div>
                         </div>
                         <div>
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
@@ -4552,15 +4898,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
 
-        const updateTeam = (teamId) => {
-            const team = teams.find(t => t.id == teamId);
-            teamLabel.textContent = team ? team.nombre : '';
-            currentFilteredPlayers = players.filter(p => p.equipoid == teamId);
+        const updateTeams = () => {
+            const selectedTeamIds = Array.from(document.querySelectorAll('.edit-team-checkbox')).filter(c => c.checked).map(c => c.value);
+            const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
+            teamLabel.textContent = selectedTeams.map(t => t.nombre).join(', ');
+            currentFilteredPlayers = players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()));
             renderFilteredList();
         };
 
-        equipoSelect.onchange = (e) => updateTeam(e.target.value);
-        if (conv.equipoid) updateTeam(conv.equipoid);
+        document.querySelectorAll('.edit-team-checkbox').forEach(cb => {
+            cb.onchange = updateTeams;
+        });
+        updateTeams();
 
         searchInput.oninput = (e) => renderFilteredList(e.target.value);
         
@@ -4575,6 +4924,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.playerids = formData.getAll('playerids');
+            data.equipoids = formData.getAll('equipoids');
+            
+            // For compatibility
+            if (data.equipoids.length > 0) data.equipoid = data.equipoids[0];
+            
             const idToUpdate = data.id;
             delete data.id;
             
@@ -4588,12 +4942,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.deleteConvocatoria = async (id) => {
-        window.customConfirm('¿Eliminar Convocatoria?', '¿Estás seguro de que quieres borrar este listado?', async () => {
-            const { error } = await supabaseClient.from('convocatorias').delete().eq('id', id);
-            if (error) alert(error.message);
-            else {
-                if (currentView === 'torneos') renderTorneos(contentArea.firstChild);
-                else renderConvocatorias(contentArea.firstChild);
+        window.customConfirm('¿Eliminar Convocatoria?', '¿Estás seguro de que quieres borrar este listado permanentemente?', async () => {
+            try {
+                const { error } = await supabaseClient.from('convocatorias').delete().eq('id', id);
+                if (error) throw error;
+                
+                window.customAlert('¡Borrado!', 'La convocatoria ha sido eliminada.', 'success');
+                
+                // Refresh reliably
+                if (window.currentView === 'torneos') {
+                    window.switchView('torneos');
+                } else {
+                    window.switchView('convocatorias');
+                }
+            } catch (err) {
+                console.error("Delete error:", err);
+                alert("Error al borrar: " + err.message);
             }
         });
     };
@@ -4626,42 +4990,74 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.saveConvEdit = async (e, id) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
-
+        if (e && e.preventDefault) e.preventDefault();
         try {
-            const { error } = await supabaseClient.from('convocatorias').update({
-                nombre: data.nombre,
-                tipo: data.tipo,
-                fecha: data.fecha,
-                hora: data.hora,
-                lugar: data.lugar
-            }).eq('id', id);
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.sharedWith = formData.getAll('sharedWith');
+            
+            const selectedTeams = formData.getAll('equipoids');
+            data.equipoid = selectedTeams.length > 0 ? parseInt(selectedTeams[0]) : null;
 
+            // BUNDLE EXTRA INFO Proactively
+            const extra = {
+                s2: { f: data.fecha2, h: data.hora2, l: data.lugar2 },
+                s3: { f: data.fecha3, h: data.hora3, l: data.lugar3 },
+                sw: data.sharedWith,
+                eids: selectedTeams
+            };
+            
+            const bundledData = { ...data };
+            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids'].forEach(f => delete bundledData[f]);
+            bundledData.lugar = `${data.lugar || ''} ||| ${JSON.stringify(extra)}`;
+            
+            const { error } = await supabaseClient.from('convocatorias').update(bundledData).eq('id', id);
             if (error) throw error;
 
-            window.customAlert('¡Actualizado!', 'La información de la convocatoria ha sido guardada.', 'success');
-            window.viewConvocatoria(id); // Reload modal
+            window.customAlert('Éxito', 'Convocatoria actualizada', 'success');
+            window.viewConvocatoria(id);
         } catch (err) {
-            console.error(err);
-            alert("Error al actualizar: " + err.message);
+            alert("Error al guardar: " + err.message);
         }
     };
 
     window.viewConvocatoria = async (id, activeTab = 'pizarra') => {
-        modalOverlay.classList.add('p-0');
-        modalOverlay.classList.remove('md:p-8', 'p-4');
+        try {
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+            modalOverlay.classList.add('p-0');
+            modalOverlay.classList.remove('md:p-8', 'p-4');
 
-        const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
-        if (error) return;
+            const { data: rawConv, error } = await supabaseClient.from("convocatorias").select("*").eq("id", id).single();
+            if (error) throw error;
+            let conv = { ...rawConv };
+            if (conv.lugar && conv.lugar.includes(" ||| ")) {
+                try {
+                    const [mainLugar, jsonInfo] = conv.lugar.split(" ||| ");
+                    const extra = JSON.parse(jsonInfo);
+                    conv.lugar = mainLugar;
+                    if (extra.s2) {
+                        conv.fecha2 = extra.s2.f; conv.hora2 = extra.s2.h; conv.lugar2 = extra.s2.l;
+                        conv.fecha3 = extra.s3.f; conv.hora3 = extra.s3.h; conv.lugar3 = extra.s3.l;
+                    }
+                    if (extra.sw) conv.sharedWith = extra.sw;
+                    if (extra.eids && !conv.equipoid) conv.equipoid = extra.eids;
+                } catch (pe) { console.error("Error parsing extra info:", pe); }
+            }
 
-        const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
-        const team = teams.find(t => t.id == conv.equipoid);
-        const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
-        const convocados = players.filter(p => pids.includes(p.id.toString()));
-        const teamPlayers = team ? players.filter(p => p.equipoid == team.id) : [];
+            const players = await db.getAll('jugadores');
+            const teams = await db.getAll('equipos');
+            const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
+            
+            let selectedTeamIds = [];
+            if (conv.equipoid) {
+                selectedTeamIds = conv.equipoid.toString().split(',').map(tid => tid.trim());
+            }
+            const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
+            
+            const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
+            const convocados = players.filter(p => pids.includes(p.id.toString()));
+            const teamPlayers = players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()));
 
         modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
@@ -4670,7 +5066,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="flex-1">
                         <div class="flex items-center gap-3 mb-2">
                             <span id="conv-type-badge" class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-black uppercase tracking-widest">${conv.tipo}</span>
-                            <span class="px-2 py-1 bg-slate-100 text-slate-500 rounded text-[10px] font-black uppercase tracking-widest">${team ? team.nombre : 'Equipo General'}</span>
+                            <span class="px-2 py-1 bg-slate-100 text-slate-500 rounded text-[10px] font-black uppercase tracking-widest">${selectedTeams.length > 0 ? selectedTeams.map(t => t.nombre).join(', ') : 'Equipo General'}</span>
                             <button onclick="window.toggleConvEdit(${conv.id})" class="p-1.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Editar información">
                                 <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
                             </button>
@@ -4681,7 +5077,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                         <div id="conv-info-display">
                             <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
-                            <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                            ${conv.tipo === 'Ciclo' ? `
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+                                    <div class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                                        <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Sesión 1</p>
+                                        <p class="text-xs font-bold text-slate-700">${conv.fecha} • ${conv.hora || '--:--'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar || 'Sin lugar'}</p>
+                                    </div>
+                                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 2</p>
+                                        <p class="text-xs font-bold text-slate-700">${conv.fecha2 || '--'} • ${conv.hora2 || '--:--'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar2 || 'Sin lugar'}</p>
+                                    </div>
+                                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 3</p>
+                                        <p class="text-xs font-bold text-slate-700">${conv.fecha3 || '--'} • ${conv.hora3 || '--:--'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar3 || 'Sin lugar'}</p>
+                                    </div>
+                                </div>
+                            ` : `
+                                <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                            `}
                         </div>
 
                         <!-- Player Management Area -->
@@ -4697,7 +5113,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                             </div>
                             
-                            <div id="mgmt-player-list" class="grid grid-cols-2 lg:grid-cols-4 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar p-1">
+                            <div id="mgmt-player-list" class="grid grid-cols-2 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar p-1">
                                 ${teamPlayers.map(p => {
                                     const isConvocado = pids.includes(p.id.toString());
                                     return `
@@ -4705,7 +5121,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-lg text-blue-600 border-slate-200 focus:ring-blue-100">
                                             <div class="flex-1 min-w-0">
                                                 <p class="text-[11px] font-black text-slate-700 truncate mgmt-player-name uppercase tracking-tight">${p.nombre}</p>
-                                                <p class="text-[9px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || '--'}</p>
+                                                <p class="text-[9px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</p>
                                             </div>
                                         </label>
                                     `;
@@ -4734,18 +5150,71 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <option value="Partido" ${conv.tipo === 'Partido' ? 'selected' : ''}>Partido</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Fecha</label>
-                                    <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                
+                                ${conv.tipo === 'Ciclo' ? `
+                                    <div class="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-white rounded-2xl border border-slate-100">
+                                        <div class="space-y-3">
+                                            <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Sesión 1</p>
+                                            <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="lugar" value="${conv.lugar || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 1">
+                                        </div>
+                                        <div class="space-y-3">
+                                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión 2</p>
+                                            <input name="fecha2" type="date" value="${conv.fecha2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="hora2" type="time" value="${conv.hora2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="lugar2" value="${conv.lugar2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 2">
+                                        </div>
+                                        <div class="space-y-3">
+                                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión 3</p>
+                                            <input name="fecha3" type="date" value="${conv.fecha3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="hora3" type="time" value="${conv.hora3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="lugar3" value="${conv.lugar3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 3">
+                                        </div>
+                                    </div>
+                                ` : `
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Fecha</label>
+                                        <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora</label>
+                                        <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                    </div>
+                                `}
+                                <div class="col-span-2">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Equipos Vinculados</label>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto p-4 bg-white rounded-[1.5rem] border border-slate-200 custom-scrollbar">
+                                        ${teams.map(t => `
+                                            <label class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-50 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                                <input type="checkbox" name="equipoids" value="${t.id}" ${selectedTeamIds.includes(t.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 conv-team-check">
+                                                <span class="text-[9px] font-bold text-slate-700 truncate">${t.nombre}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora</label>
-                                    <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
-                                </div>
+
                                 <div class="col-span-2">
                                     <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Lugar</label>
                                     <input name="lugar" value="${conv.lugar || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
                                 </div>
+
+                                ${(users) ? `
+                                    <div class="col-span-2 space-y-3 pt-4 border-t border-slate-200">
+                                        <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-white rounded-2xl border border-slate-100 custom-scrollbar">
+                                            ${(users && currentUser) ? users.filter(u => u.id !== currentUser.id).map(u => `
+                                                <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                                    <input type="checkbox" name="sharedWith" value="${u.id}" ${conv.sharedWith && conv.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                                    <div class="flex-1">
+                                                        <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
+                                                    </div>
+                                                </label>
+                                            `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
+                                        </div>
+                                    </div>
+                                ` : ''}
+
                                 <div class="col-span-2 flex gap-2 pt-2">
                                     <button type="submit" class="flex-1 py-3 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all">Guardar</button>
                                     <button type="button" onclick="window.toggleConvEdit(${conv.id})" class="px-4 py-3 bg-slate-200 text-slate-600 font-black rounded-xl text-[10px] uppercase tracking-widest hover:bg-slate-300 transition-all">Cancelar</button>
@@ -4807,18 +5276,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                         <!-- Pitch side -->
                         <div class="space-y-4">
-                            <div class="bg-slate-900/5 p-6 rounded-[2.5rem] border border-slate-100">
+                            <div class="bg-slate-900 p-8 rounded-[3rem] shadow-2xl overflow-hidden relative group/pitch">
                                 <div class="flex justify-between items-center mb-6">
-                                    <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Esquema Táctico</h4>
-                                    <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-white border border-slate-100 rounded-xl text-[10px] font-black uppercase outline-none shadow-sm cursor-pointer">
-                                        ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                            const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
-                                            return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                        }).join('')}
-                                    </select>
+                                    <h4 class="text-xs font-black text-white/40 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="map" class="w-4 h-4"></i>
+                                        Pizarra Táctica
+                                    </h4>
+                                    <div class="flex items-center gap-2">
+                                        <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                            ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                                const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+                                                return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                            }).join('')}
+                                        </select>
+                                        <button onclick="window.openFullScreenPitch('conv', ${conv.id}, '${(window.formationsState && window.formationsState.convocatoria) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                            <i data-lucide="maximize" class="w-4 h-4"></i>
+                                            Panorámica
+                                        </button>
+                                    </div>
                                 </div>
-                                <div id="modal-pitch-view" class="animate-in fade-in duration-500">
-                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', window.innerWidth < 768 ? 'vertical' : 'horizontal')}
+                                <div id="modal-pitch-view" class="relative animate-in fade-in duration-500">
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'horizontal')}
                                 </div>
                             </div>
                         </div>
@@ -4833,6 +5311,35 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
+
+        // Reactive Player List based on teams
+        const teamChecks = modalContainer.querySelectorAll('.conv-team-check');
+        const mgmtList = document.getElementById('mgmt-player-list');
+        
+        const updateMgmtList = () => {
+            const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+            const filteredPlayers = players.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
+            
+            mgmtList.innerHTML = filteredPlayers.map(p => {
+                const isConvocado = pids.includes(p.id.toString());
+                return `
+                    <label class="flex items-center gap-3 p-4 bg-white rounded-2xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all mgmt-player-label shadow-sm hover:shadow-md">
+                        <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-lg text-blue-600 border-slate-200 focus:ring-blue-100">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-[11px] font-black text-slate-700 truncate mgmt-player-name uppercase tracking-tight">${p.nombre}</p>
+                            <p class="text-[9px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</p>
+                        </div>
+                    </label>
+                `;
+            }).join('') || '<p class="col-span-full text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona al menos un equipo para ver jugadores.</p>';
+        };
+
+        teamChecks.forEach(cb => cb.onchange = updateMgmtList);
+
+        } catch (err) {
+            console.error("Error viewConvocatoria:", err);
+            alert("Error abriendo convocatoria: " + err.message);
+        }
 
         // Toggle Player Management
         const toggleMgmtBtn = document.getElementById('toggle-player-mgmt');
@@ -5564,10 +6071,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         modalOverlay.classList.remove('md:p-8', 'p-4');
 
         try {
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
             const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
             if (error) throw error;
 
             const players = await db.getAll('jugadores');
+            const { data: users } = await supabaseClient.from('profiles').select('*');
             const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
             const convocados = players.filter(p => pids.includes(p.id.toString()));
             const rendimiento = conv.rendimiento || {};
@@ -5648,58 +6158,89 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <textarea name="comment_${p.id}" rows="2" class="w-full p-4 border border-slate-100 rounded-2xl bg-slate-50/50 text-xs outline-none focus:ring-4 ring-blue-100 transition-all placeholder:italic" placeholder="Análisis...">${evalData.comment || ''}</textarea>
+                                                    <textarea name="comment_${p.id}" placeholder="Observaciones sobre su rendimiento..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-bold outline-none focus:ring-4 ring-blue-50/50 h-20 resize-none">${evalData.comment || ''}</textarea>
                                                 </div>
                                             </div>
                                         `;
-                                    }).join('') : `
-                                        <div class="py-24 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-100">
-                                            <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 text-slate-200 shadow-sm"><i data-lucide="users" class="w-10 h-10"></i></div>
-                                            <p class="text-xs text-slate-400 mt-2 font-black uppercase">Sin jugadores</p>
-                                        </div>
-                                    `}
+                                    }).join('') : '<p class="p-10 text-center text-slate-400 italic">No hay jugadores seleccionados para evaluar.</p>'}
                                 </div>
-
-                                <div class="pt-8">
-                                    <button type="submit" class="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase text-[10px] tracking-widest">Guardar Cambios</button>
+                                <div class="sticky bottom-4 pt-4">
+                                    <button type="submit" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl shadow-slate-900/10 hover:bg-black transition-all uppercase tracking-widest text-xs">Guardar Evaluaciones</button>
                                 </div>
                             </form>
                         </div>
 
-                        <!-- Right: Tactical Pitch (Larger) -->
-                        <div class="lg:col-span-2 space-y-6">
-                            <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm sticky top-0">
-                                <div class="flex justify-between items-center mb-8 px-4">
-                                    <div>
-                                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest">Pizarra Táctica</h4>
-                                        <p class="text-xl font-black text-slate-800 uppercase tracking-tight">Esquema del Equipo</p>
-                                    </div>
-                                    <div class="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100">
-                                        <span class="text-[10px] font-black text-slate-400 uppercase px-2">Sistema</span>
-                                        <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Torneo')" class="p-3 bg-white border border-slate-100 rounded-xl text-xs font-black uppercase outline-none shadow-sm cursor-pointer">
-                                            ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                                const current = (window.formationsState && window.formationsState.torneo) || 'F11_433';
-                                                return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                            }).join('')}
-                                        </select>
-                                    </div>
+                        <!-- Right: Stats/Graph Side -->
+                        <div class="lg:col-span-2 space-y-8">
+                             <div class="bg-slate-50 p-8 rounded-[3rem] border border-slate-100">
+                                <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                    <i data-lucide="bar-chart-3" class="w-4 h-4 text-slate-400"></i>
+                                    Análisis Gráfico
+                                </h4>
+                                <div class="h-80 w-full bg-white rounded-3xl p-6 shadow-sm border border-white flex items-center justify-center">
+                                    ${convocados.length > 0 ? `<canvas id="torneoChart"></canvas>` : `<p class="text-slate-300 italic text-[10px] uppercase font-bold">Añade jugadores para ver la comparativa</p>`}
                                 </div>
-                                
-                                <div class="animate-in fade-in zoom-in duration-700">
-                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433', window.innerWidth < 768 ? 'vertical' : 'horizontal')}
+                             </div>
+
+                             <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl shadow-blue-500/20 text-white">
+                                    <p class="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2">Media Equipo</p>
+                                    <h4 class="text-4xl font-black">
+                                        ${convocados.length > 0 ? (Object.values(rendimiento).reduce((acc, curr) => acc + (parseFloat(curr.score) || 0), 0) / (Object.values(rendimiento).filter(v => v.score).length || 1)).toFixed(1) : '--'}
+                                    </h4>
                                 </div>
-                                <div class="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Convocados</p>
-                                        <p class="text-2xl font-black text-slate-800">${convocados.length}</p>
-                                    </div>
-                                     <div class="bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Evaluados</p>
-                                        <p class="text-2xl font-black text-blue-600">${Object.keys(rendimiento).length}</p>
-                                    </div>
+                                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                                    <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Evaluados</p>
+                                    <h4 class="text-4xl font-black text-slate-800">
+                                        ${Object.values(rendimiento).filter(v => v.score).length} <span class="text-xs uppercase text-slate-300">/ ${convocados.length}</span>
+                                    </h4>
+                                </div>
+                             </div>
+
+                             <!-- Campograma -->
+                             <div class="bg-slate-900 p-8 rounded-[3rem] shadow-2xl overflow-hidden relative group/pitch">
+                                 <div class="flex justify-between items-center mb-6">
+                                     <h4 class="text-xs font-black text-white/40 uppercase tracking-widest flex items-center gap-2">
+                                         <i data-lucide="map" class="w-4 h-4"></i>
+                                         Pizarra Táctica
+                                     </h4>
+                                     <div class="flex items-center gap-2">
+                                         <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Torneo')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                             ${Object.entries(FORMATIONS).map(([fid, f]) => {
+                                                 const current = (window.formationsState && window.formationsState.torneo) || 'F11_433';
+                                                 return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                                             }).join('')}
+                                         </select>
+                                         <button onclick="window.openFullScreenPitch('conv', ${conv.id}, '${(window.formationsState && window.formationsState.torneo) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                            <i data-lucide="maximize" class="w-4 h-4"></i>
+                                            Panorámica
+                                         </button>
+                                     </div>
+                                 </div>
+                                 <div class="relative">
+                                     ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433', 'horizontal')}
+                                 </div>
+                             </div>
+                        </div>
+
+                        ${(users) ? `
+                            <div class="lg:col-span-3 space-y-3 pt-6 border-t border-slate-100">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
+                                    <button id="save-torneo-sharing" class="px-6 py-2 bg-blue-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest shadow-lg shadow-blue-500/20">Guardar Compartidos</button>
+                                </div>
+                                <div id="torneo-sharing-list" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
+                                    ${(users && currentUser) ? users.filter(u => u.id !== currentUser.id).map(u => `
+                                        <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${conv.sharedWith && conv.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-[10px] font-bold text-slate-700 truncate">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
+                                            </div>
+                                        </label>
+                                    `).join('') : '<p class="text-xs text-slate-400 italic">No hay otros usuarios registrados.</p>'}
                                 </div>
                             </div>
-                        </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -5741,6 +6282,22 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 alert("Error actualizando: " + err.message);
             }
         };
+
+        const shareTorneoBtn = document.getElementById('save-torneo-sharing');
+        if (shareTorneoBtn) {
+            shareTorneoBtn.onclick = async () => {
+                const sharingChecks = document.getElementById('torneo-sharing-list').querySelectorAll('input[name="sharedWith"]');
+                const sharedWithList = Array.from(sharingChecks).filter(c => c.checked).map(c => c.value);
+                
+                try {
+                    const { error } = await supabaseClient.from('convocatorias').update({ sharedWith: sharedWithList }).eq('id', id);
+                    if (error) throw error;
+                    window.customAlert('Compartido', 'Lista de staff actualizada correctamente.', 'success');
+                } catch (err) {
+                    alert("Error compartiendo: " + err.message);
+                }
+            };
+        }
 
         document.getElementById('torneo-rendimiento-form').onsubmit = async (e) => {
             e.preventDefault();
@@ -5797,6 +6354,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const teams = await db.getAll('equipos');
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
+        const sesiones = await db.getAll('sesiones');
+        const convocatorias = await db.getAll('convocatorias');
 
         modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -5822,10 +6381,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             <div class="grid grid-cols-2 gap-4 col-span-1 md:col-span-2">
                                 <select name="categoria" class="p-4 border border-slate-200 rounded-2xl bg-white outline-none">
-                                    <option>Entrenamiento</option>
-                                    <option>Partido</option>
+                                    <option>Sesión entrenamiento</option>
+                                    <option>Torneo</option>
                                     <option>Reunión</option>
-                                    <option>Otro</option>
+                                    <option>Amistoso</option>
+                                    <option>Otros</option>
                                 </select>
                                 <input name="hora" type="time" class="p-4 border border-slate-200 rounded-2xl bg-white outline-none" required>
                             </div>
@@ -5849,10 +6409,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                             </label>
                             <div id="session-fields" class="hidden mt-6 pt-6 border-t border-slate-50 space-y-4">
-                                <select name="session_equipoid" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
-                                    <option value="">Selecciona equipo...</option>
-                                    ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                                </select>
+                                    <select name="session_equipoid" id="session-master-equipo" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
+                                        <option value="">Selecciona equipo...</option>
+                                        ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                    </select>
+                                    <select id="session-template-selector" class="w-full p-4 border border-blue-100 rounded-2xl bg-white outline-none hidden text-[11px] font-bold text-blue-600">
+                                        <option value="">Opcional: Importar sesión existente...</option>
+                                    </select>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Tareas (Separadas por ;) o arrastra desde Tareas</label>
                                 <input name="session_tasks" placeholder="IDs de tareas si las sabes, o se creará vacía" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
                             </div>
@@ -5877,6 +6440,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <select name="conv_equipoid" id="conv-master-equipo" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
                                     <option value="">Selecciona equipo...</option>
                                     ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                </select>
+                                <select id="conv-template-selector" class="w-full p-4 border border-emerald-100 rounded-2xl bg-white outline-none hidden text-[11px] font-bold text-emerald-600">
+                                    <option value="">Opcional: Importar convocatoria existente...</option>
                                 </select>
                                 <div class="relative mb-2">
                                      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
@@ -5909,23 +6475,85 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const cFields = document.getElementById('convocatoria-fields');
         cCheck.onchange = () => cFields.classList.toggle('hidden', !cCheck.checked);
 
+        // Session Template Logic
+        const sTeamSel = document.getElementById('session-master-equipo');
+        const sTemplSel = document.getElementById('session-template-selector');
+        const sTasksInput = document.querySelector('input[name="session_tasks"]');
+        
+        sTeamSel.onchange = () => {
+            const tid = sTeamSel.value;
+            if (!tid) { sTemplSel.classList.add('hidden'); return; }
+            const filtered = sesiones.filter(s => s.equipoid == tid);
+            if (filtered.length > 0) {
+                sTemplSel.innerHTML = '<option value="">Opcional: Importar sesión existente...</option>' + 
+                    filtered.map(s => `<option value="${s.id}">${(s.titulo || 'Sin título').toUpperCase()} (${s.fecha || '--'})</option>`).join('');
+                sTemplSel.classList.remove('hidden');
+            } else {
+                sTemplSel.classList.add('hidden');
+            }
+        };
+
+        sTemplSel.onchange = () => {
+            const sid = sTemplSel.value;
+            if (!sid) return;
+            const found = sesiones.find(s => s.id == sid);
+            if (found && found.taskids) {
+                sTasksInput.value = (found.taskids || []).join('; ');
+                // Opcional: llenar también el nombre del evento si está vacío
+                const nameInput = document.querySelector('input[name="nombre"]');
+                if (!nameInput.value) nameInput.value = found.titulo;
+            }
+        };
+
         // Player loader for convocatoria
         const teamSel = document.getElementById('conv-master-equipo');
         const pList = document.getElementById('conv-players-list');
+        const cTemplSel = document.getElementById('conv-template-selector');
+
         teamSel.onchange = () => {
             const tid = teamSel.value;
-            if (!tid) { pList.classList.add('hidden'); return; }
+            if (!tid) { 
+                pList.classList.add('hidden'); 
+                cTemplSel.classList.add('hidden');
+                return; 
+            }
+
+            // Población de jugadores
             pList.classList.remove('hidden');
-            const filtered = players.filter(p => p.equipoid == tid);
-            pList.innerHTML = filtered.map(p => `
+            const filteredPlayers = players.filter(p => p.equipoid == tid);
+            pList.innerHTML = filteredPlayers.map(p => `
                 <label class="flex items-center gap-3 p-2 hover:bg-white rounded-xl transition-all unified-player-label">
                     <input type="checkbox" name="conv_playerids" value="${p.id}" class="w-4 h-4 rounded text-blue-600">
                     <span class="text-xs font-bold text-slate-700 unified-player-name">${p.nombre}</span>
                 </label>
             `).join('') || '<p class="text-[10px] text-slate-400 p-2 italic">Sin jugadores en este equipo</p>';
+
+            // Población de plantillas de convocatoria
+            const filteredConvs = convocatorias.filter(c => c.equipoid == tid);
+            if (filteredConvs.length > 0) {
+                cTemplSel.innerHTML = '<option value="">Opcional: Importar convocatoria existente...</option>' + 
+                    filteredConvs.map(c => `<option value="${c.id}">${(c.nombre || 'Sin título').toUpperCase()} (${c.fecha || '--'})</option>`).join('');
+                cTemplSel.classList.remove('hidden');
+            } else {
+                cTemplSel.classList.add('hidden');
+            }
             
             if (window.lucide) lucide.createIcons();
-        }
+        };
+
+        cTemplSel.onchange = () => {
+            const cid = cTemplSel.value;
+            if (!cid) return;
+            const found = convocatorias.find(c => c.id == cid);
+            if (found && found.playerids) {
+                const checkboxes = pList.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    cb.checked = found.playerids.includes(cb.value.toString());
+                });
+                const nameInput = document.querySelector('input[name="nombre"]');
+                if (!nameInput.value) nameInput.value = found.nombre;
+            }
+        };
 
         const unifiedPlayerSearch = document.getElementById('unified-player-search');
         if (unifiedPlayerSearch) {
@@ -6045,24 +6673,48 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 const allEventos = await db.getAll('eventos');
                 const allSesiones = await db.getAll('sesiones');
-                const currentUser = (await supabaseClient.auth.getUser()).data.user;
+                const allConvocatorias = await db.getAll('convocatorias');
+                
+                const userRes = await supabaseClient.auth.getUser();
+                const currentUser = userRes.data?.user;
                 if (!currentUser) return;
 
-                const agendaItems = [
-                    ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock' })),
-                    ...allSesiones.map(s => ({ ...s, type: 'sesion', color: 'blue', icon: 'calendar', nombre: s.titulo || 'Sesión' }))
-                ].filter(item => {
+                const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+
+                const allItems = [
+                    ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock', view: 'eventos' })),
+                    ...allSesiones.map(s => ({ ...s, type: 'sesion', color: 'blue', icon: 'calendar', nombre: s.titulo || 'Sesión', view: 'sesiones' })),
+                    ...allConvocatorias.map(c => ({ 
+                        ...c, 
+                        type: 'convocatoria', 
+                        color: c.tipo === 'Torneo' ? 'emerald' : 'indigo', 
+                        icon: c.tipo === 'Torneo' ? 'trophy' : 'users',
+                        view: c.tipo === 'Torneo' ? 'torneos' : 'convocatorias'
+                    }))
+                ];
+
+                const agendaItems = allItems.filter(item => {
                     const isTodayOrTomorrow = (item.fecha === today || item.fecha === tomorrowStr);
-                    const isMineOrShared = (item.createdBy === currentUser.id || (item.sharedWith && item.sharedWith.includes(currentUser.id)));
-                    return isTodayOrTomorrow && isMineOrShared && !item.completada;
+                    const isMine = item.createdBy === currentUser.id;
+                    const isSharedWithMe = item.sharedWith && item.sharedWith.includes(currentUser.id);
+                    const notSeen = !seenNotifs.includes(`${item.type}_${item.id}`);
+                    
+                    // Mostrar si:
+                    // 1. Es para hoy o mañana (mío o compartido)
+                    // 2. Es ALGO NUEVO compartido conmigo (de cualquier fecha futura)
+                    const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
+                    
+                    return (isTodayOrTomorrow || isUpcomingShared) && !item.completada;
                 })
-                 .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.hora.localeCompare(b.hora));
+                 .sort((a, b) => {
+                     // Prioridad: Hoy > Mañana > Futuros Compartidos
+                     if (a.fecha === b.fecha) return (a.hora || '00:00').localeCompare(b.hora || '00:00');
+                     return a.fecha.localeCompare(b.fecha);
+                 });
 
                 if (agendaItems.length > 0) {
-                    const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
                     const hasUnseen = agendaItems.some(item => !seenNotifs.includes(`${item.type}_${item.id}`));
 
-                    // Si el panel está abierto, marcamos todo como visto inmediatamente
                     if (!notifPanel.classList.contains('hidden')) {
                         const currentIds = agendaItems.map(item => `${item.type}_${item.id}`);
                         const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
@@ -6080,18 +6732,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     
                     notifList.innerHTML = agendaItems.map(item => {
                         const isSeen = seenNotifs.includes(`${item.type}_${item.id}`);
+                        const isShared = item.sharedWith && item.sharedWith.includes(currentUser.id) && item.createdBy !== currentUser.id;
+                        
+                        let dateLabel = item.fecha === today ? 'Hoy' : item.fecha === tomorrowStr ? 'Mañana' : item.fecha;
+                        if (isShared && !isSeen) dateLabel = "¡NUEVO COMPARTIDO!";
+
                         return `
-                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative" onclick="window.switchView('${item.type === 'sesion' ? 'sesiones' : 'eventos'}')">
+                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative" onclick="window.switchView('${item.view}')">
                             ${!isSeen ? '<div class="absolute right-3 top-3 w-2 h-2 bg-blue-500 rounded-full"></div>' : ''}
-                            <div class="w-10 h-10 ${item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'} rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white">
+                            <div class="w-10 h-10 ${
+                                item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 
+                                item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
+                                item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
+                                'bg-indigo-50 text-indigo-600'
+                            } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white">
                                 <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex justify-between items-start mb-0.5">
-                                    <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today ? 'text-red-500' : 'text-slate-400'}">${item.fecha === today ? 'Hoy' : 'Mañana'} · ${item.hora || '--:--'}</span>
+                                    <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today || (isShared && !isSeen) ? 'text-blue-500' : 'text-slate-400'}">${dateLabel} · ${item.hora || '--:--'}</span>
                                 </div>
                                 <h5 class="text-[11px] font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors">${item.nombre || 'Sin título'}</h5>
-                                <p class="text-[9px] text-slate-500 truncate">${item.lugar || item.equiponombre || 'Campo Principal'}</p>
+                                <p class="text-[9px] text-slate-500 truncate">${isShared ? 'Compartido por Staff' : (item.lugar || item.equiponombre || 'Campo Principal')}</p>
                             </div>
                         </div>
                     `;
