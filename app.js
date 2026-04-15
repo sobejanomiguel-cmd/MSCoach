@@ -1,4 +1,5 @@
 const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
+const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 window.renderPositionSelector = (selectedPositions = [], id = "pos") => {
     const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
                  selectedPositions.length === 1 ? selectedPositions[0] : 
@@ -3044,6 +3045,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                                     </select>
                                 </div>
+                                <div class="col-span-1">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Club Convenido</label>
+                                    <select name="equipoConvenido" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
+                                        <option value="">Ninguno</option>
+                                        ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${player.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                    </select>
+                                </div>
                                 <div class="col-span-full">
                                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Posiciones Técnicas (Multiselección)</label>
                                     ${window.renderPositionSelector((player.posicion || '').split(',').map(s=>s.trim()), 'edit-pos')}
@@ -3187,6 +3195,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 anionacimiento: data.anionacimiento ? Number(data.anionacimiento) : null,
                 pie: data.pie || null,
                 nivel: data.nivel ? Number(data.nivel) : 3,
+                equipoConvenido: data.equipoConvenido || null,
                 notas: data.notas,
                 id: upId
             };
@@ -3757,9 +3766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
                                 <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white">
                                     <option value="">Ninguno</option>
-                                    <option>CD BAZTAN KE</option><option>BETI GAZTE KJKE</option><option>GURE TXOKOA KKE</option>
-                                    <option>CA RIVER EBRO</option><option>CALAHORRA FB</option><option>EF ARNEDO</option>
-                                    <option>EFB ALFARO</option><option>UD BALSAS PICARRAL</option>
+                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}">${c}</option>`).join('')}
                                 </select>
                             </div>
                             <div>
