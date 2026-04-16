@@ -743,11 +743,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     .map(p => p.id.toString());
 
                                 const convData = {
-                                    nombre: data['NOMBRE'],
+                                    nombre: (data['NOMBRE'] || '').toUpperCase().trim(),
                                     tipo: data['TIPO'] || 'Ciclo',
                                     fecha: data['FECHA'],
                                     hora: data['HORA'],
-                                    lugar: data['LUGAR'],
+                                    lugar: (data['LUGAR'] || '').toUpperCase().trim(),
                                     equipoid: team ? team.id.toString() : null,
                                     playerids: foundPlayerIds
                                 };
@@ -1489,6 +1489,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const eventId = parseInt(data.id);
             delete data.id;
 
+            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
+            if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
+
             const { error } = await supabaseClient.from('eventos').update(data).eq('id', eventId);
             
             if (error) {
@@ -1878,6 +1881,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.id = parseInt(data.id);
+            if (data.name) data.name = data.name.toUpperCase().trim();
             data.material = formData.getAll('material').join(', ');
 
             
@@ -2440,6 +2444,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             data.playerids = formData.getAll('playerids');
             const team = teams.find(t => t.id == data.equipoid);
             data.equiponombre = team ? team.nombre : 'Equipo';
+
+            if (data.titulo) data.titulo = data.titulo.toUpperCase().trim();
+            if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
             
             if (isEdit) await db.update('sesiones', data);
             else await db.add('sesiones', data);
@@ -2865,7 +2872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = { 
                     ...team,
                     id: parseInt(formData.get('id')),
-                    nombre: `${formData.get('nombre')} ||| ${catStr}`,
+                    nombre: `${formData.get('nombre').toString().trim().toUpperCase()} ||| ${catStr}`,
                     categoria: parseInt(selectedYears[0]) || null
                 };
                 
@@ -3175,9 +3182,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
+            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
             data.posicion = formData.getAll('posicion').join(', ');
             await db.add('jugadores', data);
             window.viewTeamPlayers(equipoid);
+            closeModal();
         });
         
     };
@@ -3345,7 +3354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
                                                 }
                                                 <div class="flex-1">
-                                                    <input value="${p.nombre || ''}" onblur="window.updatePlayerInline(${p.id}, 'nombre', this.value)" 
+                                                    <input value="${p.nombre || ''}" onblur="window.updatePlayerInline(${p.id}, 'nombre', this.value.toUpperCase().trim())" 
                                                         class="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-800 outline-none focus:bg-slate-50 focus:px-2 focus:py-1 rounded-lg transition-all">
                                                     <input type="number" value="${p.anionacimiento || ''}" onblur="window.updatePlayerInline(${p.id}, 'anionacimiento', this.value)" 
                                                         class="w-full bg-transparent border-none p-0 text-[9px] font-black text-slate-300 uppercase tracking-widest outline-none focus:bg-slate-50 focus:px-2 focus:py-0.5 rounded-lg transition-all mt-0.5" placeholder="AÑO">
@@ -3795,6 +3804,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
+            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
             data.posicion = formData.getAll('posicion').join(', ');
             
             const upId = Number(data.id);
@@ -4631,6 +4641,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
 
+            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
+            if (data.titulo) data.titulo = data.titulo.toUpperCase().trim();
+            if (data.name) data.name = data.name.toUpperCase().trim();
+            if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
+
             if (viewId === 'jugadores') {
                 data.posicion = formData.getAll('posicion').join(', ');
             }
@@ -4689,7 +4704,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const selectedCat = formData.getAll('categoria');
                     const catStr = selectedCat.join(', ');
                     
-                    data.nombre = `${data.nombre} ||| ${catStr}`;
+                    data.nombre = `${data.nombre.trim().toUpperCase()} ||| ${catStr}`;
                     data.categoria = parseInt(selectedCat[0]) || null;
                     
                     const id = await db.add('equipos', data);
@@ -5424,15 +5439,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : null;
 
                     const extra = {
-                        s2: { f: data.fecha2, h: data.hora2, l: data.lugar2 },
-                        s3: { f: data.fecha3, h: data.hora3, l: data.lugar3 },
+                        s2: { f: data.fecha2, h: data.hora2, l: (data.lugar2 || '').toUpperCase().trim() },
+                        s3: { f: data.fecha3, h: data.hora3, l: (data.lugar3 || '').toUpperCase().trim() },
                         sw: data.sharedWith,
                         eids: checkedTeamIds
                     };
                     
                     const bundledData = { ...data };
                     ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith'].forEach(f => delete bundledData[f]);
-                    bundledData.lugar = `${data.lugar || ''} ||| ${JSON.stringify(extra)}`;
+                    bundledData.nombre = (bundledData.nombre || '').toUpperCase().trim();
+                    bundledData.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
 
                     const { error } = await supabaseClient.from('convocatorias').insert(bundledData);
                     if (error) throw error;
@@ -5605,20 +5621,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                 data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (conv.equipoid || null);
 
                 // RECONSTRUCT LUGAR WITH EXTRA
-                let baseLugar = data.lugar || '';
+                let baseLugar = (data.lugar || '').toUpperCase().trim();
                 if (baseLugar.includes(' ||| ')) baseLugar = baseLugar.split(' ||| ')[0];
+
+                data.nombre = (data.nombre || '').toUpperCase().trim();
 
                 let extra = {};
                 if (conv.lugar && conv.lugar.includes(' ||| ')) {
                     try { extra = JSON.parse(conv.lugar.split(' ||| ')[1]); } catch (e) {}
                 }
                 extra.eids = checkedTeamIds;
+
+                // Handle sub-session locations if they exist in the form (for Ciclos)
+                if (data.lugar2) extra.s2 = { ...extra.s2, l: data.lugar2.toUpperCase().trim() };
+                if (data.lugar3) extra.s3 = { ...extra.s3, l: data.lugar3.toUpperCase().trim() };
+
                 data.lugar = `${baseLugar} ||| ${JSON.stringify(extra)}`;
 
                 const idToUpdate = data.id;
                 delete data.id;
                 
                 const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', idToUpdate);
+ Broadway
                 if (error) throw error;
                 
                 window.customAlert('¡Actualizado!', 'Los cambios se han guardado correctamente.', 'success');
