@@ -1334,23 +1334,41 @@ document.addEventListener('DOMContentLoaded', async () => {
             return false;
         });
         
-        if (!window.eventFilters) window.eventFilters = { search: '' };
+        if (!window.eventFilters) window.eventFilters = { search: '', category: 'TODOS' };
+
+        const categories = ['TODOS', ...new Set(tasks.map(t => t.categoria || 'Otro').filter(Boolean))].sort();
 
         const filteredTasks = tasks.filter(t => {
             const searchVal = (window.eventFilters.search || '').toLowerCase();
-            return (t.nombre || '').toLowerCase().includes(searchVal) || 
-                   (t.categoria || '').toLowerCase().includes(searchVal) ||
-                   (t.lugar || '').toLowerCase().includes(searchVal);
-        }).sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+            const matchesSearch = (t.nombre || '').toLowerCase().includes(searchVal) || 
+                                 (t.categoria || '').toLowerCase().includes(searchVal) ||
+                                 (t.lugar || '').toLowerCase().includes(searchVal);
+            
+            const matchesCategory = window.eventFilters.category === 'TODOS' || (t.categoria || 'Otro') === window.eventFilters.category;
+            
+            return matchesSearch && matchesCategory;
+        }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
         if (!onlyTable) {
             container.innerHTML = `
-                <div class="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
-                    <div class="relative flex-1 w-full">
-                        <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="event-search-input" value="${window.eventFilters.search}" placeholder="Buscar en la agenda (nombre, categoría, lugar...)" 
-                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
-                            oninput="window.eventFilters.search = this.value; window.renderEventos(document.getElementById('content-container'), true)">
+                <div class="space-y-6 mb-10">
+                    <div class="flex flex-col md:flex-row gap-4 items-center justify-between">
+                        <div class="relative flex-1 w-full">
+                            <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" id="event-search-input" value="${window.eventFilters.search}" placeholder="Buscar en la agenda (nombre, lugar...)" 
+                                class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
+                                oninput="window.eventFilters.search = this.value; window.renderEventos(document.getElementById('content-container'), true)">
+                        </div>
+                    </div>
+
+                    <!-- Sub-tabs based on Categories -->
+                    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                        ${categories.map(cat => `
+                            <button onclick="window.eventFilters.category = '${cat}'; window.renderEventos(document.getElementById('content-container'))" 
+                                class="px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-sm border ${window.eventFilters.category === cat ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}">
+                                ${cat}
+                            </button>
+                        `).join('')}
                     </div>
                 </div>
 
@@ -1377,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${filteredTasks.map(e => `
-                                <tr onclick="window.viewEventoFicha(${e.id})" class="hover:bg-blue-50/30 transition-colors group cursor-pointer ${e.completada ? 'bg-slate-50/10' : ''}">
+                                <tr onclick="window.viewEventoFicha('${e.id}')" class="hover:bg-blue-50/30 transition-colors group cursor-pointer ${e.completada ? 'bg-slate-50/10' : ''}">
                                     <td class="px-8 py-6" onclick="event.stopPropagation()">
                                         <input type="checkbox" ${e.completada ? 'checked' : ''} onclick="window.toggleTaskStatus(${e.id}, 'eventos')" 
                                             class="w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all">
@@ -1443,65 +1461,106 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
 
         modalContainer.innerHTML = `
-            <div class="p-8 md:p-12 animate-in fade-in duration-500">
-                <div class="flex justify-between items-start mb-12">
-                    <div>
-                        <div class="flex items-center gap-3 mb-3">
-                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">${evento.categoria || 'Evento'}</span>
-                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${evento.fecha} • ${evento.hora}</span>
+            <div class="min-h-screen bg-slate-50 animate-in fade-in duration-500">
+                <!-- Immersive Header -->
+                <div class="bg-white border-b border-slate-100 sticky top-0 z-50">
+                    <div class="max-w-7xl mx-auto px-8 py-10 md:py-14">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-3 mb-6">
+                                    <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20">${evento.categoria || 'Evento de Agenda'}</span>
+                                    <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-3 h-3"></i>
+                                        ${evento.fecha}
+                                    </span>
+                                    ${evento.completada ? '<span class="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-emerald-100">Completado ✅</span>' : ''}
+                                </div>
+                                <h1 class="text-4xl md:text-5xl font-black text-slate-900 uppercase tracking-tight leading-none mb-4">${evento.nombre}</h1>
+                                <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
+                                        ${evento.hora || '--:--'}
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
+                                        ${evento.lugar || 'Ubicación no definida'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 w-full md:w-auto">
+                                <button onclick="window.viewEvento('${id}')" class="flex-1 md:flex-none p-4 bg-white border-2 border-slate-100 text-slate-800 rounded-2xl hover:border-blue-600 hover:text-blue-600 transition-all flex items-center justify-center gap-3 px-8 shadow-sm">
+                                    <i data-lucide="edit-3" class="w-5 h-5"></i>
+                                    <span class="text-[11px] font-black uppercase tracking-widest">Editar Registro</span>
+                                </button>
+                                <button onclick="closeModal()" class="p-4 bg-slate-900 text-white rounded-full hover:bg-black transition-all flex items-center justify-center w-14 h-14 shadow-2xl">
+                                    <i data-lucide="arrow-left" class="w-6 h-6"></i>
+                                </button>
+                            </div>
                         </div>
-                        <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight">${evento.nombre}</h2>
-                        <div class="flex items-center gap-2 mt-2 text-slate-400 font-bold uppercase text-[10px] tracking-widest">
-                            <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
-                            ${evento.lugar || 'Ubicación no especificada'}
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <button onclick="window.viewEvento(${id})" class="p-3 bg-slate-100 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 px-6">
-                            <i data-lucide="edit-3" class="w-4 h-4"></i>
-                            <span class="text-[10px] font-black uppercase tracking-widest">Editar</span>
-                        </button>
-                        <button onclick="closeModal()" class="p-3 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all flex items-center justify-center w-12 h-12">
-                            <i data-lucide="x" class="w-6 h-6"></i>
-                        </button>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                    <div class="lg:col-span-2 space-y-8">
-                        <div class="p-8 bg-slate-50 rounded-[3rem] border border-slate-100">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                                <i data-lucide="file-text" class="w-4 h-4"></i>
-                                Detalles y Notas
-                            </h4>
-                            <div class="prose prose-slate max-w-none">
-                                <p class="text-slate-600 font-medium whitespace-pre-wrap">${evento.notas || 'No hay notas adicionales para este evento.'}</p>
+                <div class="max-w-7xl mx-auto px-8 py-12">
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                        <!-- Left: Main Content -->
+                        <div class="lg:col-span-8 space-y-10">
+                            <div class="bg-white rounded-[3rem] border border-slate-100 p-10 shadow-sm relative overflow-hidden">
+                                <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
+                                    <i data-lucide="align-left" class="w-4 h-4"></i>
+                                    Descripción y Anotaciones
+                                </h3>
+                                <div class="text-slate-600 font-medium text-lg leading-relaxed whitespace-pre-wrap">
+                                    ${evento.notas || '<span class="italic text-slate-300">No se han añadido notas para este compromiso.</span>'}
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="space-y-6">
-                         <div class="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Equipos Vinculados</h4>
-                            <div class="space-y-3">
-                                ${(evento.equipoids || []).length > 0 ? evento.equipoids.map(eid => {
-                                    const team = teams.find(t => t.id == eid);
-                                    return `
-                                        <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl">
-                                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-[10px] text-white">${team ? team.nombre.substring(0,2).toUpperCase() : '??'}</div>
-                                            <span class="text-xs font-black text-slate-800 uppercase">${team ? team.nombre : 'Equipo desconocido'}</span>
+                        <!-- Right: Context Info -->
+                        <div class="lg:col-span-4 space-y-8">
+                            <div class="bg-slate-900 rounded-[3rem] p-10 shadow-2xl text-white relative overflow-hidden">
+                                <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-600/20 rounded-full blur-3xl"></div>
+                                <h3 class="text-xs font-black text-white/40 uppercase tracking-[0.2em] mb-8 relative z-10 flex items-center gap-2">
+                                    <i data-lucide="layers" class="w-4 h-4"></i>
+                                    Contexto Logístico
+                                </h3>
+                                
+                                <div class="space-y-6 relative z-10">
+                                    <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+                                        <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Entorno</p>
+                                        <p class="text-sm font-bold text-white uppercase">${evento.lugar || 'Sede Central'}</p>
+                                    </div>
+                                    <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+                                        <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Equipos Vinculados</p>
+                                        <div class="space-y-2">
+                                            ${(evento.equipoids || []).length > 0 ? evento.equipoids.map(eid => {
+                                                const team = teams.find(t => t.id == eid);
+                                                return `
+                                                    <div class="flex items-center gap-2">
+                                                        <div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                                        <span class="text-xs font-bold text-white/80 uppercase">${team ? team.nombre : 'Equipo'}</span>
+                                                    </div>
+                                                `;
+                                            }).join('') : '<p class="text-[10px] text-white/30 italic">No hay equipos vinculados</p>'}
                                         </div>
-                                    `;
-                                }).join('') : `<p class="text-[10px] text-slate-400 italic">No hay equipos vinculados.</p>`}
+                                    </div>
+                                    <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+                                        <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Estado del proceso</p>
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-2.5 h-2.5 rounded-full ${evento.completada ? 'bg-emerald-500' : 'bg-blue-500'}"></div>
+                                            <p class="text-sm font-bold text-white uppercase">${evento.completada ? 'Tarea Finalizada' : 'Pendiente de Ejecución'}</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                         </div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
 
         if (window.lucide) lucide.createIcons();
-    }
+        modalOverlay.classList.add('active');
+    };
 
     window.viewSessionFicha = async (id) => {
         const session = await db.get('sesiones', id);
@@ -1631,6 +1690,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
     };
 
     window.viewEvento = async (id) => {
@@ -1662,6 +1722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <option ${evento.categoria === 'Mandar convocatorias' ? 'selected' : ''}>Mandar convocatorias</option>
                                 <option ${evento.categoria === 'Preparar equipos torneos' ? 'selected' : ''}>Preparar equipos torneos</option>
                                 <option ${evento.categoria === 'Preparar jugadores ciclos/sesiones' ? 'selected' : ''}>Preparar jugadores ciclos/sesiones</option>
+                                <option ${evento.categoria === 'Lavar ropa' ? 'selected' : ''}>Lavar ropa</option>
                                 <option ${evento.categoria === 'Otro' ? 'selected' : ''}>Otro</option>
                             </select>
                          </div>
@@ -2294,7 +2355,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 (s.equiponombre || '').toLowerCase().includes(searchTerm) ||
                                 (s.lugar || '').toLowerCase().includes(searchTerm);
             return matchesTeam && matchesCoach && matchesSearch;
-        });
+        }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE') : [];
 
@@ -4881,7 +4942,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="grid grid-cols-2 gap-4">
                             <input name="nombre" placeholder="Título del evento" class="col-span-2 w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-amber-100" required>
                             <select name="categoria" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option>Reunión</option><option>Partido</option><option>Scouting</option><option>Mandar convocatorias</option><option>Preparar equipos torneos</option><option>Preparar jugadores ciclos/sesiones</option><option>Otro</option>
+                                <option>Reunión</option><option>Partido</option><option>Scouting</option><option>Mandar convocatorias</option><option>Preparar equipos torneos</option><option>Preparar jugadores ciclos/sesiones</option><option>Lavar ropa</option><option>Otro</option>
                             </select>
                             <input name="hora" type="time" class="w-full p-3 border rounded-xl" required>
                             <input name="fecha" type="date" class="w-full p-3 border rounded-xl" required>
