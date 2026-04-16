@@ -391,11 +391,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Calendar-specific workspace expansion
         if (viewId === 'calendario') {
-            contentContainer.classList.add('p-0');
-            contentContainer.classList.remove('md:p-8', 'p-4');
+            contentContainer.classList.add('p-4', 'pb-4', 'overflow-hidden'); // More vertical room
+            contentContainer.classList.remove('md:p-8', 'p-6', 'pb-10', 'p-0', 'overflow-y-auto');
         } else {
-            contentContainer.classList.remove('p-0');
-            contentContainer.classList.add('p-4', 'md:p-8');
+            contentContainer.classList.remove('p-4', 'pb-4', 'p-0', 'overflow-hidden');
+            contentContainer.classList.add('p-4', 'md:p-8', 'overflow-y-auto');
         }
 
         // Sync mobile title
@@ -1042,12 +1042,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ...selectedDayConvocatorias.map(c => ({ ...c, type: 'convocatoria' }))
             ].sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
 
-            container.innerHTML = `
-                <div class="flex flex-col gap-6 h-full">
-                    <!-- Calendar Grid -->
-                    <div class="flex-1 bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
-                        <div class="p-8 border-b flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
-                            <div class="flex items-center gap-4">
+        window.updateSelectedCalendarDay = (dStr) => {
+            selectedCalendarDate = new Date(dStr + 'T12:00:00');
+            renderCalendario(container);
+        };
+
+        const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+
+        container.innerHTML = `
+            <div class="flex flex-col md:flex-row gap-6 h-full">
+                <!-- Left Column: Calendar Grid (80%) -->
+                <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
+                        <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
+                            <div class="flex items-center gap-3">
                                 <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
                                     <i data-lucide="calendar" class="w-6 h-6 text-white"></i>
                                 </div>
@@ -1058,10 +1065,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <button id="next-month" class="p-3 hover:bg-white rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-right" class="w-6 h-6 text-slate-600"></i></button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-7 border-b bg-slate-50/50 text-center sticky top-[108px] z-10 backdrop-blur-sm">
-                            ${['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(d => `<div class="py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">${d}</div>`).join('')}
+                        <div class="mt-2 grid grid-cols-7 border-b bg-slate-50/50 text-center sticky top-[108px] z-10 backdrop-blur-sm">
+                            ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">${d}</div>`).join('')}
                         </div>
-                        <div class="grid grid-cols-7 flex-1 auto-rows-[minmax(240px,1fr)]">
+                        <div class="grid grid-cols-7 flex-1 auto-rows-fr">
                             ${Array(startingDay).fill('').map(() => `<div class="border-r border-b border-slate-50/50 bg-slate-50/10"></div>`).join('')}
                             ${Array(daysInMonth).fill('').map((_, i) => {
                                 const day = i + 1;
@@ -1089,28 +1096,63 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
                                 
                                 return `
-                                    <div onclick="window.showDayEventsPopup('${dStr}')" class="border-r border-b border-slate-100/30 p-5 min-h-[180px] cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-4 relative group ${isToday ? 'bg-blue-50/20' : ''}">
+                                    <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-4 min-h-0 cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-2 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''}">
                                         <div class="flex justify-between items-center w-full">
-                                            <span class="text-lg font-black transition-all ${isToday ? 'w-10 h-10 bg-blue-600 text-white rounded-2xl flex items-center justify-center -ml-1 shadow-lg' : 'text-slate-300 group-hover:text-blue-600'}">${day}</span>
-                                            ${combined.length > 0 ? `
-                                                <div class="bg-blue-600 text-white min-w-[24px] h-[24px] px-1.5 rounded-lg flex items-center justify-center text-[10px] font-black shadow-lg shadow-blue-500/20">
-                                                    ${combined.length}
-                                                </div>
-                                            ` : ''}
+                                            <span class="text-sm font-black transition-all ${isToday ? 'w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600')}">${day}</span>
                                         </div>
-                                        
-                                        <div class="w-full space-y-1.5">
-                                            ${combined.slice(0, 4).map(item => `
-                                                <div class="px-3 py-3 rounded-2xl ${item.color} text-white text-[10px] font-black uppercase truncate leading-tight shadow-md border-l-4 border-white/40 flex items-center gap-2 group/chip hover:scale-105 transition-transform">
-                                                    <span class="opacity-50">${item.hora || '--:--'}</span>
-                                                    ${item.titulo || item.nombre}
-                                                </div>
+                                        <div class="w-full flex-1 overflow-hidden flex flex-wrap gap-1 mt-1">
+                                            ${combined.slice(0, 8).map(item => `
+                                                <div class="w-2 h-2 rounded-full ${item.completada ? 'bg-slate-300' : item.color} shadow-sm"></div>
                                             `).join('')}
-                                            ${combined.length > 4 ? `<div class="text-[9px] font-black text-blue-500 uppercase tracking-widest pl-2 font-outfit mt-1">+ ${combined.length - 4} EVENTOS</div>` : ''}
+                                            ${combined.length > 8 ? `<div class="text-[7px] font-black text-slate-400 mt-0.5">+${combined.length - 8}</div>` : ''}
                                         </div>
                                     </div>
                                 `;
                             }).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Day Details (20%) -->
+                    <div class="flex-[2] w-full md:w-64 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
+                        <div class="p-6 border-b bg-slate-50/30">
+                            <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Agenda del Día</h4>
+                            <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                            ${combinedItems.length > 0 ? combinedItems.map(item => {
+                                const isSession = item.type === 'sesion';
+                                const isConv = item.type === 'convocatoria';
+                                let accent = 'blue';
+                                let icon = 'calendar';
+                                let action = `window.viewEvento(${item.id})`;
+                                
+                                if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSession(${item.id})`; }
+                                else if (isConv) { accent = 'blue'; icon = 'users'; action = `window.viewConvocatoria(${item.id})`; }
+
+                                const isChecked = item.completada;
+
+                                return `
+                                    <div onclick="${action}" class="p-4 rounded-2xl border border-slate-50 bg-white hover:border-${accent}-100 hover:shadow-lg transition-all cursor-pointer group ${isChecked ? 'opacity-50' : ''}">
+                                        <div class="flex items-center gap-3 mb-2">
+                                            <div class="w-8 h-8 rounded-lg bg-${accent}-50 flex items-center justify-center">
+                                                <i data-lucide="${icon}" class="w-4 h-4 text-${accent}-600"></i>
+                                            </div>
+                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${item.hora || '--:--'}</span>
+                                        </div>
+                                        <p class="text-xs font-black text-slate-800 uppercase leading-tight ${isChecked ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
+                                    </div>
+                                `;
+                            }).join('') : `
+                                <div class="py-20 text-center flex flex-col items-center gap-3">
+                                    <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
+                                        <i data-lucide="coffee" class="w-6 h-6 text-slate-200"></i>
+                                    </div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Día de descanso</p>
+                                </div>
+                            `}
+                        </div>
+                        <div class="p-4 bg-slate-50/50 border-t">
+                            <button onclick="window.switchView('eventos')" class="w-full py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-xl text-[9px] uppercase tracking-widest hover:bg-slate-100 transition-all">Gestionar Agenda</button>
                         </div>
                     </div>
                 </div>
@@ -1183,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     <span class="text-[10px] font-black text-${accentColor}-600 uppercase tracking-widest bg-${accentColor}-50 px-2 py-0.5 rounded-full">${typeLabel}</span>
                                                     <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${item.hora || 'Todo el día'}</span>
                                                 </div>
-                                                <p class="font-black text-slate-800 text-lg leading-tight truncate group-hover:text-blue-600 transition-colors uppercase tracking-tight">${item.titulo || item.nombre}</p>
+                                                <p class="font-black text-slate-800 text-lg leading-tight truncate group-hover:text-blue-600 transition-colors uppercase tracking-tight ${isChecked ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
                                             </div>
                                             <div class="flex items-center self-center" onclick="event.stopPropagation()">
                                                 <label class="relative inline-flex items-center cursor-pointer">

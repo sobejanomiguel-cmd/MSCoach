@@ -233,4 +233,3 @@ class CoachDB {
 }
 
 const db = new CoachDB();
-
