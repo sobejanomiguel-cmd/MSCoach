@@ -902,9 +902,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const convocatorias = await db.getAll('convocatorias');
         const players = await db.getAll('jugadores');
+        const torneos = convocatorias.filter(c => c.tipo === 'Torneo');
  
         container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
                 <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="clipboard-list"></i></div>
@@ -921,7 +922,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center"><i data-lucide="users"></i></div>
+                        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center"><i data-lucide="trophy"></i></div>
+                    </div>
+                    <h3 class="text-slate-500 text-sm font-medium">Torneos</h3>
+                    <p class="text-3xl font-bold text-slate-800">${torneos.length}</p>
+                </div>
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="users"></i></div>
                     </div>
                     <h3 class="text-slate-500 text-sm font-medium">Equipos</h3>
                     <p class="text-3xl font-bold text-slate-800">${teams.length}</p>
@@ -935,130 +943,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                        <i data-lucide="trending-up" class="w-5 h-5 text-blue-600"></i>
+            <div class="grid grid-cols-1 gap-8 mb-8">
+                <div class="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
+                    <h3 class="text-xl font-black text-slate-800 mb-10 flex items-center gap-3 uppercase tracking-tight">
+                        <i data-lucide="trending-up" class="w-8 h-8 text-blue-600"></i>
                         Rendimiento Asistencia por Equipo
                     </h3>
-                    <div class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                         ${teams.map(e => `
-                            <div>
-                                <div class="flex justify-between items-center mb-2">
-                                    <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">${e.nombre}</span>
-                                    <span class="text-xs font-black text-blue-600">${e.asistenciamedia}%</span>
+                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <div class="flex justify-between items-center mb-4 px-1">
+                                    <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${e.nombre}</span>
+                                    <span class="text-xs font-black text-blue-600">${e.asistenciamedia || 0}%</span>
                                 </div>
-                                <div class="attendance-bar-bg">
-                                    <div class="attendance-bar-fill" style="width: ${e.asistenciamedia}%"></div>
+                                <div class="h-3 bg-white rounded-full overflow-hidden border border-slate-200">
+                                    <div class="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.3)]" style="width: ${e.asistenciamedia || 0}%"></div>
                                 </div>
                             </div>
                         `).join('')}
                     </div>
                 </div>
-
-                <div class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm overflow-hidden h-[450px] flex flex-col">
-                    <h3 class="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                        <i data-lucide="brain-circuit" class="w-5 h-5 text-indigo-600"></i>
-                        Metodología y Contenidos por Equipo
-                    </h3>
-                    <div class="space-y-8 flex-1 overflow-y-auto custom-scrollbar pr-2">
-                        ${teams.map(team => {
-                            const teamSessions = sessions.filter(s => s.equipoid == team.id);
-                            const teamConvocatorias = convocatorias.filter(c => c.equipoid == team.id);
-                            const taskIds = teamSessions.flatMap(s => s.taskids || []);
-                            const taskObjects = tasks.filter(t => taskIds.includes(t.id.toString()));
-                            
-                            // Analisis de convocatorias compartidas
-                            const sessionPlayersIds = [...new Set(teamSessions.flatMap(s => s.playerids || []))];
-                            const tournamentPlayersIds = [...new Set(teamConvocatorias.flatMap(c => c.playerids || []))];
-                            const commonPlayers = tournamentPlayersIds.filter(id => sessionPlayersIds.includes(id));
-                            const onlyTourney = tournamentPlayersIds.filter(id => !sessionPlayersIds.includes(id));
-
-                            const typeCounts = {};
-                            taskObjects.forEach(t => {
-                                typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
-                            });
-                            const totalTasks = taskObjects.length || 1;
-
-                            return `
-                                <div class="p-5 bg-slate-50 rounded-3xl border border-slate-100/50">
-                                    <div class="flex justify-between items-center mb-4">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                                            <span class="text-sm font-black text-slate-800 uppercase tracking-widest">${team.nombre}</span>
-                                        </div>
-                                    </div>
-
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                        <div class="space-y-3">
-                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">METODOLOGÍA (% DE TRABAJO)</p>
-                                            <div class="space-y-2">
-                                                ${Object.entries(typeCounts).map(([type, count]) => {
-                                                    const pct = Math.round((count / totalTasks) * 100);
-                                                    return `
-                                                        <div class="flex items-center gap-3">
-                                                            <div class="flex-1 h-2 bg-white rounded-full overflow-hidden border border-slate-200">
-                                                                <div class="h-full bg-indigo-500 rounded-full" style="width: ${pct}%"></div>
-                                                            </div>
-                                                            <div class="w-24 flex justify-between items-center">
-                                                                <span class="text-[9px] font-black text-slate-700">${pct}%</span>
-                                                                <span class="text-[8px] font-bold text-slate-400 uppercase truncate ml-2">${type}</span>
-                                                            </div>
-                                                        </div>
-                                                    `;
-                                                }).join('') || '<p class="text-[9px] text-slate-400 italic">Sin datos registrados</p>'}
-                                            </div>
-                                        </div>
-                                        <div class="space-y-3">
-                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">ANÁLISIS DE CONVOCATORIA</p>
-                                            <div class="space-y-3">
-                                                <div class="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100">
-                                                    <span class="text-[9px] font-bold text-slate-500 uppercase">Núcleo Competición</span>
-                                                    <span class="text-xs font-black text-emerald-600">${commonPlayers.length}</span>
-                                                </div>
-                                                <div class="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100">
-                                                    <span class="text-[9px] font-bold text-slate-500 uppercase">Refuerzos Torneo</span>
-                                                    <span class="text-xs font-black text-amber-600">${onlyTourney.length}</span>
-                                                </div>
-                                                <div class="text-[8px] text-slate-400 italic">
-                                                    ${commonPlayers.length > 0 ? `Comparten el ${Math.round((commonPlayers.length / (tournamentPlayersIds.length || 1)) * 100)}% de los jugadores en ambos eventos.` : 'Inicia torneos para comparar continuidad.'}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="space-y-3 pt-4 border-t border-slate-200/50">
-                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">HISTORIAL DE SESIONES</p>
-                                        <div class="flex flex-wrap gap-1.5">
-                                            ${[...new Set(taskObjects.map(t => t.name))].slice(0, 8).map(name => `
-                                                <span class="px-2 py-1 bg-white text-[9px] font-bold text-slate-500 rounded-xl border border-slate-100 shadow-sm">${name}</span>
-                                            `).join('') || '<span class="text-[10px] text-slate-400 italic">Pendiente de ejecución</span>'}
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-white p-6 rounded-2xl border border-slate-100">
-                <h3 class="font-bold text-slate-800 mb-4">Próxima sesión planificada</h3>
-                ${sessions.length > 0 ? `
-                    <div class="p-6 bg-blue-600 rounded-3xl text-white shadow-xl shadow-blue-500/20 relative overflow-hidden group">
-                         <div class="relative z-10">
-                             <h4 class="font-bold text-xl mb-1">${sessions[0].titulo}</h4>
-                             <p class="text-blue-100 text-sm flex items-center gap-2">
-                                 <i data-lucide="calendar" class="w-4 h-4"></i> ${sessions[0].fecha} 
-                                 <span class="opacity-30">|</span> 
-                                 <i data-lucide="users" class="w-4 h-4"></i> ${sessions[0].equiponombre || 'Equipo'}
-                             </p>
-                         </div>
-                         <i data-lucide="zap" class="absolute right-[-20px] bottom-[-20px] w-32 h-32 text-white/10 -rotate-12 group-hover:rotate-0 transition-transform duration-700"></i>
-                    </div>
-                ` : '<div class="p-10 text-center text-slate-400 border border-dashed rounded-3xl">No hay sesiones próximas en el calendario.</div>'}
             </div>
         `;
+        if (window.lucide) lucide.createIcons();
     }
 
     let currentCalendarDate = new Date();
@@ -1835,9 +1742,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     };
 
-    let sessionFilters = { team: 'TODOS', coach: 'TODOS' };
+    let sessionFilters = { team: 'TODOS', coach: 'TODOS', search: '' };
 
-    async function renderSesiones(container) {
+    window.filterSessions = (type, value) => {
+        sessionFilters[type] = value;
+        const container = document.getElementById('content-container');
+        if (type === 'search') {
+            // Si es búsqueda, actualizamos solo la tabla para no perder el foco
+            window.renderSesiones(container, true);
+        } else {
+            window.renderSesiones(container, false);
+        }
+    };
+
+    window.renderSesiones = async function(container, onlyTable = false) {
         const sessions = await db.getAll('sesiones');
         const teams = (await db.getAll('equipos')).sort((a,b) => (parseInt(a.categoria)||999)- (parseInt(b.categoria)||999));
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
@@ -1846,45 +1764,66 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentUser = userRes.data?.user;
         if (!currentUser) return;
         
-        // Filtrar sesiones por privacidad primero
         const mySessions = sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
 
-        // Filtrar sesiones por filtros secundarios
         const filteredSessions = mySessions.filter(s => {
             const matchesTeam = sessionFilters.team === 'TODOS' || s.equipoid == sessionFilters.team;
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
-            return matchesTeam && matchesCoach;
+            const searchTerm = (sessionFilters.search || '').toLowerCase();
+            const matchesSearch = !searchTerm || 
+                                (s.titulo || '').toLowerCase().includes(searchTerm) || 
+                                (s.equiponombre || '').toLowerCase().includes(searchTerm) ||
+                                (s.lugar || '').toLowerCase().includes(searchTerm);
+            return matchesTeam && matchesCoach && matchesSearch;
         });
 
-        // Obtener coaches que tienen sesiones creadas o todos si queremos
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE') : [];
 
-        container.innerHTML = `
-            <div class="flex flex-col gap-6">
-                <!-- Filters Bar -->
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <!-- Team Tabs -->
-                    <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar flex-1">
-                        <button onclick="window.filterSessions('team', 'TODOS')" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${sessionFilters.team === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">Todas las Plantillas</button>
-                        ${teams.map(t => `
-                            <button onclick="window.filterSessions('team', ${t.id})" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${sessionFilters.team == t.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
-                                ${t.nombre}
-                            </button>
-                        `).join('')}
+        if (!onlyTable) {
+            container.innerHTML = `
+                <div class="flex flex-col gap-6">
+                    <!-- Search Bar -->
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="relative flex-1 w-full max-w-md">
+                            <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                            <input type="text" id="session-search-input" value="${sessionFilters.search}" placeholder="Buscar sesión por título, equipo o lugar..." 
+                                class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
+                                oninput="window.filterSessions('search', this.value)">
+                        </div>
                     </div>
 
-                    <!-- Coach Filter -->
-                    <div class="flex items-center gap-2">
-                        <i data-lucide="filter" class="w-4 h-4 text-slate-300"></i>
-                        <select onchange="window.filterSessions('coach', this.value)" class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:ring-2 ring-blue-100">
-                            <option value="TODOS">Todos los Técnicos</option>
-                            ${coaches.map(c => `<option value="${c.id}" ${sessionFilters.coach === c.id ? 'selected' : ''}>${c.name || c.nombre || 'Entrenador'}</option>`).join('')}
-                        </select>
+                    <!-- Filters Bar -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar flex-1">
+                            <button onclick="window.filterSessions('team', 'TODOS')" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${sessionFilters.team === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">Todas las Plantillas</button>
+                            ${teams.map(t => `
+                                <button onclick="window.filterSessions('team', ${t.id})" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${sessionFilters.team == t.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
+                                    ${t.nombre}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="filter" class="w-4 h-4 text-slate-300"></i>
+                            <select onchange="window.filterSessions('coach', this.value)" class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:ring-2 ring-blue-100">
+                                <option value="TODOS">Todos los Técnicos</option>
+                                ${coaches.map(c => `<option value="${c.id}" ${sessionFilters.coach === c.id ? 'selected' : ''}>${c.name || c.nombre || 'Entrenador'}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="sessions-list-container">
+                        <!-- Dynamic content -->
                     </div>
                 </div>
+            `;
+        }
 
-                <!-- Sessions Table List (Desktop) -->
-                <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-x-auto">
+        const listContainer = document.getElementById('sessions-list-container');
+        if (listContainer) {
+            listContainer.innerHTML = `
+                <!-- Desktop View -->
+                <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                     <table class="w-full">
                         <thead>
                             <tr class="bg-slate-50/50 text-left border-b border-slate-100">
@@ -1900,9 +1839,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const d = new Date(s.fecha);
                                 const day = d.getDate();
                                 const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
-                                const taskCount = (s.taskids || []).filter(id => id).length;
                                 const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
-                                
                                 return `
                                     <tr onclick="window.viewSession(${s.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
@@ -1913,35 +1850,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 </div>
                                                 <div>
                                                     <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${s.hora || '--:--'}</p>
-                                                    <p class="text-[9px] font-bold text-slate-400 lowercase italic">Planificada ${s.completada ? '✅' : ''}</p>
+                                                    <p class="text-[9px] font-bold text-slate-400 italic">Planificada ${s.completada ? '✅' : ''}</p>
                                                 </div>
                                             </div>
                                         </td>
                                         <td class="px-6 py-5">
                                             <div class="flex flex-col gap-1.5">
                                                 <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100/50 w-fit">${s.equiponombre}</span>
-                                                <div class="flex items-center gap-1.5 px-1">
-                                                    <div class="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center border border-white">
-                                                        <i data-lucide="user" class="w-2 h-2 text-slate-400"></i>
-                                                    </div>
-                                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${coach ? (coach.name || coach.nombre) : 'Sistema'}</span>
-                                                </div>
+                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">${coach ? (coach.name || coach.nombre) : 'Sistema'}</span>
                                             </div>
                                         </td>
                                         <td class="px-6 py-5">
-                                            <p class="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through' : ''}">${s.titulo || 'Sesión programada'}</p>
-                                            <div class="flex items-center gap-3 mt-0.5">
-                                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
-                                            </div>
+                                            <p class="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
+                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
                                         </td>
                                         <td class="px-6 py-5 text-center">
                                             <div class="flex flex-col items-center">
-                                                <span class="text-sm font-black text-slate-800">${taskCount}</span>
+                                                <span class="text-sm font-black text-slate-800">${(s.taskids || []).length}</span>
                                                 <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ejercicios</span>
                                             </div>
                                         </td>
                                         <td class="px-8 py-5 text-right">
-                                            <div class="flex justify-end gap-2">
+                                            <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
                                                     <i data-lucide="printer" class="w-4 h-4"></i>
                                                 </button>
@@ -1952,66 +1882,46 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                     </tr>
                                 `;
-                            }).join('') || `<tr><td colspan="5" class="py-24 text-center">Sin datos</td></tr>`}
+                            }).join('') || '<tr><td colspan="5" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
                         </tbody>
                     </table>
                 </div>
 
-                <!-- Sessions Mobile View (Cards) -->
+                <!-- Mobile View -->
                 <div class="md:hidden space-y-4">
-                    ${filteredSessions.length > 0 ? filteredSessions.map(s => {
-                        const d = new Date(s.fecha);
-                        const day = d.getDate();
-                        const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
-                        const taskCount = (s.taskids || []).filter(id => id).length;
-                        
-                        return `
-                            <div onclick="window.viewSession(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
-                                <div class="flex justify-between items-start mb-4">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center">
-                                            <span class="text-[7px] font-black leading-none">${month}</span>
-                                            <span class="text-sm font-black leading-none mt-0.5">${day}</span>
-                                        </div>
-                                        <div>
-                                            <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${s.equiponombre}</span>
-                                            <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
-                                        </div>
+                    ${filteredSessions.map(s => `
+                        <div onclick="window.viewSession(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center">
+                                        <span class="text-[7px] font-black">${new Date(s.fecha).toLocaleString('es', { month: 'short' }).toUpperCase()}</span>
+                                        <span class="text-sm font-black">${new Date(s.fecha).getDate()}</span>
                                     </div>
-                                    <div class="flex gap-2">
-                                        <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-8 h-8 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                        <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-8 h-8 bg-red-50 text-red-300 rounded-lg flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                    <div>
+                                        <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${s.equiponombre}</span>
+                                        <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
                                     </div>
                                 </div>
-                                <h4 class="text-base font-black text-slate-800 uppercase tracking-tight mb-3 ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sin título'}</h4>
-                                <div class="flex items-center justify-between pt-4 border-t border-slate-50">
-                                    <div class="flex items-center gap-2">
-                                        <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-500"></i>
-                                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${taskCount} Ejercicios</span>
-                                    </div>
-                                    <div class="flex items-center gap-1.5">
-                                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-300"></i>
-                                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tight truncate max-w-[100px]">${s.lugar || 'S/A'}</span>
-                                    </div>
+                                <div class="flex gap-2">
+                                    <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-8 h-8 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                                    <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-8 h-8 bg-red-50 text-red-300 rounded-lg flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                 </div>
                             </div>
-                        `;
-                    }).join('') : `
-                        <div class="py-20 text-center bg-white rounded-[2rem] border border-dashed border-slate-200">
-                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay sesiones</p>
+                            <h4 class="text-base font-black text-slate-800 uppercase tracking-tight mb-3 ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sin título'}</h4>
+                            <div class="flex items-center justify-between pt-4 border-t border-slate-50">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-500"></i>
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${(s.taskids || []).length} Ejercicios</span>
+                                </div>
+                            </div>
                         </div>
-                    `}
+                    `).join('') || '<div class="py-12 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin resultados</div>'}
                 </div>
-            </div>
-        `;
-        
+            `;
+        }
+
         if (window.lucide) lucide.createIcons();
     }
-
-    window.filterSessions = (type, value) => {
-        sessionFilters[type] = value;
-        renderSesiones(document.getElementById('content-container'));
-    };
 
     window.renderSessionModal = async (sessionData = null) => {
         const teams = (await db.getAll('equipos')).sort((a,b) => (parseInt(a.categoria)||999)- (parseInt(b.categoria)||999));
@@ -3003,12 +2913,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         
     };
 
-    async function renderJugadores(container) {
+    window.renderJugadores = async function(container, onlyTable = false) {
         try {
             const players = await db.getAll('jugadores');
             const teams = await db.getAll('equipos');
+            const sortedTeams = [...teams].sort((a,b) => a.nombre.localeCompare(b.nombre));
             
-            // Asegurar que los filtros existan globalmente
+            if (!window.currentPlayerTeamTab) window.currentPlayerTeamTab = 'all';
             if (!window.playerFilters) {
                 window.playerFilters = { 
                     search: '', 
@@ -3019,71 +2930,93 @@ document.addEventListener('DOMContentLoaded', async () => {
                 };
             }
 
-            container.innerHTML = `
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                    <div class="flex flex-wrap flex-1 gap-3 w-full">
-                        <div class="relative flex-1 min-w-[300px]">
-                            <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                            <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
-                        </div>
-                        
-                        <!-- Multi-Select Filters -->
-                        <div class="flex flex-wrap gap-2">
-                            ${(() => {
-                                const renderFilter = (id, label, options, currentValues) => {
-                                    const displayText = currentValues.length === 0 ? `TODOS ${label}` : `${currentValues.length} ${label}`;
-                                    return `
-                                        <div class="relative group/ms">
-                                            <button id="${id}-btn" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-menu' && m.classList.add('hidden')); document.getElementById('${id}-menu').classList.toggle('hidden')" 
-                                                class="px-5 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm flex items-center gap-2 hover:border-blue-200">
-                                                <span>${displayText.toUpperCase()}</span>
-                                                <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
-                                            </button>
-                                            <div id="${id}-menu" class="hidden absolute top-full left-0 mt-2 w-64 bg-white border border-slate-100 rounded-3xl shadow-2xl z-[100] p-4 max-h-72 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
-                                                <div class="space-y-1">
-                                                    <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                                                        <input type="checkbox" onchange="window.togglePlayerFilter('${id}', 'TODOS')" ${currentValues.length === 0 ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
-                                                        <span class="text-xs font-black text-slate-400 uppercase">Todos</span>
-                                                    </label>
-                                                    <div class="h-px bg-slate-50 my-2"></div>
-                                                    ${options.map(opt => {
-                                                        const isSelected = currentValues.includes(opt.value.toString());
-                                                        return `
-                                                            <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                                                                <input type="checkbox" onchange="window.togglePlayerFilter('${id}', '${opt.value}')" ${isSelected ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
-                                                                <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'} uppercase">${opt.label}</span>
-                                                            </label>
-                                                        `;
-                                                    }).join('')}
+            if (!onlyTable) {
+                container.innerHTML = `
+                    <!-- Sub-tabs -->
+                    <div class="mb-8 flex flex-wrap gap-2 animate-in slide-in-from-left duration-500">
+                        <button onclick="window.switchPlayerTeamTab('all')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab === 'all' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                            TODOS LOS JUGADORES
+                        </button>
+                        ${sortedTeams.map(t => `
+                            <button onclick="window.switchPlayerTeamTab('${t.id}')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                                ${t.nombre}
+                            </button>
+                        `).join('')}
+                        <button onclick="window.switchPlayerTeamTab('none')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab === 'none' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                            JUGADORES LIBRES
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                        <div class="flex flex-wrap flex-1 gap-3 w-full">
+                            <div class="relative flex-1 min-w-[300px]">
+                                <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm" oninput="window.togglePlayerFilter('search', this.value)">
+                            </div>
+                            
+                            <!-- Multi-Select Filters -->
+                            <div class="flex flex-wrap gap-2">
+                                ${(() => {
+                                    const renderFilter = (id, label, options, currentValues) => {
+                                        const displayText = currentValues.length === 0 ? `TODOS ${label}` : `${currentValues.length} ${label}`;
+                                        return `
+                                            <div class="relative group/ms">
+                                                <button id="${id}-btn" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-menu' && m.classList.add('hidden')); document.getElementById('${id}-menu').classList.toggle('hidden')" 
+                                                    class="px-5 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm flex items-center gap-2 hover:border-blue-200">
+                                                    <span>${displayText.toUpperCase()}</span>
+                                                    <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
+                                                </button>
+                                                <div id="${id}-menu" class="hidden absolute top-full left-0 mt-2 w-64 bg-white border border-slate-100 rounded-3xl shadow-2xl z-[100] p-4 max-h-72 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
+                                                    <div class="space-y-1">
+                                                        <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                                            <input type="checkbox" onchange="window.togglePlayerFilter('${id}', 'TODOS')" ${currentValues.length === 0 ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                                            <span class="text-xs font-black text-slate-400 uppercase">Todos</span>
+                                                        </label>
+                                                        <div class="h-px bg-slate-50 my-2"></div>
+                                                        ${options.map(opt => {
+                                                            const isSelected = currentValues.includes(opt.value.toString());
+                                                            return `
+                                                                <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                                                                    <input type="checkbox" onchange="window.togglePlayerFilter('${id}', '${opt.value}')" ${isSelected ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
+                                                                    <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'} uppercase">${opt.label}</span>
+                                                                </label>
+                                                            `;
+                                                        }).join('')}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     `;
                                 };
 
-                                return `
-                                    ${renderFilter('team', 'Equipos', teams.sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(t=>({value:t.id, label:t.nombre})).concat([{value:'SIN_EQUIPO', label:'Libres'}]), window.playerFilters.teams)}
-                                    ${renderFilter('club', 'Clubes', [...new Set(players.map(p => (p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase()).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
-                                    ${renderFilter('pos', 'Posiciones', PLAYER_POSITIONS.map(p=>({value:p, label:p})), window.playerFilters.positions)}
-                                    ${renderFilter('level', 'Niveles', [1,2,3,4,5].map(lvl=>({value:lvl, label:`Nivel ${'★'.repeat(lvl)}`})), window.playerFilters.levels)}
-                                `;
-                            })()}
+                                    return `
+                                        ${window.currentPlayerTeamTab === 'all' ? renderFilter('team', 'Equipos', sortedTeams.map(t=>({value:t.id, label:t.nombre})).concat([{value:'SIN_EQUIPO', label:'Libres'}]), window.playerFilters.teams) : ''}
+                                        ${renderFilter('club', 'Clubes', [...new Set(players.map(p => (p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase()).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
+                                        ${renderFilter('pos', 'Posiciones', PLAYER_POSITIONS.map(p=>({value:p, label:p})), window.playerFilters.positions)}
+                                        ${renderFilter('level', 'Niveles', [1,2,3,4,5].map(lvl=>({value:lvl, label:`Nivel ${'★'.repeat(lvl)}`})), window.playerFilters.levels)}
+                                    `;
+                                })()}
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div id="players-table-container">
-                    <!-- Se inyecta vía updateTable -->
-                </div>
-            `;
+                    <div id="players-table-container">
+                        <!-- Se inyecta vía updateTable -->
+                    </div>
+                `;
+            }
 
-            // IMPORTANTE: Buscar dentro del container, no en el document, ya que aún no está atachado
-            const tableContainer = container.querySelector('#players-table-container');
+            const tableContainer = document.getElementById('players-table-container');
             const searchInput = container.querySelector('#player-search-input');
             const teamFilter = container.querySelector('#player-team-filter');
             const clubFilter = container.querySelector('#player-club-filter');
             const posFilter = container.querySelector('#player-pos-filter');
             const levelFilter = container.querySelector('#player-level-filter');
+
+            window.switchPlayerTeamTab = (tab) => {
+                window.currentPlayerTeamTab = tab;
+                window.renderJugadores(document.getElementById('content-container'));
+            };
 
             const updateTable = () => {
                 if (!tableContainer) return;
@@ -3093,9 +3026,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const filtered = (players || []).filter(p => {
                     const matchesSearch = (p.nombre || '').toLowerCase().includes(searchVal);
                     
-                    const matchesTeam = window.playerFilters.teams.length === 0 || 
-                                       (window.playerFilters.teams.includes('SIN_EQUIPO') && !p.equipoid) ||
-                                       (window.playerFilters.teams.includes(p.equipoid?.toString()));
+                    let matchesTeam = true;
+                    if (window.currentPlayerTeamTab === 'none') {
+                        matchesTeam = !p.equipoid;
+                    } else if (window.currentPlayerTeamTab !== 'all') {
+                        matchesTeam = p.equipoid?.toString() === window.currentPlayerTeamTab.toString();
+                    } else {
+                        // Tab "Todos": usar filtro multi-select si hay algo seleccionado
+                        matchesTeam = window.playerFilters.teams.length === 0 || 
+                                     (window.playerFilters.teams.includes('SIN_EQUIPO') && !p.equipoid) ||
+                                     (window.playerFilters.teams.includes(p.equipoid?.toString()));
+                    }
                     
                     const matchesClub = window.playerFilters.clubs.length === 0 || window.playerFilters.clubs.includes((p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase());
                     const matchesPos = window.playerFilters.positions.length === 0 || window.playerFilters.positions.some(pos => (p.posicion || '').includes(pos));
@@ -3224,6 +3165,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             window.togglePlayerFilter = async (type, value) => {
+                if (type === 'search') {
+                    window.playerFilters.search = value;
+                    updateTable();
+                    return;
+                }
                 const filterKey = type === 'team' ? 'teams' : type === 'club' ? 'clubs' : type === 'pos' ? 'positions' : 'levels';
                 if (value === 'TODOS') {
                     window.playerFilters[filterKey] = [];
@@ -3232,20 +3178,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (idx > -1) window.playerFilters[filterKey].splice(idx, 1);
                     else window.playerFilters[filterKey].push(value.toString());
                 }
-                await renderJugadores(container);
+                await window.renderJugadores(container);
                 // Mantener el menú abierto tras el re-render
                 const menu = document.getElementById(`${type}-menu`);
                 if (menu) menu.classList.remove('hidden');
             };
-
-            if (searchInput) {
-                searchInput.oninput = (e) => {
-                    window.playerFilters.search = e.target.value;
-                    updateTable();
-                };
-            }
-
-            updateTable();
 
             updateTable();
             if (window.lucide) lucide.createIcons();
