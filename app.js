@@ -562,134 +562,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     fileInput.click();
                 };
             } else if (viewId === 'jugadores') {
-                secondaryAddBtn.onclick = () => {
-                    const fileInput = document.createElement('input');
-                    fileInput.type = 'file';
-                    fileInput.accept = '.csv';
-                    fileInput.onchange = async (e) => {
-                        const file = e.target.files[0];
-                        if (!file) return;
-                        
-                        const reader = new FileReader();
-                        reader.onload = async (re) => {
-                            const loadingAlert = document.createElement('div');
-                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
-                            loadingAlert.innerHTML = `
-                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
-                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Analizando archivo...</p>
-                                </div>
-                            `;
-                            document.body.appendChild(loadingAlert);
-
-                            try {
-                                const text = re.target.result;
-                                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-                                if (lines.length < 2) {
-                                    window.customAlert('Archivo sin datos', 'El archivo parece estar vacío o solo contiene la cabecera.', 'warning');
-                                    return;
-                                }
-
-                                const firstLine = lines[0];
-                                const delimiter = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
-                                const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                                
-                                const mapHeader = (possibleNames) => headers.findIndex(h => possibleNames.includes(h));
-
-                                const idxNombre = mapHeader(['NOMBRE', 'JUGADOR', 'PLAYER', 'FULL NAME', 'NOMBRES', 'NAME', 'APELLIDOS', 'NOMBRE COMPLETO']);
-                                const idxEquipo = mapHeader(['EQUIPO', 'TEAM', 'CLUB', 'SQUAD', 'GRUPO']);
-                                const idxDorsal = mapHeader(['DORSAL', 'NÚMERO', 'NUMBER', '#', 'DOR', 'NUMERO']);
-                                const idxPosicion = mapHeader(['POSICION', 'POSICIÓN', 'POSITION', 'POS', 'PUESTO', 'DEMARCACION']);
-                                const idxConvenido = mapHeader(['CLUB CONVENIDO', 'EQUIPO CONVENIDO', 'CONVENIDO', 'ORIGEN', 'CONVENIO']);
-                                const idxAnio = mapHeader(['AÑO NACIMIENTO', 'AÑO', 'YEAR', 'NACIMIENTO', 'AÑO NAC', 'NAC']);
-                                const idxNivel = mapHeader(['NIVEL', 'LEVEL', 'RANKING', 'VALORACION']);
-                                const idxNotas = mapHeader(['NOTAS', 'COMENTARIOS', 'SCOUT', 'NOTES', 'OBSERVACIONES']);
-                                const idxSexo = mapHeader(['SEXO', 'GÉNERO', 'GENERO', 'GENDER', 'SEX']);
-                                const idxPie = mapHeader(['PIE', 'FOOT', 'LATERALIDAD', 'PIERNA']);
-
-
-                                if (idxNombre === -1) {
-                                    window.customAlert('Formato no reconocido', 'No hemos encontrado la columna "NOMBRE". Revisa que la primera fila tenga los títulos de las columnas.', 'error');
-                                    return;
-                                }
-
-                                const teams = await db.getAll('equipos');
-                                const existingPlayers = await db.getAll('jugadores');
-
-                                let updatedCount = 0;
-                                let errors = 0;
-                                const playersToInsert = [];
-                                const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
-
-                                for (let i = 1; i < lines.length; i++) {
-                                    const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
-                                    if (!row[idxNombre]) continue;
-
-                                    const teamName = idxEquipo !== -1 ? row[idxEquipo] : '';
-                                    const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
-
-                                    const csvPlayer = {
-                                        nombre: row[idxNombre] || '',
-                                        nivel: 3 // Todos a 3 estrellas por defecto
-                                    };
-
-                                    if (team) {
-                                        csvPlayer.equipoid = team.id;
-                                    }
-
-                                    // Only add properties if found in CSV to avoid "column not found" errors in Supabase
-                                    if (idxDorsal !== -1 && row[idxDorsal] !== '') csvPlayer.dorsal = parseInt(row[idxDorsal]);
-                                    if (idxPosicion !== -1) csvPlayer.posicion = row[idxPosicion] || 'PO';
-                                    if (idxConvenido !== -1) csvPlayer.equipoConvenido = row[idxConvenido];
-                                    if (idxAnio !== -1 && row[idxAnio] !== '') csvPlayer.anionacimiento = parseInt(row[idxAnio]);
-                                    if (idxNivel !== -1 && row[idxNivel] !== '') csvPlayer.nivel = parseInt(row[idxNivel]);
-                                    if (idxSexo !== -1) csvPlayer.sexo = row[idxSexo];
-                                    if (idxPie !== -1) csvPlayer.pie = row[idxPie];
-                                    if (idxNotas !== -1) csvPlayer.notas = row[idxNotas];
-
-
-
-                                    const existing = existingPlayers.find(p => p.nombre.toLowerCase() === csvPlayer.nombre.toLowerCase());
-                                    
-                                    if (existing) {
-                                        let needsUpdate = false;
-                                        if (!existing.equipoid && csvPlayer.equipoid) { existing.equipoid = csvPlayer.equipoid; needsUpdate = true; }
-                                        if (!existing.equipoConvenido && csvPlayer.equipoConvenido) { existing.equipoConvenido = csvPlayer.equipoConvenido; needsUpdate = true; }
-                                        if (!existing.notas && csvPlayer.notas) { existing.notas = csvPlayer.notas; needsUpdate = true; }
-                                        if (!existing.sexo && csvPlayer.sexo) { existing.sexo = csvPlayer.sexo; needsUpdate = true; }
-                                        
-                                        if (needsUpdate) {
-                                            await db.update('jugadores', existing);
-                                            updatedCount++;
-                                        }
-
-                                    } else {
-                                        playersToInsert.push(csvPlayer);
-                                    }
-                                }
-
-                                if (playersToInsert.length > 0) {
-                                    const { error } = await supabaseClient.from('jugadores').insert(playersToInsert);
-                                    if (error) throw error;
-                                }
-
-                                // Refresh local cache
-                                await db.getAll('jugadores');
-                                
-                                window.customAlert('¡Importación Lista!', `Se han añadido ${playersToInsert.length} nuevos y actualizado ${updatedCount} existentes.`, 'success');
-                                window.switchView('jugadores');
-
-                            } catch (err) {
-                                console.error("CSV Import Error:", err);
-                                window.customAlert('Error de Importación', 'Ha ocurrido un fallo al procesar el archivo: ' + err.message, 'error');
-                            } finally {
-                                loadingAlert.remove();
-                            }
-                        };
-                        reader.readAsText(file);
-                    };
-                    fileInput.click();
-                };
+                secondaryAddBtn.onclick = () => window.showPlayerImportModal();
             } else if (viewId === 'convocatorias') {
                 secondaryAddBtn.onclick = () => {
                     const fileInput = document.createElement('input');
@@ -911,7 +784,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const convocatorias = await db.getAll('convocatorias');
         const players = await db.getAll('jugadores');
-        const torneos = convocatorias.filter(c => c.tipo === 'Torneo');
+        const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
  
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
@@ -1090,7 +963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const combined = [
                                     ...daySessions.map(s => ({ ...s, color: 'bg-red-500' })),
                                     ...dayEvents.map(e => ({ ...e, color: 'bg-emerald-500' })),
-                                    ...dayConcs.map(c => ({ ...c, color: c.tipo === 'Torneo' ? 'bg-slate-900' : 'bg-amber-400' }))
+                                    ...dayConcs.map(c => ({ ...c, color: (c.tipo || '').toUpperCase() === 'TORNEO' ? 'bg-slate-900' : 'bg-amber-400' }))
                                 ];
 
                                 const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
@@ -1202,7 +1075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${combinedItems.length > 0 ? combinedItems.map(item => {
                                     const isSession = item.type === 'sesion';
                                     const isConv = item.type === 'convocatoria';
-                                    const isTorneo = isConv && item.tipo === 'Torneo';
+                                    const isTorneo = isConv && (item.tipo || '').toUpperCase() === 'TORNEO';
 
                                     let accentColor = 'blue';
                                     let icon = 'alarm-clock';
@@ -1290,6 +1163,151 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (err) {
             console.error("Error toggling status:", err);
         }
+    };
+
+    window.showPlayerImportModal = () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Importación Masiva</h3>
+                    <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+
+                <div class="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/50 mb-6">
+                    <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3">Instrucciones del Formato</p>
+                    <ul class="space-y-2">
+                        <li class="flex items-start gap-2 text-xs text-slate-600">
+                            <span class="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0"></span>
+                            <span>Usa la columna <strong>NOMBRE</strong> como identificador principal.</span>
+                        </li>
+                        <li class="flex items-start gap-2 text-xs text-slate-600">
+                            <span class="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0"></span>
+                            <span>Si el <strong>EQUIPO</strong> existe en la app, se vinculará automáticamente.</span>
+                        </li>
+                        <li class="flex items-start gap-2 text-xs text-slate-600">
+                            <span class="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0"></span>
+                            <span>Campos extras soportados: <strong>POSICION, DORSAL, NIVEL, SEXO, PIE, NOTAS</strong>.</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="flex flex-col gap-3">
+                    <a href="PLANTILLA_IMPORTACION_JUGADORES.csv" download class="w-full py-4 bg-white border-2 border-slate-100 text-slate-600 font-bold rounded-2xl flex items-center justify-center gap-3 hover:border-blue-200 hover:text-blue-600 transition-all uppercase tracking-widest text-[10px]">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        Descargar Plantilla CSV
+                    </a>
+                    
+                    <button id="trigger-csv-upload" class="w-full py-5 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-3">
+                        <i data-lucide="file-up" class="w-5 h-5"></i>
+                        Seleccionar Archivo y Subir
+                    </button>
+                </div>
+                
+                <p class="mt-6 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">Soporta delimitadores coma (,) o punto y coma (;)</p>
+            </div>
+        `;
+
+        lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('trigger-csv-upload').onclick = () => {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.csv';
+            fileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = async (re) => {
+                    closeModal(); // Close instruction modal
+                    
+                    const loadingAlert = document.createElement('div');
+                    loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                    loadingAlert.innerHTML = `
+                        <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                            <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando Jugadores...</p>
+                        </div>
+                    `;
+                    document.body.appendChild(loadingAlert);
+
+                    try {
+                        const text = re.target.result;
+                        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                        if (lines.length < 2) throw new Error("Archivo vacío");
+
+                        const firstLine = lines[0];
+                        const delimiter = firstLine.includes(';') ? ';' : ',';
+                        const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                        
+                        const mapHeader = (possible) => headers.findIndex(h => possible.includes(h));
+
+                        const idxNombre = mapHeader(['NOMBRE', 'JUGADOR', 'PLAYER', 'NAME']);
+                        const idxEquipo = mapHeader(['EQUIPO', 'TEAM', 'CLUB']);
+                        const idxPosicion = mapHeader(['POSICION', 'POSITION', 'POS']);
+                        const idxAnio = mapHeader(['AÑO', 'YEAR', 'NACIMIENTO']);
+                        const idxNivel = mapHeader(['NIVEL', 'LEVEL']);
+                        const idxSexo = mapHeader(['SEXO', 'GENERO', 'GENDER']);
+                        const idxPie = mapHeader(['PIE', 'FOOT']);
+                        const idxNotas = mapHeader(['NOTAS', 'NOTES']);
+
+                        if (idxNombre === -1) throw new Error("Columna NOMBRE no encontrada");
+
+                        const teams = await db.getAll('equipos');
+                        const existingPlayers = await db.getAll('jugadores');
+                        const playersToInsert = [];
+                        let updatedCount = 0;
+
+                        const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+
+                        for (let i = 1; i < lines.length; i++) {
+                            const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
+                            if (!row[idxNombre]) continue;
+
+                            const rawNombre = row[idxNombre].toUpperCase().trim();
+                            const teamName = idxEquipo !== -1 ? row[idxEquipo] : '';
+                            const team = teams.find(t => t.nombre.split(' ||| ')[0].toLowerCase() === (teamName || '').toLowerCase());
+
+                            const csvPlayer = {
+                                nombre: rawNombre,
+                                nivel: idxNivel !== -1 ? (parseInt(row[idxNivel]) || 3) : 3,
+                                equipoid: team ? team.id : null,
+                                posicion: idxPosicion !== -1 ? (row[idxPosicion] || 'PO') : 'PO',
+                                anionacimiento: idxAnio !== -1 ? (parseInt(row[idxAnio]) || null) : null,
+                                sexo: idxSexo !== -1 ? (row[idxSexo] || 'Masculino') : 'Masculino',
+                                pie: idxPie !== -1 ? (row[idxPie] || 'DIESTRO') : 'DIESTRO',
+                                notas: idxNotas !== -1 ? row[idxNotas] : ''
+                            };
+
+                            const existing = existingPlayers.find(p => p.nombre.toUpperCase() === rawNombre);
+                            if (existing) {
+                                Object.assign(existing, csvPlayer);
+                                await db.update('jugadores', existing);
+                                updatedCount++;
+                            } else {
+                                playersToInsert.push(csvPlayer);
+                            }
+                        }
+
+                        if (playersToInsert.length > 0) {
+                            const { error } = await supabaseClient.from('jugadores').insert(playersToInsert);
+                            if (error) throw error;
+                        }
+
+                        await db.getAll('jugadores'); // Refresh cache
+                        window.customAlert('Éxito', `Importados: ${playersToInsert.length}, Actualizados: ${updatedCount}`, 'success');
+                        window.switchView('jugadores');
+                    } catch (err) {
+                        window.customAlert('Error', err.message, 'error');
+                    } finally {
+                        loadingAlert.remove();
+                    }
+                };
+                reader.readAsText(file);
+            };
+            fileInput.click();
+        };
     };
 
     window.renderEventos = async function(container, onlyTable = false) {
@@ -2710,8 +2728,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     async function renderEquipos(container) { 
-        const teams = await db.getAll('equipos');
-        const allPlayers = await db.getAll('jugadores');
+        const [teams, allPlayers, allConvs, allSessions] = await Promise.all([
+            db.getAll('equipos'),
+            db.getAll('jugadores'),
+            db.getAll('convocatorias'),
+            db.getAll('sesiones')
+        ]);
 
         // Ordenar de menor a mayor categoría (año)
         teams.sort((a, b) => {
@@ -2726,6 +2748,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 ${teams.map(e => {
                     const playersCount = allPlayers.filter(p => p.equipoid == e.id).length;
+                    const tournamentsCount = allConvs.filter(c => c.equipoid == e.id && (c.tipo || '').toUpperCase() === 'TORNEO').length;
+                    const sessionsCount = allSessions.filter(s => s.equipoid == e.id).length;
+
                     return `
                     <div onclick="window.editTeam(${e.id})" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-200 transition-all">
                         <div class="flex items-center gap-4 mb-6">
@@ -2742,8 +2767,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.asistenciamedia || 0}%"></div></div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-slate-50 p-3 rounded-xl"><p class="text-[10px] font-bold text-slate-400 uppercase">Plantilla</p><p class="text-lg font-bold">${playersCount}</p></div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Plantilla</p><p class="text-sm font-black text-slate-700">${playersCount}</p></div>
+                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Torneos</p><p class="text-sm font-black text-blue-600">${tournamentsCount}</p></div>
+                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Sesiones</p><p class="text-sm font-black text-emerald-600">${sessionsCount}</p></div>
                         </div>
 
                         <div class="flex gap-2 mt-6">
@@ -2787,7 +2814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del equipo</label>
-                             <input name="nombre" value="${team.nombre}" class="w-full p-3 border rounded-xl" required>
+                             <input name="nombre" value="${team.nombre.split(' ||| ')[0].toUpperCase()}" class="w-full p-3 border rounded-xl" required>
                         </div>
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
@@ -2905,11 +2932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await db.update('equipos', data);
                 closeModal();
                 
-                // Refresh the view smoothly using the correct ID
-                const contentArea = document.getElementById('content-container');
-                if (contentArea) {
-                    await renderEquipos(contentArea);
-                }
+                window.customAlert('¡Cambios Guardados!', 'El equipo se ha actualizado correctamente en el sistema.', 'success');
                 window.switchView('equipos');
             } catch (err) {
                 console.error("Error saving team:", err);
@@ -3707,7 +3730,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 Historial Competitivo
                             </h4>
                             <div class="space-y-4">
-                                ${playerConvs.filter(c => c.tipo === 'Torneo').map(c => {
+                                ${playerConvs.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO').map(c => {
                                     const evalData = c.rendimiento && c.rendimiento[id] ? c.rendimiento[id] : null;
                                     return `
                                         <div onclick="window.viewTorneoRendimiento(${c.id})" class="p-5 bg-slate-50 rounded-2xl border border-slate-100/50 hover:border-blue-200 hover:bg-white hover:shadow-xl transition-all group cursor-pointer">
@@ -4618,8 +4641,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                          <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg mt-4">Guardar en Directorio</button>
+                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all font-black uppercase tracking-tight text-[10px]">Cancelar</button>
+                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg mt-4 uppercase tracking-widest text-[10px]">Guardar en Directorio</button>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col items-center">
+                             <button type="button" onclick="window.showPlayerImportModal()" class="w-full py-4 bg-slate-50 text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all uppercase tracking-widest text-[9px] border border-blue-100/50">
+                                 O usar Importación Masiva (CSV)
+                             </button>
                         </div>
                     </form>
                 </div>
@@ -4707,7 +4735,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     data.nombre = `${data.nombre.trim().toUpperCase()} ||| ${catStr}`;
                     data.categoria = parseInt(selectedCat[0]) || null;
                     
-                    const id = await db.add('equipos', data);
+                    const savedTeam = await db.add('equipos', data);
                     
                     // Update linked players
                     if (linkedPlayerIds.length > 0) {
@@ -4715,12 +4743,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         for (const pid of linkedPlayerIds) {
                             const p = players.find(x => x.id == pid);
                             if (p) {
-                                p.equipoid = id.toString();
+                                p.equipoid = (savedTeam.id); 
                                 await db.update('jugadores', p);
                             }
                         }
                     }
                     
+                    window.customAlert('¡Éxito!', 'Equipo creado y jugadores vinculados correctamente.', 'success');
                     closeModal();
                     window.switchView('equipos');
                     return; // Prevent default db.add at bottom
@@ -5642,7 +5671,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 delete data.id;
                 
                 const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', idToUpdate);
- Broadway
                 if (error) throw error;
                 
                 window.customAlert('¡Actualizado!', 'Los cambios se han guardado correctamente.', 'success');
@@ -6869,28 +6897,39 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     async function renderTorneos(container) {
-        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').eq('tipo', 'Torneo').order('fecha', { ascending: false }).order('hora', { ascending: false });
+        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').in('tipo', ['Torneo', 'TORNEO']).order('fecha', { ascending: false }).order('hora', { ascending: false });
         if (error) {
-            container.innerHTML = `<p class="p-10 text-red-500">Error: ${error.message}</p>`;
+            container.innerHTML = `<p class="p-10 text-red-500 font-bold uppercase tracking-tight">Error de Sincronización: ${error.message}</p>`;
             return;
         }
 
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
+        const safeGetExtra = (lugarStr) => {
+            if (!lugarStr || !lugarStr.includes(' ||| ')) return {};
+            try { return JSON.parse(lugarStr.split(' ||| ')[1]); } catch (e) { return {}; }
+        };
+
         const filtered = convs.filter(c => {
+            const extra = safeGetExtra(c.lugar);
             const matchesTeam = currentTorneoTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
-                              (c.lugar && c.lugar.includes(' ||| ') && JSON.parse(c.lugar.split(' ||| ')[1]).eids?.includes(currentTorneoTeamId.toString()));
+                              (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
+                              (extra.sw && extra.sw.map(String).includes(currentTorneoTeamId.toString()));
+
             const matchesSearch = !torneoSearchTerm || 
-                c.nombre.toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
-                (c.lugar && c.lugar.toLowerCase().includes(torneoSearchTerm.toLowerCase()));
+                (c.nombre || '').toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
+                (c.lugar || '').toLowerCase().includes(torneoSearchTerm.toLowerCase());
             return matchesTeam && matchesSearch;
         });
 
         const teamsWithTorneos = teams.filter(t => 
-            convs.some(c => (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
-                           (c.lugar && c.lugar.includes(' ||| ') && JSON.parse(c.lugar.split(' ||| ')[1]).eids?.includes(t.id.toString())))
+            convs.some(c => {
+                const extra = safeGetExtra(c.lugar);
+                return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
+                       (extra.eids && extra.eids.map(String).includes(t.id.toString()));
+            })
         );
 
         // Sort senior to junior
@@ -6898,7 +6937,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const valA = parseInt(a.categoria) || 9999;
             const valB = parseInt(b.categoria) || 9999;
             if (valA !== valB) return valA - valB;
-            return a.nombre.localeCompare(b.nombre);
+            return (a.nombre || '').localeCompare(b.nombre || '');
         });
 
         container.innerHTML = `
