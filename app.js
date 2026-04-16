@@ -1092,7 +1092,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div onclick="window.showDayEventsPopup('${dStr}')" class="border-r border-b border-slate-100/30 p-5 min-h-[180px] cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-4 relative group ${isToday ? 'bg-blue-50/20' : ''}">
                                         <div class="flex justify-between items-center w-full">
                                             <span class="text-lg font-black transition-all ${isToday ? 'w-10 h-10 bg-blue-600 text-white rounded-2xl flex items-center justify-center -ml-1 shadow-lg' : 'text-slate-300 group-hover:text-blue-600'}">${day}</span>
-                                            ${combined.length > 0 ? `<span class="w-1.5 h-1.5 rounded-full ${isToday ? 'bg-blue-600' : 'bg-slate-200'}"></span>` : ''}
+                                            ${combined.length > 0 ? `
+                                                <div class="bg-blue-600 text-white min-w-[24px] h-[24px] px-1.5 rounded-lg flex items-center justify-center text-[10px] font-black shadow-lg shadow-blue-500/20">
+                                                    ${combined.length}
+                                                </div>
+                                            ` : ''}
                                         </div>
                                         
                                         <div class="w-full space-y-1.5">
