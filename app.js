@@ -797,9 +797,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const convocatorias = await db.getAll('convocatorias');
         const players = await db.getAll('jugadores');
         const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
+        
+        const totalMale = players.filter(p => p.sexo === 'Masculino').length;
+        const totalFemale = players.filter(p => p.sexo === 'Femenino').length;
  
         container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
                 <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="clipboard-list"></i></div>
@@ -832,8 +835,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><i data-lucide="user-check"></i></div>
                     </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Jugadores</h3>
+                    <h3 class="text-slate-500 text-sm font-medium">Total Jugadores</h3>
                     <p class="text-3xl font-bold text-slate-800">${players.length}</p>
+                </div>
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><i data-lucide="users-round"></i></div>
+                    </div>
+                    <h3 class="text-slate-500 text-sm font-medium">Género (F / M)</h3>
+                    <div class="flex items-center gap-2">
+                        <p class="text-3xl font-bold text-rose-500">${totalFemale}</p>
+                        <span class="text-slate-200 text-xl font-thin">/</span>
+                        <p class="text-3xl font-bold text-blue-500">${totalMale}</p>
+                    </div>
                 </div>
             </div>
             
@@ -3738,7 +3752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Localidad / Club</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</th>
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Posición</th>
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center font-bold">Nivel</th>
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
@@ -3747,54 +3761,59 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tbody class="divide-y divide-slate-50">
                                 ${filtered.map(p => {
                                     const playerTeam = teams.find(t => t.id == p.equipoid);
-                                    let levelVal = parseInt(p.nivel) || 1;
-                                    if (levelVal < 1) levelVal = 1;
-                                    if (levelVal > 5) levelVal = 5;
+                                    let levelVal = Math.min(Math.max(parseInt(p.nivel) || 1, 1), 5);
 
                                     return `
-                                        <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all group cursor-pointer">
+                                        <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-all group">
                                             <td class="px-8 py-4 flex items-center gap-4 min-w-[280px]">
                                                 ${p.foto ? 
-                                                    `<img src="${p.foto}" class="w-10 h-10 rounded-xl object-cover shadow-sm group-hover:scale-105 transition-all">` :
-                                                    `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
+                                                    `<img src="${p.foto}" class="w-10 h-10 rounded-xl object-cover shadow-sm transition-all">` :
+                                                    `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
                                                 }
                                                 <div class="flex-1">
-                                                    <span class="text-sm font-black text-slate-800 uppercase tracking-tight block">${p.nombre}</span>
-                                                    <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest block mt-0.5">${p.anionacimiento || '----'}</span>
+                                                    <span contenteditable="true" onblur="window.updatePlayerField('${p.id}', 'nombre', this.textContent)" class="text-sm font-black text-slate-800 uppercase tracking-tight block outline-none px-1 rounded-md transition-all hover:bg-slate-100 focus:bg-white focus:ring-2 ring-blue-100 cursor-text">${p.nombre}</span>
+                                                    <span contenteditable="true" onblur="window.updatePlayerField('${p.id}', 'anionacimiento', this.textContent)" class="text-[9px] font-black text-slate-300 uppercase tracking-widest block mt-0.5 px-1 outline-none hover:bg-slate-100 rounded cursor-text">${p.anionacimiento || '----'}</span>
                                                 </div>
                                             </td>
-                                            <td class="px-8 py-4">
-                                                ${playerTeam ? `
-                                                    <div class="flex items-center gap-2">
-                                                        <div class="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-[9px] font-black uppercase border border-blue-100">${playerTeam.nombre.substring(0,2).toUpperCase()}</div>
-                                                        <span class="text-xs font-bold text-slate-600 uppercase tracking-tight">${playerTeam.nombre.split(' ||| ')[0]}</span>
-                                                    </div>
-                                                ` : `<span class="text-[10px] font-black text-amber-500 uppercase tracking-widest px-2 py-1 bg-amber-50 rounded-md border border-amber-100/50">Libre</span>`}
-                                            </td>
-                                            <td class="px-8 py-4">
-                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${p.equipoConvenido || '---'}</span>
+                                            <td class="px-8 py-4 text-center">
+                                                <select onchange="window.updatePlayerField('${p.id}', 'equipoid', this.value)" class="bg-transparent border-none text-[10px] font-bold text-slate-600 uppercase tracking-tight outline-none focus:ring-2 ring-blue-50 rounded p-1 cursor-pointer">
+                                                    <option value="">LIBRE</option>
+                                                    ${sortedTeams.map(t => `<option value="${t.id}" ${p.equipoid == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0].toUpperCase()}</option>`).join('')}
+                                                </select>
                                             </td>
                                             <td class="px-8 py-4 text-center">
-                                                <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200">${p.posicion || '---'}</span>
+                                                <select onchange="window.updatePlayerField('${p.id}', 'equipoConvenido', this.value)" class="bg-transparent border-none text-[10px] font-bold text-slate-400 uppercase tracking-tight outline-none focus:ring-2 ring-blue-50 rounded p-1 cursor-pointer">
+                                                    <option value="">NINGUNO</option>
+                                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${p.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
+                                                </select>
                                             </td>
                                             <td class="px-8 py-4 text-center">
-                                                <div class="flex items-center justify-center gap-0.5">
-                                                    ${'★'.repeat(levelVal)}${'☆'.repeat(5-levelVal)}
+                                                <select onchange="window.updatePlayerField('${p.id}', 'posicion', this.value)" class="bg-slate-100 border-none text-[9px] font-black text-slate-600 uppercase tracking-widest rounded-lg px-2 py-1 outline-none focus:ring-2 ring-blue-50 cursor-pointer">
+                                                    <option value="">S/P</option>
+                                                    ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${p.posicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                                                </select>
+                                            </td>
+                                            <td class="px-8 py-4 text-center">
+                                                <div class="flex items-center justify-center gap-0.5 text-slate-200 hover:text-amber-400 transition-colors cursor-pointer" onclick="const newLvl = (parseInt('${p.nivel}')||0)%5+1; window.updatePlayerField('${p.id}', 'nivel', newLvl)">
+                                                    ${Array.from({length: 5}, (_, i) => i < levelVal ? '<span class="text-amber-400">★</span>' : '<span>★</span>').join('')}
                                                 </div>
                                             </td>
                                             <td class="px-8 py-4 text-right">
-                                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onclick="event.stopPropagation(); window.editPlayer(${p.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
-                                                        <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                                <div class="flex justify-end gap-1">
+                                                    <button onclick="window.viewPlayer('${p.id}')" title="Ver Ficha" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
+                                                        <i data-lucide="eye" class="w-4 h-4"></i>
                                                     </button>
-                                                    <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-400 hover:bg-red-50 transition-all">
+                                                    <button onclick="window.editPlayer('${p.id}')" title="Editar Completo" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.deletePlayer('${p.id}')" title="Eliminar" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-200 hover:text-red-600 hover:bg-red-50 transition-all">
                                                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                                                     </button>
                                                 </div>
                                             </td>
                                         </tr>
                                     `;
-                                }).join('') || `<tr><td colspan="6" class="py-24 text-center">No hay jugadores</td></tr>`}
+                                }).join('') || `<tr><td colspan="6" class="py-24 text-center text-slate-300 italic">No hay jugadores registrados</td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -3828,7 +3847,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             `;
                         }).join('') : `
-                             <div class="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-100">
                                  <p class="text-xs text-slate-400">Sin resultados</p>
                              </div>
                         `}
@@ -3864,6 +3882,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.innerHTML = `<div class="p-20 text-center text-red-500 font-bold uppercase tracking-widest text-xs">Error al cargar listado: ${err.message}</div>`;
         }
     }
+
+    window.updatePlayerField = async (id, field, value) => {
+        let cleanValue = typeof value === 'string' ? value.trim() : value;
+        if (field === 'nombre' || field === 'posicion' || field === 'equipoConvenido') cleanValue = cleanValue.toUpperCase();
+        
+        try {
+            const { error } = await supabaseClient.from('jugadores').update({ [field]: cleanValue }).eq('id', Number(id));
+            if (error) throw error;
+            
+            // Si el campo afecta visualmente de forma crítica, refrescamos la vista
+            if (field === 'nivel' || field === 'nombre') {
+                const container = document.getElementById('content-container');
+                if (container) await window.renderJugadores(container, true);
+            }
+        } catch (err) {
+            console.error('Error actualizando jugador:', err);
+            window.customAlert('Error', 'No se pudo guardar el cambio', 'error');
+        }
+    };
+
+    window.editPlayer = async (id) => {
+        await window.viewPlayer(id);
+    };
 
     window.viewPlayer = async (id) => {
         const currentUserRes = await supabaseClient.auth.getUser();
@@ -3962,6 +4003,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                         <div class="flex gap-3">
+                            <button onclick="window.printPlayerCard(${player.id})" class="px-6 py-4 bg-emerald-600 text-white font-black rounded-2xl hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px] flex items-center gap-2 shadow-lg shadow-emerald-500/20">
+                                <i data-lucide="file-down" class="w-4 h-4"></i>
+                                EXPORTAR FICHA PDF
+                            </button>
                             <button onclick="window.switchView('jugadores')" class="px-6 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">VOLVER AL LISTADO</button>
                         </div>
                     </div>
@@ -4251,6 +4296,212 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     };
 
+
+    window.printPlayerCard = async (id) => {
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const convocatorias = await db.getAll('convocatorias');
+        const sesiones = await db.getAll('sesiones');
+        const asistencia = await db.getAll('asistencia');
+        
+        const player = players.find(p => p.id == id);
+        if (!player) return;
+
+        const playerTeam = teams.find(t => t.id == player.equipoid);
+        const playerConvs = convocatorias.filter(c => c.players && c.players.includes(id.toString()));
+        const playerSesiones = sesiones.filter(s => s.asistenciadatos && s.asistenciadatos.players && s.asistenciadatos.players.some(pId => pId.toString() === id.toString()));
+        
+        // Attendance stats
+        const playerAsist = asistencia.filter(a => a.players && a.players[id]);
+        const stats = {
+            total: playerAsist.length,
+            asiste: playerAsist.filter(a => a.players[id].status === 'asiste').length,
+            ausente: playerAsist.filter(a => a.players[id].status === 'ausente').length,
+            lesionado: playerAsist.filter(a => a.players[id].status === 'lesionado').length,
+            enfermo: playerAsist.filter(a => a.players[id].status === 'enfermo').length,
+            seleccion: playerAsist.filter(a => a.players[id].status === 'seleccion').length,
+            zubieta: playerAsist.filter(a => a.players[id].status === 'zubieta').length
+        };
+        const attendanceRate = stats.total > 0 ? Math.round((stats.asiste / stats.total) * 100) : 0;
+
+        const headerShield = "RS.png"; // Official shield
+
+        const printView = document.createElement('div');
+        printView.className = 'print-view fixed inset-0 bg-slate-100 z-[500] overflow-y-auto no-scrollbar';
+        printView.innerHTML = `
+            <style>
+                @media print {
+                    .no-print { display: none !important; }
+                    body { background: white !important; }
+                    .print-view { position: relative !important; inset: auto !important; background: white !important; padding: 0 !important; }
+                    .sheet-preview { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
+                }
+                .sheet-preview {
+                    background: white;
+                    box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+                    margin: 40px auto;
+                    padding: 60px;
+                    width: 210mm;
+                    min-height: 297mm;
+                    border-radius: 4px;
+                }
+            </style>
+            
+            <div class="no-print sticky top-0 mb-8 flex justify-center gap-4 z-[600] py-6">
+                <div class="bg-white/90 backdrop-blur-md p-3 rounded-[2.5rem] border border-white shadow-2xl flex gap-3">
+                    <button onclick="window.print()" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center gap-3">
+                        <i data-lucide="file-down" class="w-5 h-5"></i>
+                        GUARDAR PDF
+                    </button>
+                    <button onclick="document.querySelector('.print-view').remove()" class="px-8 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all flex items-center gap-3">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                        CERRAR VISTA
+                    </button>
+                </div>
+            </div>
+
+            <div class="sheet-preview">
+                <!-- Header -->
+                <header class="flex justify-between items-start border-b-8 border-slate-900 pb-10 mb-10">
+                    <div class="flex items-center gap-8">
+                        <div class="relative">
+                            ${player.foto ? 
+                                `<img src="${player.foto}" class="w-32 h-32 rounded-3xl object-cover border-4 border-slate-900 shadow-xl">` :
+                                `<div class="w-32 h-32 rounded-3xl bg-slate-900 text-white flex items-center justify-center text-5xl font-black">${(player.nombre || 'J').substring(0,1)}</div>`
+                            }
+                        </div>
+                        <div>
+                            <h1 class="text-4xl font-black text-slate-900 uppercase leading-none mb-2">${player.nombre}</h1>
+                            <div class="flex items-center gap-3">
+                                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">${playerTeam?.nombre || 'LIBRE'}</span>
+                                <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${player.posicion || 'SIN POSICIÓN'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <img src="${headerShield}" class="w-20 h-20 object-contain grayscale opacity-20">
+                </header>
+
+                <div class="grid grid-cols-3 gap-10">
+                    <div class="col-span-2 space-y-10">
+                        <!-- Technical Data -->
+                        <section>
+                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 bg-blue-600 rounded-full"></span>
+                                Datos Biográficos y Técnicos
+                            </h2>
+                            <div class="grid grid-cols-2 gap-y-6">
+                                <div>
+                                    <p class="text-[9px] font-black text-slate-400 uppercase">Año de Nacimiento</p>
+                                    <p class="text-lg font-bold text-slate-800">${player.anionacimiento || '----'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-black text-slate-400 uppercase">Club Convenido</p>
+                                    <p class="text-lg font-bold text-slate-800">${player.equipoConvenido || 'Sin Club'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-black text-slate-400 uppercase">Lateralidad / Pie</p>
+                                    <p class="text-lg font-bold text-slate-800">${player.pie || 'Indiferente'}</p>
+                                </div>
+                                <div>
+                                    <p class="text-[9px] font-black text-slate-400 uppercase">Nivel RS Centro</p>
+                                    <p class="text-lg font-bold text-amber-500">${'★'.repeat(player.nivel || 3)}</p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Tournament History -->
+                        <section>
+                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                Historial Competitivo (Torneos)
+                            </h2>
+                            <div class="bg-slate-50 rounded-3xl overflow-hidden border border-slate-100">
+                                <table class="w-full">
+                                    <thead class="bg-slate-100">
+                                        <tr>
+                                            <th class="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Fecha</th>
+                                            <th class="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Competición</th>
+                                            <th class="px-6 py-4 text-center text-[9px] font-black uppercase tracking-widest">Rend.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-200">
+                                        ${playerConvs.length > 0 ? playerConvs.filter(c => c.tipo === 'Torneo').map(c => {
+                                            const evalData = c.rendimiento && c.rendimiento[id] ? c.rendimiento[id] : null;
+                                            return `
+                                                <tr>
+                                                    <td class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">${c.fecha}</td>
+                                                    <td class="px-6 py-4 text-xs font-black text-slate-800 uppercase">${c.nombre}</td>
+                                                    <td class="px-6 py-4 text-center font-black text-blue-600">${evalData ? evalData.score : '--'}</td>
+                                                </tr>
+                                            `;
+                                        }).join('') : `<tr><td colspan="3" class="px-6 py-8 text-center text-[10px] text-slate-400 font-bold uppercase">Sin registros competitivos</td></tr>`}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <!-- Sessions History -->
+                        <section>
+                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
+                                <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                                Sesiones de Entrenamiento
+                            </h2>
+                            <div class="space-y-2">
+                                ${playerSesiones.slice(0, 10).map(s => `
+                                    <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-100">${s.fecha.split('-')[2]}</div>
+                                            <p class="text-xs font-black text-slate-800 uppercase">${s.titulo || s.nombre}</p>
+                                        </div>
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase">${s.fecha}</p>
+                                    </div>
+                                `).join('') || `<p class="text-center py-6 text-[10px] text-slate-400 font-bold uppercase">No hay sesiones registradas</p>`}
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="space-y-10">
+                        <!-- Stats Center -->
+                        <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden">
+                            <i data-lucide="activity" class="absolute -bottom-10 -right-10 w-48 h-48 text-white/5"></i>
+                            <h3 class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8">Asistencia Global</h3>
+                            <div class="text-6xl font-black mb-8">${attendanceRate}% <span class="text-xs font-bold text-blue-400 block mt-2 opacity-60">Ratio Presencia</span></div>
+                            
+                            <div class="space-y-4">
+                                ${[
+                                    { label: 'Presencias', val: stats.asiste, color: 'text-emerald-400' },
+                                    { label: 'Ausencias', val: stats.ausente, color: 'text-rose-400' },
+                                    { label: 'Lesiones', val: stats.lesionado, color: 'text-amber-400' },
+                                    { label: 'Zubieta / Sel.', val: stats.zubieta + stats.seleccion, color: 'text-blue-400' }
+                                ].map(s => `
+                                    <div class="flex justify-between items-center text-[11px] border-b border-white/10 pb-2">
+                                        <span class="font-bold text-white/40">${s.label}</span>
+                                        <span class="font-black ${s.color}">${s.val}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Technical Notes -->
+                        <div class="bg-blue-50 p-8 rounded-[3rem] border border-blue-100">
+                            <h3 class="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-6">Análisis del Coach</h3>
+                            <p class="text-sm text-blue-900/70 italic leading-relaxed whitespace-pre-line">
+                                ${player.notas || 'No se han registrado observaciones técnicas adicionales para este futbolista.'}
+                            </p>
+                        </div>
+
+                        <div class="pt-20 opacity-20 text-right">
+                            <p class="text-[8px] font-black uppercase tracking-[0.3em]">RS CENTRO INTEL</p>
+                            <p class="text-[7px] font-bold uppercase">${new Date().toLocaleDateString()} | ${new Date().toLocaleTimeString()}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(printView);
+        if (window.lucide) lucide.createIcons();
+    };
 
     async function renderAsistencia(container) {
         const reports = await db.getAll('asistencia');
