@@ -1012,12 +1012,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
 
                     <!-- Right Column: Day Details (Agenda) -->
-                    <div class="flex-[3] w-full md:w-80 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col h-[700px]">
+                    <div class="flex-[3] w-full md:w-80 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col md:h-[700px] min-h-[400px]">
                         <div class="p-6 border-b bg-slate-50/30">
                             <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Agenda del Día</h4>
                             <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10">
+                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10 min-h-[200px]">
                             ${combinedItems.length > 0 ? combinedItems.map(item => {
                                 const isSession = item.type === 'sesion';
                                 const isConv = item.type === 'convocatoria';
@@ -1042,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </div>
                                 `;
                             }).join('') : `
-                                <div class="py-20 text-center flex flex-col items-center gap-3">
+                                <div class="py-10 text-center flex flex-col items-center gap-3">
                                     <div class="w-12 h-12 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center">
                                         <i data-lucide="coffee" class="w-6 h-6 text-slate-200"></i>
                                     </div>
