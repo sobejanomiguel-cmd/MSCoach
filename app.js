@@ -192,9 +192,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             el.style.display = isAdmin ? 'block' : 'none';
         });
 
-        // Clase para ajustes visuales globales si fuese necesario
-        document.body.classList.toggle('role-readonly', isConvenido);
+        // Tecnicos convenidos solo ven Calendario, Perfil y las fichas compartidas
+        // Ocultamos el resto si es necesario, o simplemente filtramos los datos.
+        // Por ahora, ocultamos secciones administrativas pesadas.
+        if (isConvenido) {
+            const forbiddenViews = ['usuarios', 'jugadores', 'equipos', 'tareas', 'asistencia'];
+            document.querySelectorAll('.nav-link, .nav-link-mobile').forEach(el => {
+                if (forbiddenViews.includes(el.dataset.view)) {
+                    el.style.display = 'none';
+                }
+            });
+        }
 
+        document.body.classList.toggle('role-readonly', isConvenido);
     };
 
     if (toggleAuthBtn) {
@@ -941,9 +951,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return false;
             };
 
+            const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+
             const sessions = allSessions.filter(s => s.createdBy === currentUser.id || isSharedWithMe(s));
             const eventos = allEventos.filter(e => e.createdBy === currentUser.id || isSharedWithMe(e));
-            const convocatorias = allConvocatorias; // Convocatorias are global for technical staff
+            const convocatorias = allConvocatorias.filter(c => !isConvenido || c.createdBy === currentUser.id || isSharedWithMe(c));
             
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -1058,9 +1070,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 let accent = 'blue';
                                 let icon = 'calendar';
                                 let action = `window.viewEventoFicha('${item.id}')`;
-                                
                                 if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
-                                else if (isConv) { accent = 'blue'; icon = 'users'; action = `window.viewConvocatoria('${item.id}')`; }
+                                else if (isConv) { 
+                                    accent = item.tipo?.toUpperCase() === 'TORNEO' ? 'slate' : 'blue'; 
+                                    icon = item.tipo?.toUpperCase() === 'TORNEO' ? 'trophy' : 'users';
+                                    action = (item.tipo?.toUpperCase() === 'TORNEO') ? `window.viewTorneoRendimiento('${item.id}')` : `window.viewConvocatoria('${item.id}')`; 
+                                }
 
                                 const isChecked = item.completada;
 
@@ -5905,8 +5920,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
+        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+
         const filtered = convs.filter(c => {
             const matchesTab = c.tipo === currentConvocatoriaTab;
+            
+            // Filter by sharedWith if Convenido
+            if (isConvenido) {
+                const sw = c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : [];
+                const isShared = sw.includes(currentUser.id);
+                if (c.createdBy !== currentUser.id && !isShared) return false;
+            }
+
             const matchesTeam = currentConvocatoriaTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
                               (c.lugar && c.lugar.includes(' ||| ') && JSON.parse(c.lugar.split(' ||| ')[1]).eids?.includes(currentConvocatoriaTeamId.toString()));
@@ -7716,8 +7743,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             try { return JSON.parse(lugarStr.split(' ||| ')[1]); } catch (e) { return {}; }
         };
 
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
+        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+
         const filtered = convs.filter(c => {
             const extra = safeGetExtra(c.lugar);
+
+            // Filter by sharedWith if Convenido
+            if (isConvenido) {
+                const sw = extra.sw || (c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : []);
+                const isShared = sw.includes(currentUser.id);
+                if (c.createdBy !== currentUser.id && !isShared) return false;
+            }
+
             const matchesTeam = currentTorneoTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
                               (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
