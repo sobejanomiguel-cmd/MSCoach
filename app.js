@@ -5783,8 +5783,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <td class="px-6 py-4 text-right">
                                         ${currentUserRole === 'ELITE' ? `
                                             <div class="flex justify-end gap-2">
-                                                <button onclick="window.editUserAdmin('${u.id}')" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                                <button onclick="window.deleteUserStaff('${u.id}')" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                                <button onclick="window.resetUserPasswordEmail('${u.email}')" title="Resetear Contraseña" class="p-2 text-slate-400 hover:text-amber-500 transition-all"><i data-lucide="key" class="w-4 h-4"></i></button>
+                                                <button onclick="window.editUserAdmin('${u.id}')" title="Editar Perfil" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                <button onclick="window.deleteUserStaff('${u.id}')" title="Eliminar" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                             </div>
                                         ` : '<span class="text-[10px] text-slate-300 italic">Lectura</span>'}
                                     </td>
@@ -5838,6 +5839,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.switchView('usuarios');
         }
     };
+    window.resetUserPasswordEmail = async (email) => {
+        window.customConfirm('RESETEAR ACCESO', `¿Quieres enviar un enlace de recuperación de contraseña a ${email}?`, async () => {
+            try {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                    redirectTo: window.location.origin
+                });
+                if (error) throw error;
+                window.customAlert('¡Enviado!', 'Se ha enviado un correo con las instrucciones para crear una nueva contraseña.', 'success');
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        });
+    };
+
     window.editUserAdmin = async (userId) => {
         const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
         
