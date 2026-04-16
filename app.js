@@ -2135,6 +2135,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                         <td class="px-8 py-5 text-right">
                                             <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onclick="event.stopPropagation(); window.duplicateSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all shadow-sm" title="Duplicar Sesión">
+                                                    <i data-lucide="copy" class="w-4 h-4"></i>
+                                                </button>
                                                 <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
                                                     <i data-lucide="printer" class="w-4 h-4"></i>
                                                 </button>
@@ -2166,6 +2169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
+                                    <button onclick="event.stopPropagation(); window.duplicateSession(${s.id})" class="w-8 h-8 bg-amber-50 text-amber-500 rounded-lg flex items-center justify-center"><i data-lucide="copy" class="w-4 h-4"></i></button>
                                     <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-8 h-8 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4"></i></button>
                                     <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-8 h-8 bg-red-50 text-red-300 rounded-lg flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                 </div>
@@ -2301,6 +2305,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <option value="">-- MODO MANUAL --</option>
                                     <!-- Options injected via updateConvsByTeam -->
                                 </select>
+                                <div id="session-modal-conv-count" class="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase tracking-widest hidden">
+                                    0 Jugadores
+                                </div>
                             </div>
                             </div>
                         </div>
@@ -2413,7 +2420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const currentVal = convSelect.value;
             convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` + 
-                filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha})</option>`).join('');
+                filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha}) [${(c.playerids || []).length} JUG]</option>`).join('');
             if (currentVal) convSelect.value = currentVal;
         };
 
@@ -2429,9 +2436,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         convSelect.onchange = () => {
             const opt = convSelect.selectedOptions[0];
-            if (!opt || !opt.value) return;
+            const countBadge = document.getElementById('session-modal-conv-count');
+            if (!opt || !opt.value) {
+                if (countBadge) countBadge.classList.add('hidden');
+                return;
+            }
             try {
                 const playerIds = JSON.parse(opt.dataset.players);
+                if (countBadge) {
+                    countBadge.textContent = `${playerIds.length} JUGADORES`;
+                    countBadge.classList.remove('hidden');
+                }
                 const checkboxes = playersList.querySelectorAll('input[name="playerids"]');
                 checkboxes.forEach(cb => {
                     cb.checked = playerIds.includes(cb.value) || playerIds.includes(parseInt(cb.value));
@@ -2478,6 +2493,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sessions = await db.getAll('sesiones');
         const session = sessions.find(s => s.id == id);
         window.renderSessionModal(session);
+    };
+
+    window.duplicateSession = async (id) => {
+        try {
+            const sessions = await db.getAll('sesiones');
+            const session = sessions.find(s => s.id == id);
+            if (!session) return;
+
+            const newSession = { ...session };
+            delete newSession.id;
+            newSession.titulo = `${newSession.titulo} (COPIA)`.toUpperCase();
+            
+            // Set date to today? Maybe user prefers keeping the original date to adjust later
+            // We'll keep original date but it will be at the end of the list usually
+            
+            await db.add('sesiones', newSession);
+            window.customAlert('¡Duplicado!', 'La sesión ha sido duplicada con éxito.', 'success');
+            window.renderView('sesiones');
+        } catch (err) {
+            console.error("Duplicate error:", err);
+            window.customAlert('Error', 'No se pudo duplicar la sesión.', 'error');
+        }
     };
 
     window.deleteSession = async (id) => {
@@ -5849,6 +5886,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <button id="toggle-player-mgmt" class="p-1.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all flex items-center gap-2 px-3" title="Gestionar Jugadores">
                                 <i data-lucide="users" class="w-3.5 h-3.5"></i>
                                 <span class="text-[9px] font-black uppercase tracking-widest">Gestionar Jugadores</span>
+                                <span id="conv-player-count-badge" class="ml-1 bg-blue-600 text-white text-[9px] px-1.5 py-0.5 rounded-full">${pids.length}</span>
                             </button>
                         </div>
                         <div id="conv-info-display">
@@ -6209,18 +6247,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     window.viewConvocatoria(id, activeTab);
                     
                     // Trigger a background refresh of the underlying list if possible
-                    const currentView = document.querySelector('[data-view].active')?.getAttribute('id');
-                    if (currentView === 'convocatorias' || currentView === 'torneos') {
-                        const container = document.getElementById('main-content');
+                    const currentViewSelection = document.querySelector('.nav-link.active')?.getAttribute('data-view');
+                    if (currentViewSelection === 'convocatorias' || currentViewSelection === 'torneos') {
+                        const container = document.getElementById('content-container');
                         if (container) {
-                            if (currentView === 'convocatorias') window.renderConvocatorias(container.firstChild);
-                            else window.renderTorneosRendimiento(container.firstChild);
+                            if (currentViewSelection === 'convocatorias') window.renderConvocatorias(container);
+                            else window.renderTorneosRendimiento(container);
                         }
                     }
                 } catch (err) {
                     alert("Error actualizando: " + err.message);
                 }
             };
+        }
+
+        // Delegate listener for real-time count
+        const mList = document.getElementById('mgmt-player-list');
+        if (mList) {
+            mList.addEventListener('change', (e) => {
+                if (e.target.classList.contains('mgmt-player-check')) {
+                    const count = mList.querySelectorAll('.mgmt-player-check:checked').length;
+                    const badge = document.getElementById('conv-player-count-badge');
+                    if (badge) badge.textContent = count;
+                }
+            });
         }
 
         // Handle async sessions loading

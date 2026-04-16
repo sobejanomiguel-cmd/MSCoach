@@ -134,11 +134,15 @@ class CoachDB {
     }
 
     async saveLocal(storeName, data) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const tx = this.db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);
             const request = store.put(data);
             request.onsuccess = () => resolve(data);
+            request.onerror = (e) => {
+                console.error(`Local save failed (${storeName}):`, e);
+                reject(e.target.error);
+            };
         });
     }
 
