@@ -152,10 +152,14 @@ class CoachDB {
 
             if (error) {
                 console.error(`Supabase update error (${storeName}):`, error);
-                throw error; // Propagate to caller for UI alerts
+                throw error;
             }
         }
-        return this.saveLocal(storeName, data);
+        
+        // Merge with existing local data to avoid wiping fields during partial update
+        const existing = await this.get(storeName, data.id);
+        const merged = { ...existing, ...data };
+        return this.saveLocal(storeName, merged);
     }
 
     async delete(storeName, id) {
