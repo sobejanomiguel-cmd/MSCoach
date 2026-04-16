@@ -398,10 +398,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             contentContainer.classList.add('p-4', 'md:p-8', 'overflow-y-auto');
         }
 
-        // Sync mobile title
+        // Sync mobile title & subtitle
         const viewTitleMobile = document.getElementById('view-title-mobile');
+        const viewSubtitleMobile = document.getElementById('view-subtitle-mobile');
         if (viewTitleMobile) {
-            viewTitleMobile.textContent = meta.title.replace('Directorio de ', '').replace('Gestión de ', '');
+            viewTitleMobile.textContent = meta.title.replace('Directorio de ', '').replace('Gestión de ', '').replace('Visión General de ', '');
+        }
+        if (viewSubtitleMobile) {
+            viewSubtitleMobile.textContent = meta.subtitle;
+        }
+
+        // Auto-close sidebar on mobile
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (window.innerWidth < 768 && sidebar && !sidebar.classList.contains('-translate-x-full')) {
+            sidebar.classList.add('-translate-x-full');
+            if (overlay) overlay.classList.add('hidden');
         }
 
         // Button logic
@@ -923,7 +935,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
         container.innerHTML = `
-            <div class="flex flex-col md:flex-row gap-6 h-full">
+            <div class="flex flex-col md:flex-row gap-6">
                 <!-- Left Column: Calendar Grid (80%) -->
                 <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
                         <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
@@ -985,47 +997,47 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
-                    <!-- Right Column: Day Details (20%) -->
-                    <div class="flex-[2] w-full md:w-64 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
+                    <!-- Right Column: Day Details (Agenda) -->
+                    <div class="flex-[3] w-full md:w-80 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col h-[700px]">
                         <div class="p-6 border-b bg-slate-50/30">
                             <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Agenda del Día</h4>
                             <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10">
                             ${combinedItems.length > 0 ? combinedItems.map(item => {
                                 const isSession = item.type === 'sesion';
                                 const isConv = item.type === 'convocatoria';
                                 let accent = 'blue';
                                 let icon = 'calendar';
-                                let action = `window.viewEvento(${item.id})`;
+                                let action = `window.viewEventoFicha('${item.id}')`;
                                 
-                                if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSession(${item.id})`; }
-                                else if (isConv) { accent = 'blue'; icon = 'users'; action = `window.viewConvocatoria(${item.id})`; }
+                                if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
+                                else if (isConv) { accent = 'blue'; icon = 'users'; action = `window.viewConvocatoria('${item.id}')`; }
 
                                 const isChecked = item.completada;
 
                                 return `
-                                    <div onclick="${action}" class="p-4 rounded-2xl border border-slate-50 bg-white hover:border-${accent}-100 hover:shadow-lg transition-all cursor-pointer group ${isChecked ? 'opacity-50' : ''}">
-                                        <div class="flex items-center gap-3 mb-2">
-                                            <div class="w-8 h-8 rounded-lg bg-${accent}-50 flex items-center justify-center">
-                                                <i data-lucide="${icon}" class="w-4 h-4 text-${accent}-600"></i>
+                                    <div onclick="${action}" class="p-5 rounded-2xl border border-slate-100 bg-white hover:border-${accent}-300 hover:shadow-xl hover:shadow-${accent}-500/10 transition-all cursor-pointer group ${isChecked ? 'opacity-40' : ''}">
+                                        <div class="flex items-center gap-3 mb-3">
+                                            <div class="w-8 h-8 rounded-lg bg-${accent}-50 flex items-center justify-center group-hover:bg-${accent}-600 transition-colors">
+                                                <i data-lucide="${icon}" class="w-4 h-4 text-${accent}-600 group-hover:text-white transition-colors"></i>
                                             </div>
-                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${item.hora || '--:--'}</span>
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${item.hora || '--:--'}</span>
                                         </div>
-                                        <p class="text-xs font-black text-slate-800 uppercase leading-tight ${isChecked ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
+                                        <p class="text-xs font-black text-slate-800 uppercase leading-snug ${isChecked ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
                                     </div>
                                 `;
                             }).join('') : `
                                 <div class="py-20 text-center flex flex-col items-center gap-3">
-                                    <div class="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
+                                    <div class="w-12 h-12 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center">
                                         <i data-lucide="coffee" class="w-6 h-6 text-slate-200"></i>
                                     </div>
                                     <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Día de descanso</p>
                                 </div>
                             `}
                         </div>
-                        <div class="p-4 bg-slate-50/50 border-t">
-                            <button onclick="window.switchView('eventos')" class="w-full py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-xl text-[9px] uppercase tracking-widest hover:bg-slate-100 transition-all">Gestionar Agenda</button>
+                        <div class="p-6 bg-white border-t">
+                            <button onclick="window.switchView('eventos')" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-black transition-all shadow-lg">Gestionar Mi Agenda</button>
                         </div>
                     </div>
                 </div>
@@ -1079,12 +1091,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                                     let accentColor = 'blue';
                                     let icon = 'alarm-clock';
-                                    let action = `window.viewEvento(${item.id})`;
+                                    let action = `window.viewEventoFicha('${item.id}')`;
                                     let typeLabel = 'Evento';
 
-                                    if (isTorneo) { accentColor = 'slate'; icon = 'trophy'; action = `window.viewTorneoRendimiento(${item.id})`; typeLabel = 'Torneo'; }
-                                    else if (isSession) { accentColor = 'red'; icon = 'play'; action = `window.viewSession(${item.id})`; typeLabel = 'Sesión'; }
-                                    else if (isConv) { accentColor = 'blue'; icon = 'users'; action = `window.viewConvocatoria(${item.id})`; typeLabel = 'Convocatoria'; }
+                                    if (isTorneo) { accentColor = 'slate'; icon = 'trophy'; action = `window.viewTorneoRendimiento('${item.id}')`; typeLabel = 'Torneo'; }
+                                    else if (isSession) { accentColor = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; typeLabel = 'Sesión'; }
+                                    else if (isConv) { accentColor = 'blue'; icon = 'users'; action = `window.viewConvocatoria('${item.id}')`; typeLabel = 'Convocatoria'; }
 
                                     const isChecked = item.completada;
 
@@ -1365,8 +1377,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${filteredTasks.map(e => `
-                                <tr class="hover:bg-blue-50/30 transition-colors group ${e.completada ? 'bg-slate-50/10' : ''}">
-                                    <td class="px-8 py-6">
+                                <tr onclick="window.viewEventoFicha(${e.id})" class="hover:bg-blue-50/30 transition-colors group cursor-pointer ${e.completada ? 'bg-slate-50/10' : ''}">
+                                    <td class="px-8 py-6" onclick="event.stopPropagation()">
                                         <input type="checkbox" ${e.completada ? 'checked' : ''} onclick="window.toggleTaskStatus(${e.id}, 'eventos')" 
                                             class="w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all">
                                     </td>
@@ -1392,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </td>
                                     <td class="px-8 py-6 text-right">
                                         <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onclick="window.viewEvento(${e.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
+                                            <button onclick="event.stopPropagation(); window.viewEvento(${e.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
                                                 <i data-lucide="edit-2" class="w-4 h-4"></i>
                                             </button>
                                             <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-400 hover:bg-red-50 transition-all">
@@ -1419,6 +1431,207 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (window.lucide) lucide.createIcons();
     }
+
+    window.viewEventoFicha = async (id) => {
+        const items = await db.getAll('eventos');
+        const evento = items.find(e => e.id == id);
+        if (!evento) return;
+        const teams = await db.getAll('equipos');
+
+        modalOverlay.classList.add('p-0');
+        modalOverlay.classList.remove('md:p-8', 'p-4');
+        modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
+
+        modalContainer.innerHTML = `
+            <div class="p-8 md:p-12 animate-in fade-in duration-500">
+                <div class="flex justify-between items-start mb-12">
+                    <div>
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">${evento.categoria || 'Evento'}</span>
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${evento.fecha} • ${evento.hora}</span>
+                        </div>
+                        <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight">${evento.nombre}</h2>
+                        <div class="flex items-center gap-2 mt-2 text-slate-400 font-bold uppercase text-[10px] tracking-widest">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                            ${evento.lugar || 'Ubicación no especificada'}
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="window.viewEvento(${id})" class="p-3 bg-slate-100 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-2 px-6">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Editar</span>
+                        </button>
+                        <button onclick="closeModal()" class="p-3 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all flex items-center justify-center w-12 h-12">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                    <div class="lg:col-span-2 space-y-8">
+                        <div class="p-8 bg-slate-50 rounded-[3rem] border border-slate-100">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                                <i data-lucide="file-text" class="w-4 h-4"></i>
+                                Detalles y Notas
+                            </h4>
+                            <div class="prose prose-slate max-w-none">
+                                <p class="text-slate-600 font-medium whitespace-pre-wrap">${evento.notas || 'No hay notas adicionales para este evento.'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-6">
+                         <div class="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Equipos Vinculados</h4>
+                            <div class="space-y-3">
+                                ${(evento.equipoids || []).length > 0 ? evento.equipoids.map(eid => {
+                                    const team = teams.find(t => t.id == eid);
+                                    return `
+                                        <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl">
+                                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-[10px] text-white">${team ? team.nombre.substring(0,2).toUpperCase() : '??'}</div>
+                                            <span class="text-xs font-black text-slate-800 uppercase">${team ? team.nombre : 'Equipo desconocido'}</span>
+                                        </div>
+                                    `;
+                                }).join('') : `<p class="text-[10px] text-slate-400 italic">No hay equipos vinculados.</p>`}
+                            </div>
+                         </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    }
+
+    window.viewSessionFicha = async (id) => {
+        const session = await db.get('sesiones', id);
+        if (!session) return;
+
+        const teams = await db.getAll('equipos');
+        const tasks = await db.getAll('tareas');
+        const team = teams.find(t => t.id == session.equipoid);
+        const sessionTasks = (session.taskids || []).map(taskId => tasks.find(t => t.id.toString() === taskId.toString())).filter(t => t);
+        
+        const players = await db.getAll('jugadores');
+        const sessionPlayers = players.filter(p => (session.playerids || []).includes(p.id.toString()));
+
+        modalOverlay.classList.add('p-0');
+        modalOverlay.classList.remove('md:p-8', 'p-4');
+        modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
+
+        modalContainer.innerHTML = `
+            <div class="p-8 md:p-12 animate-in fade-in duration-500">
+                <div class="flex flex-col md:flex-row justify-between items-start gap-6 mb-12">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-4">
+                            <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
+                            <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${team ? team.nombre : 'Equipo General'}</span>
+                        </div>
+                        <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-none mb-4">${session.titulo || 'Sesión sin título'}</h2>
+                        <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="calendar" class="w-4 h-4 text-blue-500"></i>
+                                ${session.fecha}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
+                                ${session.hora || '--:--'}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
+                                ${session.lugar || 'No especificado'}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3 w-full md:w-auto">
+                        <button onclick="window.printSession('${id}')" class="flex-1 md:flex-none p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 transition-all flex items-center justify-center gap-2 px-6">
+                            <i data-lucide="printer" class="w-5 h-5"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Imprimir</span>
+                        </button>
+                        <button onclick="window.duplicateSession('${id}')" class="flex-1 md:flex-none p-4 bg-amber-50 text-amber-600 rounded-2xl hover:bg-amber-100 transition-all flex items-center justify-center gap-2 px-6">
+                            <i data-lucide="copy" class="w-5 h-5"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Duplicar</span>
+                        </button>
+                        <button onclick="window.viewSession('${id}')" class="flex-1 md:flex-none p-4 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 px-6">
+                            <i data-lucide="edit-3" class="w-5 h-5"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Editar Sesión</span>
+                        </button>
+                        <button onclick="closeModal()" class="p-4 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all flex items-center justify-center w-14 h-14">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                    <div class="lg:col-span-8 space-y-8">
+                        <div>
+                            <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                                <i data-lucide="layers" class="w-4 h-4"></i>
+                                Secuencia de Entrenamiento
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                ${sessionTasks.map((t, idx) => `
+                                    <div class="bg-white rounded-[2.5rem] border border-slate-100 overflow-hidden group hover:shadow-2xl transition-all h-full flex flex-col cursor-pointer" onclick="window.viewTask(${t.id})">
+                                        <div class="relative aspect-video bg-slate-900 overflow-hidden">
+                                            ${t.image ? `<img src="${t.image}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">` : `<div class="w-full h-full flex items-center justify-center text-slate-700 font-black uppercase text-[10px] tracking-[0.3em]">Sin Imagen</div>`}
+                                            <div class="absolute top-4 left-4 bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">Tarea ${idx + 1}</div>
+                                        </div>
+                                        <div class="p-8 flex-1">
+                                            <p class="text-[10px] font-black text-blue-600 uppercase mb-2 tracking-[0.2em]">${t.type || 'Fútbol'}</p>
+                                            <h4 class="text-xl font-black text-slate-800 uppercase tracking-tight mb-3">${t.name}</h4>
+                                            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                                                <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+                                                ${t.duration || '---'} min
+                                            </p>
+                                        </div>
+                                    </div>
+                                `).join('') || `
+                                    <div class="col-span-full py-20 bg-slate-50 rounded-[3rem] border border-dashed border-slate-200 text-center">
+                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">No hay tareas programadas</p>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-4 space-y-8">
+                        <div class="p-8 bg-slate-900 rounded-[3rem] shadow-2xl relative overflow-hidden group/canvas min-h-[400px]">
+                            <h3 class="text-xs font-black text-white/40 uppercase tracking-[0.2em] mb-6 flex items-center gap-2 relative z-10">
+                                <i data-lucide="map" class="w-4 h-4"></i>
+                                Pizarra Táctica
+                            </h3>
+                            <div class="relative z-10 h-full">
+                                ${renderTacticalPitchHtml(sessionPlayers, 'F11_433', 'vertical')}
+                            </div>
+                        </div>
+
+                        <div class="p-8 bg-white rounded-[3rem] border border-slate-100 shadow-sm">
+                            <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
+                                <span class="flex items-center gap-2">
+                                    <i data-lucide="users" class="w-4 h-4"></i>
+                                    Jugadores
+                                </span>
+                                <span class="bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">${sessionPlayers.length}</span>
+                            </h3>
+                            <div class="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar no-scrollbar">
+                                ${sessionPlayers.map(p => `
+                                    <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl hover:bg-blue-50 transition-colors">
+                                        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-[10px] text-white">#</div>
+                                        <div>
+                                            <p class="text-xs font-black text-slate-800 uppercase">${p.nombre}</p>
+                                            <p class="text-[9px] font-bold text-slate-400 uppercase">${p.posicion || '---'}</p>
+                                        </div>
+                                    </div>
+                                `).join('') || `<p class="text-[10px] text-slate-400 italic">No hay jugadores asignados.</p>`}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    };
 
     window.viewEvento = async (id) => {
         const events = await db.getAll('eventos');
@@ -1530,7 +1743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS' };
+    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', currentPage: 1 };
     let playerFilters = { search: '', team: 'TODOS' };
     let tasksPerPage = 12;
     let currentTaskPage = 1;
@@ -1573,6 +1786,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return matchesSearch && matchesType && matchesCat;
             }).sort((a,b) => a.name.localeCompare(b.name));
 
+            const pageSize = 25;
+            const totalTasks = filteredTasks.length;
+            const totalPages = Math.ceil(totalTasks / pageSize);
+            if (taskFilters.currentPage > totalPages) taskFilters.currentPage = Math.max(1, totalPages);
+            
+            const startIdx = (taskFilters.currentPage - 1) * pageSize;
+            const pageTasks = filteredTasks.slice(startIdx, startIdx + pageSize);
+
             tableContainer.innerHTML = `
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
@@ -1587,10 +1808,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-50">
-                            ${filteredTasks.map(t => `
+                            ${pageTasks.map(t => `
                                 <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTask(${t.id})">
                                     <td class="px-8 py-4">
-                                        <div class="w-20 h-12 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
+                                        <div class="w-20 h-12 rounded-lg bg-slate-100 overflow-hidden border border-slate-200 shadow-sm transition-transform group-hover:scale-105">
                                             ${t.image ? `<img src="${t.image}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center"><i data-lucide="image" class="w-4 h-4 text-slate-300"></i></div>`}
                                         </div>
                                     </td>
@@ -1630,7 +1851,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Pagination Footer -->
+                ${totalPages > 1 ? `
+                    <div class="px-8 py-5 border-t border-slate-50 flex items-center justify-between bg-slate-50/30">
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Mostrando ${startIdx + 1} - ${Math.min(startIdx + pageSize, totalTasks)} de ${totalTasks} ejercicios
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="window.changeTaskPage(${taskFilters.currentPage - 1})" ${taskFilters.currentPage === 1 ? 'disabled' : ''} 
+                                class="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-slate-600">
+                                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                            </button>
+                            <div class="flex items-center px-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-white rounded-xl border border-slate-100 shadow-sm">
+                                Página ${taskFilters.currentPage} / ${totalPages}
+                            </div>
+                            <button onclick="window.changeTaskPage(${taskFilters.currentPage + 1})" ${taskFilters.currentPage === totalPages ? 'disabled' : ''} 
+                                class="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-slate-600">
+                                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
             `;
+        }
+        
+        window.changeTaskPage = (page) => {
+            taskFilters.currentPage = page;
+            window.renderTareas(container, true);
+        };
+
+        if (onlyTable) {
+            if (window.lucide) lucide.createIcons();
+            return;
         }
 
         // Listeners para los filtros
@@ -1642,24 +1895,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (searchInput) {
             searchInput.oninput = (e) => {
                 taskFilters.search = e.target.value;
+                taskFilters.currentPage = 1;
                 clearTimeout(searchTimer);
                 searchTimer = setTimeout(() => {
                     window.renderTareas(container, true);
-                }, 250);
+                }, 400);
             };
         }
         
         if (typeFilter) {
             typeFilter.onchange = (e) => {
                 taskFilters.type = e.target.value;
-                window.renderTareas(container, false);
+                taskFilters.currentPage = 1;
+                window.renderTareas(container, true);
             };
         }
 
         if (catFilter) {
             catFilter.onchange = (e) => {
                 taskFilters.categoria = e.target.value;
-                window.renderTareas(container, false);
+                taskFilters.currentPage = 1;
+                window.renderTareas(container, true);
             };
         }
 
@@ -2090,9 +2346,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <table class="w-full">
                         <thead>
                             <tr class="bg-slate-50/50 text-left border-b border-slate-100">
-                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha / Hora</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivo de Sesión</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha / Hora</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo / Técnico</th>
-                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivo de Sesión</th>
+                                <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Lugar</th>
                                 <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Tareas</th>
                                 <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                             </tr>
@@ -2104,8 +2361,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
                                 const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
                                 return `
-                                    <tr onclick="window.viewSession(${s.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
+                                    <tr onclick="window.viewSessionFicha('${s.id}')" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
+                                            <p class="text-sm font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
+                                        </td>
+                                        <td class="px-6 py-5">
                                             <div class="flex items-center gap-4">
                                                 <div class="w-11 h-11 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center shadow-md">
                                                     <span class="text-[8px] font-black leading-none">${month}</span>
@@ -2124,8 +2384,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </div>
                                         </td>
                                         <td class="px-6 py-5">
-                                            <p class="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
-                                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
                                         </td>
                                         <td class="px-6 py-5 text-center">
                                             <div class="flex flex-col items-center">
@@ -2135,13 +2394,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                         <td class="px-8 py-5 text-right">
                                             <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onclick="event.stopPropagation(); window.duplicateSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all shadow-sm" title="Duplicar Sesión">
+                                                <button onclick="event.stopPropagation(); window.viewSession('${s.id}')" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-blue-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm" title="Editar Sesión">
+                                                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                </button>
+                                                <button onclick="event.stopPropagation(); window.duplicateSession('${s.id}')" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-amber-600 hover:border-amber-200 transition-all shadow-sm" title="Duplicar Sesión">
                                                     <i data-lucide="copy" class="w-4 h-4"></i>
                                                 </button>
-                                                <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
+                                                <button onclick="event.stopPropagation(); window.printSession('${s.id}')" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">
                                                     <i data-lucide="printer" class="w-4 h-4"></i>
                                                 </button>
-                                                <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-red-300 hover:text-red-500 hover:border-red-200 transition-all shadow-sm">
+                                                <button onclick="event.stopPropagation(); window.deleteSession('${s.id}')" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-100 rounded-xl text-red-300 hover:text-red-500 hover:border-red-200 transition-all shadow-sm">
                                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                                 </button>
                                             </div>
@@ -2156,7 +2418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <!-- Mobile View -->
                 <div class="md:hidden space-y-4">
                     ${filteredSessions.map(s => `
-                        <div onclick="window.viewSession(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                        <div onclick="window.viewSessionFicha(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
                             <div class="flex justify-between items-start mb-4">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center">
@@ -3002,18 +3264,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             const sessionTaskIds = [...new Set(teamSessions.flatMap(s => s.taskids || []))];
             const teamTasks = sessionTaskIds.map(tid => (allTasks || []).find(t => t.id == tid)).filter(Boolean);
 
+            const { data: allConvs } = await supabaseClient.from('convocatorias').select('*').eq('equipoid', equipoid);
+            const teamTournaments = (allConvs || []).filter(c => (c.tipo || '').toUpperCase() === 'TORNEO').sort((a,b) => b.fecha.localeCompare(a.fecha));
+
             const wrapper = document.createElement('div');
             wrapper.className = 'animate-in fade-in slide-in-from-right duration-500 max-w-7xl mx-auto pb-20';
             
             // Per-team formation state
             if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
-            const currentFormationId = (window.formationsState.teams && window.formationsState.teams[equipoid]) || 'F11_433';
+            const currentFormationId = (window.formationsState.teams && window.formationsState.teams[equipoid.toString()]) || 'F11_433';
 
             wrapper.innerHTML = `
                 <!-- Header -->
                 <div class="flex justify-between items-center mb-10 px-4 pt-8">
                     <div class="flex items-center gap-6">
-                        <button onclick="window.switchView('equipos')" class="p-3 bg-white rounded-2xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"><i data-lucide="arrow-left"></i></button>
+                        <button onclick="window.switchView('equipos')" class="p-3 bg-white rounded-2xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"><i data-lucide="arrow-left" class="text-slate-600"></i></button>
                         <div>
                             <h2 class="text-4xl font-black text-slate-900 tracking-tight uppercase">${team.nombre}</h2>
                             <p class="text-xs font-black text-blue-600 uppercase tracking-[0.2em] mt-1">${team.categoria || 'Sin Categoría'} • ${teamPlayers.length} Jugadores</p>
@@ -3024,63 +3289,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <!-- Main Content Row: 3 Columns -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 mb-8">
+                <!-- Summary Row: 3 Columns -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 px-4 mb-8">
                     
-                    <!-- Column 1: Players -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
-                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <i data-lucide="users" class="w-4 h-4 text-blue-500"></i>
-                            Plantilla / Jugadores
-                        </h4>
-                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                            ${teamPlayers.map(p => `
-                                <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
-                                    <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all">${p.dorsal || '--'}</div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
-                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
-                                    </div>
-                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all"></i>
-                                </div>
-                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin jugadores registrados</p>'}
-                        </div>
-                    </div>
-
-                    <!-- Column 2: Tasks Worked -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                    <!-- Col 1: Tasks -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
                         <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                             <i data-lucide="target" class="w-4 h-4 text-emerald-500"></i>
-                            Tareas / Ejercicios Trabajados
+                            Tareas Trabajadas
                         </h4>
-                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                            ${teamTasks.map(t => `
-                                <div class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-emerald-100 transition-all group cursor-default">
-                                    <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center font-black text-[9px] uppercase">${t.type?.substring(0,3) || 'TAR'}</div>
+                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
+                            ${teamTasks.slice(0, 10).map(t => `
+                                <div onclick="window.viewTask(${t.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-emerald-100 transition-all group cursor-pointer">
+                                    <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center font-black text-[9px] uppercase group-hover:bg-emerald-600 group-hover:text-white transition-all">${t.type?.substring(0,3) || 'TAR'}</div>
                                     <div class="flex-1 min-w-0">
                                         <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.name}</h4>
-                                        <div class="flex gap-2 mt-1">
-                                            <span class="text-[8px] font-black text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded uppercase tracking-tighter">${t.type || 'General'}</span>
-                                        </div>
+                                        <p class="text-[8px] font-black text-emerald-600 uppercase tracking-tighter mt-1">${t.type || 'General'}</p>
                                     </div>
+                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-emerald-400 transition-all"></i>
                                 </div>
-                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Aún no se han trabajado tareas</p>'}
+                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin tareas registradas</p>'}
                         </div>
                     </div>
 
-                    <!-- Column 3: Sessions -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
+                    <!-- Col 2: Sessions -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
                         <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                             <i data-lucide="calendar" class="w-4 h-4 text-indigo-500"></i>
                             Historial de Sesiones
                         </h4>
-                        <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-                            ${teamSessions.map(s => `
-                                <div onclick="window.viewSession('${s.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
+                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
+                            ${teamSessions.slice(0, 10).map(s => `
+                                <div onclick="window.viewSessionFicha('${s.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
                                     <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-indigo-600 shadow-sm border border-slate-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">${s.fecha.split('-')[2]}</div>
                                     <div class="flex-1 min-w-0">
                                         <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
-                                        <p class="text-[8px] font-bold text-slate-400 uppercase">${s.fecha} • ${s.hora || '--:--'}</p>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${s.fecha}</p>
                                     </div>
                                     <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-indigo-400 transition-all"></i>
                                 </div>
@@ -3088,6 +3332,53 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
+                    <!-- Col 3: Tournaments -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
+                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <i data-lucide="award" class="w-4 h-4 text-amber-500"></i>
+                            Historial de Torneos
+                        </h4>
+                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
+                            ${teamTournaments.slice(0, 10).map(t => `
+                                <div onclick="window.viewTorneoRendimiento('${t.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-amber-100 transition-all group cursor-pointer">
+                                    <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center shadow-sm group-hover:bg-amber-600 group-hover:text-white transition-all">
+                                        <i data-lucide="trophy" class="w-5 h-5"></i>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.nombre}</h4>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${t.fecha}</p>
+                                    </div>
+                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-amber-400 transition-all"></i>
+                                </div>
+                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin torneos registrados</p>'}
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Squad List: Full Width -->
+                <div class="px-4 mb-12">
+                    <div class="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
+                        <div class="flex justify-between items-center mb-8">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <i data-lucide="users" class="w-4 h-4 text-blue-500"></i>
+                                Plantilla / Jugadores
+                            </h4>
+                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamPlayers.length} Futbolistas</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            ${teamPlayers.map(p => `
+                                <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
+                                    <div class="w-11 h-11 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all text-xs">${p.dorsal || '--'}</div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
+                                    </div>
+                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all"></i>
+                                </div>
+                            `).join('') || '<p class="col-span-full text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin jugadores registrados</p>'}
+                        </div>
+                    </div>
                 </div>
 
                 <div class="px-4">
@@ -3133,7 +3424,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.updateTeamPitch = (formationId, equipoid) => {
         if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
-        window.formationsState.teams[equipoid] = formationId;
+        window.formationsState.teams[equipoid.toString()] = formationId;
         
         // Persistir en localStorage
         localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
@@ -3345,11 +3636,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             const tableContainer = onlyTable ? document.getElementById('players-table-container') : container.querySelector('#players-table-container');
-            const searchInput = container.querySelector('#player-search-input');
-            const teamFilter = container.querySelector('#player-team-filter');
-            const clubFilter = container.querySelector('#player-club-filter');
-            const posFilter = container.querySelector('#player-pos-filter');
-            const levelFilter = container.querySelector('#player-level-filter');
 
             window.switchPlayerTeamTab = (tab) => {
                 window.currentPlayerTeamTab = tab;
@@ -3389,80 +3675,60 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <table class="w-full border-collapse">
                             <thead>
                                 <tr class="bg-slate-50/50 text-left border-b border-slate-100">
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Futbolista</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club Convenido</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sexo</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Localidad / Club</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Posición</th>
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center font-bold">Nivel</th>
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody class="divide-y divide-slate-50">
                                 ${filtered.map(p => {
-                                    const team = teams.find(t => t.id == p.equipoid);
+                                    const playerTeam = teams.find(t => t.id == p.equipoid);
                                     let levelVal = parseInt(p.nivel) || 1;
                                     if (levelVal < 1) levelVal = 1;
                                     if (levelVal > 5) levelVal = 5;
 
                                     return `
-                                        <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all group">
+                                        <tr onclick="window.viewPlayer(${p.id})" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all group cursor-pointer">
                                             <td class="px-8 py-4 flex items-center gap-4 min-w-[280px]">
                                                 ${p.foto ? 
                                                     `<img src="${p.foto}" class="w-10 h-10 rounded-xl object-cover shadow-sm group-hover:scale-105 transition-all">` :
                                                     `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
                                                 }
                                                 <div class="flex-1">
-                                                    <input value="${p.nombre || ''}" onblur="window.updatePlayerInline(${p.id}, 'nombre', this.value.toUpperCase().trim())" 
-                                                        class="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-800 outline-none focus:bg-slate-50 focus:px-2 focus:py-1 rounded-lg transition-all">
-                                                    <input type="number" value="${p.anionacimiento || ''}" onblur="window.updatePlayerInline(${p.id}, 'anionacimiento', this.value)" 
-                                                        class="w-full bg-transparent border-none p-0 text-[9px] font-black text-slate-300 uppercase tracking-widest outline-none focus:bg-slate-50 focus:px-2 focus:py-0.5 rounded-lg transition-all mt-0.5" placeholder="AÑO">
+                                                    <span class="text-sm font-black text-slate-800 uppercase tracking-tight block">${p.nombre}</span>
+                                                    <span class="text-[9px] font-black text-slate-300 uppercase tracking-widest block mt-0.5">${p.anionacimiento || '----'}</span>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4">
-                                                <select onchange="window.updatePlayerInline(${p.id}, 'equipoid', this.value)" 
-                                                    class="bg-transparent border-none text-[11px] font-bold text-slate-500 outline-none cursor-pointer hover:text-blue-600 transition-colors p-1 rounded-lg focus:bg-slate-100">
-                                                    <option value="">LIBRE</option>
-                                                    ${teams.map(t => `<option value="${t.id}" ${p.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
-                                                </select>
+                                            <td class="px-8 py-4">
+                                                ${playerTeam ? `
+                                                    <div class="flex items-center gap-2">
+                                                        <div class="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center text-[9px] font-black uppercase border border-blue-100">${playerTeam.nombre.substring(0,2).toUpperCase()}</div>
+                                                        <span class="text-xs font-bold text-slate-600 uppercase tracking-tight">${playerTeam.nombre.split(' ||| ')[0]}</span>
+                                                    </div>
+                                                ` : `<span class="text-[10px] font-black text-amber-500 uppercase tracking-widest px-2 py-1 bg-amber-50 rounded-md border border-amber-100/50">Libre</span>`}
                                             </td>
-                                            <td class="px-6 py-4">
-                                                <select onchange="window.updatePlayerInline(${p.id}, 'equipoConvenido', this.value)" 
-                                                    class="bg-transparent border-none text-[10px] font-bold text-slate-400 outline-none cursor-pointer hover:text-blue-500 transition-colors p-1 rounded-lg focus:bg-slate-100 max-w-[150px] truncate">
-                                                    <option value="">NINGUNO</option>
-                                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${p.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
-                                                </select>
+                                            <td class="px-8 py-4">
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">${p.equipoConvenido || '---'}</span>
                                             </td>
-                                            <td class="px-6 py-4">
-                                                <select onchange="window.updatePlayerInline(${p.id}, 'sexo', this.value)" 
-                                                    class="bg-transparent border-none text-[10px] font-bold text-slate-400 uppercase outline-none cursor-pointer text-center p-1 rounded-lg focus:bg-slate-100 w-full">
-                                                    <option value="Masculino" ${p.sexo === 'Masculino' ? 'selected' : ''}>MASC</option>
-                                                    <option value="Femenino" ${p.sexo === 'Femenino' ? 'selected' : ''}>FEM</option>
-                                                </select>
+                                            <td class="px-8 py-4 text-center">
+                                                <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-slate-200">${p.posicion || '---'}</span>
                                             </td>
-                                            <td class="px-6 py-4 text-center">
-                                                <select onchange="window.updatePlayerInline(${p.id}, 'pie', this.value)" 
-                                                    class="bg-transparent border-none text-[10px] font-bold text-slate-400 uppercase outline-none cursor-pointer text-center p-1 rounded-lg focus:bg-slate-100">
-                                                    <option value="--" ${p.pie === '--' ? 'selected' : ''}>--</option>
-                                                    <option value="DIESTRO" ${p.pie === 'DIESTRO' ? 'selected' : ''}>DIESTRO</option>
-                                                    <option value="ZURDO" ${p.pie === 'ZURDO' ? 'selected' : ''}>ZURDO</option>
-                                                    <option value="AMBIDIESTRO" ${p.pie === 'AMBIDIESTRO' ? 'selected' : ''}>AMB</option>
-                                                </select>
-                                            </td>
-                                            <td class="px-6 py-4">
-                                                ${window.renderPositionSelector((p.posicion || '').split(',').map(s=>s.trim()), `inline-pos-${p.id}`, `(val) => window.updatePlayerInline(${p.id}, 'posicion', val)`)}
-                                            </td>
-                                            <td class="px-6 py-4 text-center">
-                                                <select onchange="window.updatePlayerInline(${p.id}, 'nivel', this.value)" 
-                                                    class="bg-transparent border-none text-[10px] font-bold text-amber-400 outline-none cursor-pointer text-center p-1 rounded-lg focus:bg-slate-100">
-                                                    ${[1,2,3,4,5].map(n => `<option value="${n}" ${levelVal == n ? 'selected' : ''}>${'★'.repeat(n)}</option>`).join('')}
-                                                </select>
+                                            <td class="px-8 py-4 text-center">
+                                                <div class="flex items-center justify-center gap-0.5">
+                                                    ${'★'.repeat(levelVal)}${'☆'.repeat(5-levelVal)}
+                                                </div>
                                             </td>
                                             <td class="px-8 py-4 text-right">
                                                 <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onclick="window.viewPlayer(${p.id})" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"><i data-lucide="eye" class="w-4 h-4"></i></button>
-                                                    <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="w-8 h-8 flex items-center justify-center bg-white border border-slate-100 rounded-lg text-red-300 hover:text-red-600 hover:border-red-200 transition-all shadow-sm"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                                    <button onclick="event.stopPropagation(); window.editPlayer(${p.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
+                                                        <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-400 hover:bg-red-50 transition-all">
+                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -3968,8 +4234,41 @@ document.addEventListener('DOMContentLoaded', async () => {
                     `).join('')}
                 </div>
 
-                <!-- Table Content -->
-                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                <!-- Mobile View (Cards) -->
+                <div class="md:hidden space-y-4">
+                    ${filteredReports.map(r => {
+                        const team = teams.find(t => t.id == r.equipoid);
+                        const presentes = Object.values(r.data || {}).filter(s => s === 'presente').length;
+                        const total = Object.keys(r.data || {}).length;
+                        const reportName = r.nombre || `Informe ${r.date}`;
+                        
+                        return `
+                            <div onclick="window.viewAsistenciaReport(${r.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h4 class="font-bold text-slate-800 text-sm">${reportName}</h4>
+                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">${new Date(r.date + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: 'long' })}</p>
+                                    </div>
+                                    <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight">${team ? team.nombre : 'General'}</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div>
+                                        <span class="text-xs font-black text-slate-700">${presentes}/${total} PRESENTES</span>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="event.stopPropagation(); window.deleteAsistenciaReport(${r.id})" class="p-2 text-red-300 hover:text-red-500 transition-all">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('') || `<div class="py-20 text-center"><p class="text-slate-400 text-sm font-bold uppercase tracking-widest">No hay informes</p></div>`}
+                </div>
+
+                <!-- Desktop View (Table) -->
+                <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full border-collapse">
                             <thead>
@@ -5237,7 +5536,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `).join('')}
             </div>
 
-            <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <!-- Mobile View (Cards) -->
+            <div class="md:hidden space-y-4">
+                ${filtered.map(c => `
+                    <div onclick="window.viewConvocatoria(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center"><i data-lucide="scroll-text" class="w-5 h-5"></i></div>
+                                <div>
+                                    <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                                </div>
+                            </div>
+                            <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${c.tipo}</span>
+                        </div>
+                        <div class="flex items-center justify-between mt-6">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="users" class="w-4 h-4 text-slate-300"></i>
+                                <span class="text-[11px] font-black text-slate-600 uppercase tracking-tight">${(c.playerids || []).length} JUGADORES</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('') || `<div class="py-20 text-center italic text-slate-400">No hay convocatorias</div>`}
+            </div>
+
+            <!-- Desktop View (Table) -->
+            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -6619,6 +6948,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     function renderTacticalPitchHtml(filteredPlayers, formationId = 'F11_433', orientation = 'horizontal') {
         const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
+        
+        // Force vertical on mobile for better visibility
+        if (window.innerWidth < 768) orientation = 'vertical';
         const isVert = orientation === 'vertical';
         
         const aspect = isVert ? 'aspect-[2/3]' : 'aspect-[3/2]';
@@ -7014,7 +7346,40 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
             </div>
 
-            <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
+            <!-- Mobile View (Cards) -->
+            <div class="md:hidden space-y-4">
+                ${filtered.map(c => {
+                    const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+                    const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+                    return `
+                        <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                            <div class="flex justify-between items-start mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
+                                    <div>
+                                        <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                                    </div>
+                                </div>
+                                <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest">${teamName}</span>
+                            </div>
+                            <div class="flex items-center justify-between mt-4">
+                                <div class="flex items-center gap-2 text-blue-600 font-black">
+                                    <i data-lucide="users" class="w-4 h-4"></i>
+                                    <span class="text-xs uppercase">${playerCount} Convocados</span>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                    <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') || `<div class="py-20 text-center italic text-slate-400">No hay torneos</div>`}
+            </div>
+
+            <!-- Desktop View (Table) -->
+            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -7034,7 +7399,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 
                                 const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
                                 const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-
+                                
                                 return `
                                     <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTorneoRendimiento(${c.id})">
                                         <td class="p-6">
@@ -7059,11 +7424,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </div>
                                         </td>
                                         <td class="p-6 text-right">
-                                            <div class="flex justify-end gap-2">
+                                            <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
                                                     <i data-lucide="edit-3" class="w-4 h-4"></i>
                                                 </button>
-                                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
                                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                                 </button>
                                             </div>

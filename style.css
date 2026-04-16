@@ -244,50 +244,60 @@ body.role-tecnico .nav-link[data-view="jugadores"] {
 
 /* Mobile Optimizations */
 @media (max-width: 768px) {
+    /* Better modal for mobile */
     #modal-overlay {
         padding: 0;
         align-items: flex-end;
     }
 
     #modal-container {
-        max-width: 100%;
-        width: 100%;
-        height: 92vh;
-        max-height: 92vh;
-        border-radius: 2.5rem 2.5rem 0 0;
-        margin: 0;
+        max-width: 100% !important;
+        width: 100% !important;
+        height: 94vh !important;
+        max-height: 94vh !important;
+        border-radius: 2rem 2rem 0 0 !important;
+        margin: 0 !important;
+    }
+
+    #modal-container > div {
+        padding: 1.5rem !important;
     }
 
     .stat-card {
         padding: 1.25rem !important;
     }
 
-    /* Adjust grids that might stay multi-column */
-    .grid-cols-2, .grid-cols-3, .grid-cols-4, .grid-cols-5, .grid-cols-12 {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    /* Force certain grids back to rows if needed elsewhere */
-    .mobile-grid-row {
-        display: grid !important;
-        grid-template-columns: 1fr !important;
-    }
-
-    /* Nav active state for mobile */
-    .nav-link-mobile.active {
-        color: var(--primary) !important;
-    }
-
-    .nav-link-mobile.active i {
-        color: var(--primary);
-        filter: drop-shadow(0 0 8px rgba(37, 99, 235, 0.3));
+    /* Action buttons visible on mobile (no hover) */
+    .group:hover .opacity-0,
+    .group .opacity-0 {
+        opacity: 1 !important;
     }
 
     /* Better spacing for touch */
     button, a, input, select {
-        min-height: 44px;
+        min-height: 48px;
+    }
+
+    /* Adjust specific elements */
+    /* Calendar Mobile Fixes */
+    .calendar-grid {
+        min-height: 300px;
+    }
+    
+    .calendar-day {
+        min-height: 60px !important;
+        padding: 4px !important;
+    }
+
+    .calendar-day-header {
+        font-size: 8px !important;
+        padding: 10px 0 !important;
+    }
+
+    /* Formations / Pitch on mobile */
+    .pitch-player {
+        width: 35px !important;
+        height: 35px !important;
     }
 }
 
