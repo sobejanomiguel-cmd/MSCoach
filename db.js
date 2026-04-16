@@ -161,15 +161,28 @@ class CoachDB {
     async delete(storeName, id) {
         if (supabaseClient) {
             try {
-                await supabaseClient.from(storeName).delete().eq('id', id);
+                const { error } = await supabaseClient
+                    .from(storeName)
+                    .delete()
+                    .eq('id', Number(id));
+                
+                if (error) {
+                    console.error(`Supabase delete error (${storeName}):`, error);
+                    throw error;
+                }
             } catch (err) {
                 console.error("Cloud delete failed:", err);
+                throw err;
             }
         }
         return new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readwrite');
-            storeName && tx.objectStore(storeName).delete(id);
+            const request = tx.objectStore(storeName).delete(Number(id));
             tx.oncomplete = () => resolve();
+            tx.onerror = (e) => {
+                console.error("Local delete failed:", e);
+                resolve();
+            };
         });
     }
 
@@ -200,9 +213,11 @@ class CoachDB {
     async deleteAll(storeName) {
         if (supabaseClient) {
             try {
-                await supabaseClient.from(storeName).delete().neq('id', 0);
+                const { error } = await supabaseClient.from(storeName).delete().neq('id', 0);
+                if (error) throw error;
             } catch (err) {
                 console.error("Cloud bulk delete failed:", err);
+                throw err;
             }
         }
         return new Promise((resolve) => {

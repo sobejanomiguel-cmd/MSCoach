@@ -353,15 +353,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     const viewMeta = {
-        'dashboard': { title: 'RS CENTRO', subtitle: 'Resumen general de tu actividad.', addButtonEnabled: false },
+        'dashboard': { title: 'PANEL DE CONTROL', subtitle: 'Resumen general de tu actividad.', addButtonEnabled: false },
         'calendario': { title: 'Calendario Maestro', subtitle: 'Planificación de sesiones y tareas diarias.', addButtonEnabled: false },
-        'campograma': { title: 'Campograma Táctico', subtitle: 'Análisis de profundidad por sistema y posición.', addButtonEnabled: false },
+        'campograma': { title: 'Pizarra Táctica', subtitle: 'Análisis de profundidad por sistema y posición.', addButtonEnabled: false },
         'eventos': { title: 'Agenda y Tareas', subtitle: 'Listado de tareas de gestión y recordatorios.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true },
         'tareas': { title: 'Directorio de Tareas', subtitle: 'Biblioteca de ejercicios de entrenamiento.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'sesiones': { title: 'Sesiones de Entrenamiento', subtitle: 'Planificación y calendario.', addButtonLabel: 'Nueva Sesión', addButtonEnabled: true },
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
-        'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Pasar Asistencia', addButtonEnabled: true },
+        'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Asistencia', addButtonEnabled: true },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
@@ -1066,16 +1066,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function renderCalendario(container) {
         try {
-            const currentUser = (await supabaseClient.auth.getUser()).data.user;
+            const currentUserRes = await supabaseClient.auth.getUser();
+            const currentUser = currentUserRes.data.user;
             if (!currentUser) return;
 
             const allSessions = await db.getAll('sesiones');
             const allEventos = await db.getAll('eventos');
             const allConvocatorias = await db.getAll('convocatorias');
 
-            const sessions = allSessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
-            const eventos = allEventos.filter(e => e.createdBy === currentUser.id || (e.sharedWith && e.sharedWith.includes(currentUser.id)));
-            const convocatorias = allConvocatorias.filter(c => c.createdBy === currentUser.id || (c.sharedWith && c.sharedWith.includes(currentUser.id)));
+            // Helper to check if an item is shared with the current user
+            const isSharedWithMe = (item) => {
+                if (item.sharedWith) {
+                    const sw = Array.isArray(item.sharedWith) ? item.sharedWith : [item.sharedWith.toString()];
+                    if (sw.includes(currentUser.id)) return true;
+                }
+                if (item.lugar && item.lugar.includes(' ||| ')) {
+                    try {
+                        const extra = JSON.parse(item.lugar.split(' ||| ')[1]);
+                        if (extra.sw) {
+                            const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
+                            if (sw.includes(currentUser.id)) return true;
+                        }
+                    } catch (e) {}
+                }
+                return false;
+            };
+
+            const sessions = allSessions.filter(s => s.createdBy === currentUser.id || isSharedWithMe(s));
+            const eventos = allEventos.filter(e => e.createdBy === currentUser.id || isSharedWithMe(e));
+            const convocatorias = allConvocatorias; // Convocatorias are global for technical staff
             
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -1089,7 +1108,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             const selDateStr = `${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`;
             const selectedDaySessions = sessions.filter(s => s.fecha === selDateStr);
             const selectedDayEvents = eventos.filter(e => e.fecha === selDateStr);
-            const selectedDayConvocatorias = convocatorias.filter(c => c.fecha === selDateStr);
+            const selectedDayConvocatorias = convocatorias.filter(c => {
+                const isMainDate = c.fecha === selDateStr;
+                let isExtraDate = false;
+                if (c.lugar && c.lugar.includes(' ||| ')) {
+                    try {
+                        const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
+                        isExtraDate = (extra.s2?.f === selDateStr) || (extra.s3?.f === selDateStr);
+                    } catch (e) {}
+                }
+                return isMainDate || isExtraDate;
+            });
 
             const combinedItems = [
                 ...selectedDaySessions.map(s => ({ ...s, type: 'sesion' })),
@@ -1119,16 +1148,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const isSelected = selectedCalendarDate.toDateString() === new Date(year, month, day).toDateString();
                                 const hasSessions = sessions.some(s => s.fecha === dStr);
                                 const hasEvents = eventos.some(e => e.fecha === dStr);
-                                const hasConcs = convocatorias.some(c => c.fecha === dStr);
+                                
+                                // Optimized multi-day check for Convocatorias
+                                const hasConcs = convocatorias.some(c => {
+                                    if (c.fecha === dStr) return true;
+                                    if (c.lugar && c.lugar.includes(' ||| ')) {
+                                        try {
+                                            const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
+                                            return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
+                                        } catch (e) {}
+                                    }
+                                    return false;
+                                });
+
                                 const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
                                 
                                 return `
-                                    <div onclick="window.selectDate(${year}, ${month}, ${day})" class="border-r border-b border-slate-50 p-2 min-h-[90px] cursor-pointer transition-all flex flex-col items-center justify-center relative ${isSelected ? 'bg-blue-600' : 'hover:bg-blue-50'}">
-                                        <span class="text-sm font-bold ${isSelected ? 'text-white' : isToday ? 'text-blue-600' : 'text-slate-600'}">${day}</span>
-                                        <div class="flex gap-1 mt-1">
-                                            ${hasSessions ? `<div class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-500'}"></div>` : ''}
-                                            ${hasConcs ? `<div class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}"></div>` : ''}
-                                            ${hasEvents ? `<div class="w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-500'}"></div>` : ''}
+                                    <div onclick="window.selectDate(${year}, ${month}, ${day})" class="border-r border-b border-slate-50 p-2 min-h-[90px] cursor-pointer transition-all flex flex-col items-center justify-center relative ${isSelected ? 'bg-blue-600 shadow-xl z-10 scale-105' : 'hover:bg-blue-50'}">
+                                        <span class="text-sm font-black ${isSelected ? 'text-white' : isToday ? 'text-blue-600' : 'text-slate-600'}">${day}</span>
+                                        <div class="flex gap-1.5 mt-2">
+                                            ${hasSessions ? `<div class="w-2 h-2 rounded-full ${isSelected ? 'bg-white ring-2 ring-red-400' : 'bg-red-600'}"></div>` : ''}
+                                            ${hasConcs ? `<div class="w-2 h-2 rounded-full ${isSelected ? 'bg-white ring-2 ring-amber-300' : 'bg-amber-400'}"></div>` : ''}
+                                            ${hasEvents ? `<div class="w-2 h-2 rounded-full ${isSelected ? 'bg-white ring-2 ring-emerald-400' : 'bg-emerald-500'}"></div>` : ''}
                                         </div>
                                     </div>
                                 `;
@@ -1139,45 +1180,59 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <!-- Right Sidebar -->
                     <div class="w-full lg:w-96">
                         <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm sticky top-8">
-                            <div class="mb-6 flex justify-between items-center">
-                                <div>
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Agenda para el día</p>
-                                    <h4 class="text-xl font-black text-slate-800">${selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</h4>
-                                </div>
-                                <button onclick="window.viewNewUnifiedEvent('${selDateStr}')" class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center hover:bg-blue-600 transition-all shadow-lg">
-                                    <i data-lucide="plus" class="w-5 h-5"></i>
-                                </button>
+                            <div class="mb-6">
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Agenda para el día</p>
+                                <h4 class="text-xl font-black text-slate-800">${selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}</h4>
                             </div>
                             <div class="space-y-3">
                                 ${combinedItems.length > 0 ? combinedItems.map(item => {
                                     const isSession = item.type === 'sesion';
                                     const isConv = item.type === 'convocatoria';
-                                    let bgColor = 'bg-amber-50/30 border-amber-100';
+                                    const isTorneo = isConv && item.tipo === 'Torneo';
+
+                                    let bgColor = 'bg-emerald-50/30 border-emerald-100/50';
                                     let icon = 'alarm-clock';
                                     let action = `window.viewEvento(${item.id})`;
+                                    let typeLabel = 'Evento';
+                                    let accentColor = 'text-emerald-500';
 
-                                    if (isSession) {
-                                        bgColor = 'bg-blue-50/30 border-blue-100';
+                                    if (isTorneo) {
+                                        bgColor = 'bg-slate-900 border-slate-800';
+                                        icon = 'trophy';
+                                        action = `window.viewTorneoRendimiento(${item.id})`;
+                                        typeLabel = 'Torneo';
+                                        accentColor = 'text-blue-400';
+                                    } else if (isSession) {
+                                        bgColor = 'bg-red-50/30 border-red-100/50';
                                         icon = 'calendar';
                                         action = `window.viewSession(${item.id})`;
+                                        typeLabel = 'Sesión';
+                                        accentColor = 'text-red-500';
                                     } else if (isConv) {
-                                        bgColor = 'bg-emerald-50/30 border-emerald-100';
+                                        bgColor = 'bg-amber-50/30 border-amber-100/50';
                                         icon = 'users';
                                         action = `window.viewConvocatoria(${item.id})`;
+                                        typeLabel = 'Convocatoria';
+                                        accentColor = 'text-amber-500';
                                     }
 
-                                    const tableName = item.type === 'sesion' ? 'sesiones' : (item.type === 'convocatoria' ? 'convocatorias' : 'eventos');
+                                    const textColor = isTorneo ? 'text-white' : 'text-slate-800';
+                                    const subColor = accentColor;
+                                    const tableName = isSession ? 'sesiones' : (isConv ? 'convocatorias' : 'eventos');
+
                                     return `
-                                        <div class="p-4 rounded-2xl border ${bgColor} hover:bg-white transition-all cursor-pointer group flex items-start gap-3 ${item.completada ? 'opacity-40 grayscale-[0.5]' : ''}">
-                                            <input type="checkbox" ${item.completada ? 'checked' : ''} 
-                                                onclick="event.stopPropagation(); window.toggleTaskStatus(${item.id}, '${tableName}')" 
-                                                class="mt-1 w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                                            <div onclick="${action}" class="flex-1">
+                                        <div onclick="${action}" class="p-4 rounded-2xl border ${bgColor} hover:scale-[1.02] transition-all cursor-pointer group flex items-start gap-3 ${item.completada ? 'opacity-40 grayscale-[0.5]' : ''}">
+                                            <div class="flex-1">
                                                 <div class="flex justify-between items-center mb-1">
-                                                    <span class="text-[10px] font-black text-slate-400 uppercase">${item.hora || 'Todo el día'}</span>
-                                                    <i data-lucide="${icon}" class="w-3 h-3 text-slate-300"></i>
+                                                    <span class="text-[9px] font-black ${subColor} uppercase tracking-tighter">${item.hora || 'Todo el día'} • ${typeLabel}</span>
+                                                    <i data-lucide="${icon}" class="w-3.5 h-3.5 ${subColor} opacity-50"></i>
                                                 </div>
-                                                <p class="font-bold text-slate-800 text-sm leading-tight ${item.completada ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
+                                                <p class="font-bold ${textColor} text-sm leading-tight ${item.completada ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
+                                            </div>
+                                            <div class="flex items-center self-center">
+                                                <input type="checkbox" ${item.completada ? 'checked' : ''} 
+                                                    onclick="event.stopPropagation(); window.toggleTaskStatus(${item.id}, '${tableName}')" 
+                                                    class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer">
                                             </div>
                                         </div>
                                     `;
@@ -2698,22 +2753,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.viewTeamPlayers = async (equipoid) => {
         try {
-            const teams = await db.getAll('equipos');
-            const team = teams.find(t => t.id == equipoid);
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+            if (!currentUser) return;
+
+            // Fetch all data from Supabase for real-time consistency
+            const { data: teams } = await supabaseClient.from('equipos').select('*');
+            const team = (teams || []).find(t => t.id == equipoid);
             if (!team) return;
 
-            const allPlayers = await db.getAll('jugadores');
-            const teamPlayers = allPlayers.filter(p => p.equipoid == equipoid);
+            const { data: allPlayers } = await supabaseClient.from('jugadores').select('*').eq('equipoid', equipoid);
+            const teamPlayers = allPlayers || [];
             
-            const allSessions = await db.getAll('sesiones');
-            const teamSessions = allSessions.filter(s => s.equipoid == equipoid).sort((a,b) => b.fecha.localeCompare(a.fecha));
+            const { data: allSessions } = await supabaseClient.from('sesiones').select('*').eq('equipoid', equipoid);
+            const teamSessions = (allSessions || []).sort((a,b) => b.fecha.localeCompare(a.fecha));
             
-            const allTasks = await db.getAll('tareas');
+            const { data: allTasks } = await supabaseClient.from('tareas').select('*');
             const sessionTaskIds = [...new Set(teamSessions.flatMap(s => s.taskids || []))];
-            const teamTasks = sessionTaskIds.map(tid => allTasks.find(t => t.id == tid)).filter(Boolean);
+            const teamTasks = sessionTaskIds.map(tid => (allTasks || []).find(t => t.id == tid)).filter(Boolean);
 
             const wrapper = document.createElement('div');
             wrapper.className = 'animate-in fade-in slide-in-from-right duration-500 max-w-7xl mx-auto pb-20';
+            
+            // Per-team formation state
+            if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
+            const currentFormationId = (window.formationsState.teams && window.formationsState.teams[equipoid]) || 'F11_433';
+
             wrapper.innerHTML = `
                 <!-- Header -->
                 <div class="flex justify-between items-center mb-10 px-4 pt-8">
@@ -2725,7 +2790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
                     <div class="flex gap-3">
-                         <button onclick="window.addPlayerToTeam(${equipoid})" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:scale-105 transition-all text-[11px] uppercase tracking-widest">Añadir Jugador</button>
+                         <button onclick="window.addPlayerToTeam('${equipoid}')" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:scale-105 transition-all text-[11px] uppercase tracking-widest">Añadir Jugador</button>
                     </div>
                 </div>
 
@@ -2740,7 +2805,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </h4>
                         <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                             ${teamPlayers.map(p => `
-                                <div onclick="window.viewPlayer(${p.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
+                                <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
                                     <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all">${p.dorsal || '--'}</div>
                                     <div class="flex-1 min-w-0">
                                         <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
@@ -2781,7 +2846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </h4>
                         <div class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                             ${teamSessions.map(s => `
-                                <div onclick="window.viewSession(${s.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
+                                <div onclick="window.viewSession('${s.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
                                     <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-indigo-600 shadow-sm border border-slate-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">${s.fecha.split('-')[2]}</div>
                                     <div class="flex-1 min-w-0">
                                         <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
@@ -2804,22 +2869,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-[10px] text-white/40 font-bold mt-1">Visualización de todos los jugadores según posición técnica</p>
                             </div>
                             <div class="flex items-center gap-3">
-                                <select onchange="window.updateTeamPitch(this.value, ${equipoid})" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
-                                    ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                        const current = (window.formationsState && window.formationsState.team) || 'F11_433';
-                                        return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                    }).join('')}
+                                <select onchange="window.updateTeamPitch(this.value, '${equipoid}')" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                    ${Object.entries(FORMATIONS).map(([fid, f]) => `
+                                        <option value="${fid}" ${fid === currentFormationId ? 'selected' : ''}>${f.name}</option>
+                                    `).join('')}
                                 </select>
-                                <button onclick="window.openFullScreenPitch(${equipoid}, '${(window.formationsState && window.formationsState.team) || 'F11_433'}')" class="bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                <button onclick="window.openFullScreenPitch('team', '${equipoid}', '${currentFormationId}')" class="bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                     <i data-lucide="maximize" class="w-4 h-4"></i>
                                     Versión Panorámica
                                 </button>
                             </div>
                         </div>
                         
-                        <div id="team-pitch-container" class="relative z-10 w-full overflow-x-auto min-h-[500px] flex items-center justify-center">
+                        <div id="team-pitch-container" class="relative z-10 w-full flex items-center justify-center">
                             <div class="w-full max-w-[1000px]">
-                                ${renderTacticalPitchHtml(teamPlayers, (window.formationsState && window.formationsState.team) || 'F11_433', 'horizontal')}
+                                ${renderTacticalPitchHtml(teamPlayers, currentFormationId, 'horizontal')}
                             </div>
                         </div>
                     </div>
@@ -2838,23 +2902,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.updateTeamPitch = (formationId, equipoid) => {
-        if (!window.formationsState) window.formationsState = {};
-        window.formationsState.team = formationId;
+        if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
+        window.formationsState.teams[equipoid] = formationId;
+        
+        // Persistir en localStorage
+        localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
+        
         window.viewTeamPlayers(equipoid);
     };
 
     window.openFullScreenPitch = async (type, id, formation) => {
         let players = [];
+        
+        // Resolución robusta de la formación actual
+        let currentFormation = formation || 'F11_433';
+        
+        // Si nos llega la por defecto, intentamos buscar una más específica en el estado global
+        if (!window.formationsState) {
+            const saved = localStorage.getItem('ms_coach_formation_state');
+            if (saved) window.formationsState = JSON.parse(saved);
+        }
+
+        if (currentFormation === 'F11_433' && window.formationsState) {
+            if (type === 'team' && window.formationsState.teams) currentFormation = window.formationsState.teams[id] || 'F11_433';
+            else if (type === 'torneo' && window.formationsState.torneos) currentFormation = window.formationsState.torneos[id] || 'F11_433';
+            else if (type === 'conv' && window.formationsState.torneos) currentFormation = window.formationsState.torneos[id] || 'F11_433';
+            else if (type === 'conv' && window.formationsState.convocatorias) currentFormation = window.formationsState.convocatorias[id] || 'F11_433';
+        }
+
         if (type === 'team') {
-            const allPlayers = await db.getAll('jugadores');
-            players = allPlayers.filter(p => p.equipoid == id);
+            const { data: teamPlayers } = await supabaseClient.from('jugadores').select('*').eq('equipoid', id);
+            players = teamPlayers || [];
         } else {
-            // Convocatoria or Torneo
-            const convs = await db.getAll('convocatorias');
-            const conv = convs.find(c => c.id == id);
+            // Convocatoria or Torneo - Fetch from Supabase for consistency
+            const { data: conv } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
             if (conv) {
                 const allPlayers = await db.getAll('jugadores');
-                players = allPlayers.filter(p => conv.playerids && conv.playerids.includes(p.id.toString()));
+                const pids = Array.isArray(conv.playerids) ? conv.playerids.map(x => x.toString()) : [];
+                players = allPlayers.filter(p => pids.includes(p.id.toString()));
             }
         }
         
@@ -2864,13 +2949,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="flex justify-between items-center mb-10">
                 <div>
                     <h2 class="text-white text-3xl font-black uppercase tracking-tight">Pizarra Táctica Panorámica</h2>
-                    <p class="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Vista del sistema: ${FORMATIONS[formation]?.name || formation}</p>
+                    <p class="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Vista del sistema: ${FORMATIONS[currentFormation]?.name || currentFormation}</p>
                 </div>
                 <button onclick="this.parentElement.parentElement.remove()" class="p-5 bg-white/5 text-white rounded-full hover:bg-white/20 transition-all border border-white/10"><i data-lucide="x" class="w-10 h-10"></i></button>
             </div>
-            <div class="flex-1 flex items-center justify-center">
-                <div class="w-full max-w-[1600px] transform scale-110">
-                    ${renderTacticalPitchHtml(players, formation, 'horizontal')}
+            <div class="flex-1 flex justify-center items-center overflow-hidden p-4 md:p-8">
+                <div class="w-full h-full flex items-center justify-center">
+                    <div class="w-full max-w-[1400px] h-fit max-h-full">
+                        ${renderTacticalPitchHtml(players, currentFormation, 'horizontal')}
+                    </div>
                 </div>
             </div>
         `;
@@ -3169,26 +3256,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.viewPlayer = async (id) => {
-        const players = await db.getAll('jugadores');
+        const currentUserRes = await supabaseClient.auth.getUser();
+        const currentUser = currentUserRes.data.user;
+
+        const { data: allConvs } = await (supabaseClient.from('convocatorias').select('*'));
+        const { data: allSess } = await (supabaseClient.from('sesiones').select('*'));
+        const { data: allAsistencia } = await (supabaseClient.from('asistencia').select('*'));
         const teams = await db.getAll('equipos');
+        const players = await db.getAll('jugadores');
         const player = players.find(p => p.id == id);
         if (!player) return;
 
-        // Cargar datos relacionales desde Supabase para máxima consistencia
-        const { data: convocatorias } = await supabaseClient.from('convocatorias').select('*');
-        const { data: sesiones } = await supabaseClient.from('sesiones').select('*');
-        const { data: asistencia } = await supabaseClient.from('asistencia').select('*');
+        // Helper para visibilidad (igual que en el calendario)
+        const isSharedWithMe = (item) => {
+            if (item.sharedWith) {
+                const sw = Array.isArray(item.sharedWith) ? item.sharedWith : [item.sharedWith.toString()];
+                if (sw.includes(currentUser.id)) return true;
+            }
+            if (item.lugar && item.lugar.includes(' ||| ')) {
+                try {
+                    const extra = JSON.parse(item.lugar.split(' ||| ')[1]);
+                    if (extra.sw) {
+                        const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
+                        if (sw.includes(currentUser.id)) return true;
+                    }
+                } catch (e) {}
+            }
+            return false;
+        };
 
-        // Filtrar datos específicos
-        // Normalizamos IDs para evitar fallos por tipo (string vs number)
         const pidStr = id.toString();
-        const playerConvs = (convocatorias || []).filter(c => 
-            Array.isArray(c.playerids) && c.playerids.map(x => x.toString()).includes(pidStr)
-        );
-        const playerSesiones = (sesiones || []).filter(s => 
-            Array.isArray(s.playerids) && s.playerids.map(x => x.toString()).includes(pidStr)
-        );
-        const playerAsistencias = (asistencia || []).filter(a => a.data && (a.data[pidStr] || a.data[id]));
+        
+        // Filtrar por propiedad/compartido Y por pertenencia del jugador
+        const playerConvs = allConvs.filter(c => {
+            return Array.isArray(c.playerids) && c.playerids.map(x => x.toString()).includes(pidStr);
+        });
+
+        const playerSesiones = allSess.filter(s => {
+            const isOwnerOrShared = s.createdBy === currentUser.id || isSharedWithMe(s);
+            const isParticipant = Array.isArray(s.playerids) && s.playerids.map(x => x.toString()).includes(pidStr);
+            return isOwnerOrShared && isParticipant;
+        });
+
+        const playerAsistencias = allAsistencia.filter(a => {
+            const isOwnerOrShared = a.createdBy === currentUser.id || isSharedWithMe(a);
+            const isParticipant = a.data && (a.data[pidStr] || a.data[id]);
+            return isOwnerOrShared && isParticipant;
+        });
 
         const stats = {
             asiste: playerAsistencias.filter(a => a.data[id] === 'asiste' || a.data[id] === 'presente').length,
@@ -3386,17 +3500,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </h4>
                             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                 ${(() => {
-                                    const combinedSesiones = [
-                                        ...playerSesiones.map(s => ({ ...s, isTableSession: true })),
-                                        ...playerConvs.filter(c => c.tipo === 'Sesión').map(c => ({ ...c, isTableSession: false, titulo: c.nombre }))
-                                    ].sort((a,b) => b.fecha.localeCompare(a.fecha));
+                                    const combinedSesiones = [...playerSesiones].sort((a,b) => b.fecha.localeCompare(a.fecha));
 
                                     return combinedSesiones.map(s => `
-                                        <div onclick="${s.isTableSession ? `window.viewSession(${s.id})` : `window.viewConvocatoria(${s.id})`}" class="flex items-center gap-4 p-3 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-emerald-100 group">
+                                        <div onclick="window.viewSession(${s.id})" class="flex items-center gap-4 p-3 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-emerald-100 group">
                                             <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${s.fecha.split('-')[2]}</div>
                                             <div class="min-w-0 flex-1">
                                                 <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-emerald-600 transition-colors">${s.titulo || s.nombre}</p>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(s.fecha).toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${!s.isTableSession ? '• CONV' : ''}</p>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(s.fecha).toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
                                             </div>
                                             <i data-lucide="chevron-right" class="w-3 h-3 text-slate-200 group-hover:text-emerald-400"></i>
                                         </div>
@@ -3412,7 +3523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 Historial de Convocatorias
                             </h4>
                             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                ${playerConvs.filter(c => c.tipo !== 'Torneo' && c.tipo !== 'Sesión').sort((a,b) => b.fecha.localeCompare(a.fecha)).map(c => `
+                                ${playerConvs.filter(c => c.tipo !== 'Torneo').sort((a,b) => b.fecha.localeCompare(a.fecha)).map(c => `
                                     <div onclick="window.viewConvocatoria(${c.id})" class="flex items-center gap-4 p-3 hover:bg-blue-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-blue-100 group">
                                         <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${c.fecha.split('-')[2]}</div>
                                         <div class="min-w-0 flex-1">
@@ -3520,40 +3631,127 @@ document.addEventListener('DOMContentLoaded', async () => {
         const reports = await db.getAll('asistencia');
         const teams = await db.getAll('equipos');
         
+        const filteredReports = reports.filter(r => {
+            const team = teams.find(t => t.id == r.equipoid);
+            const teamName = team ? team.nombre.toLowerCase() : '';
+            const reportName = (r.nombre || `Informe ${r.date}`).toLowerCase();
+            const searchTerm = (asistenciaFilters.search || '').toLowerCase();
+            const matchesSearch = reportName.includes(searchTerm) || teamName.includes(searchTerm);
+            const matchesTeam = asistenciaFilters.activeTeamId === 'TODOS' || r.equipoid == asistenciaFilters.activeTeamId;
+            return matchesSearch && matchesTeam;
+        }).sort((a,b) => b.date.localeCompare(a.date));
+
         container.innerHTML = `
-            <div class="space-y-4">
-                ${reports.sort((a,b) => b.date.localeCompare(a.date)).map(r => {
-                    const team = teams.find(t => t.id == r.equipoid);
-                    const presentes = Object.values(r.data).filter(s => s === 'presente').length;
-                    const total = Object.keys(r.data).length;
-                    
-                    return `
-                        <div onclick="window.viewAsistenciaReport(${r.id})" class="bg-white p-6 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-blue-200 cursor-pointer transition-all">
-                            <div class="flex items-center gap-6">
-                                <div class="w-12 h-12 bg-slate-50 rounded-xl flex flex-col items-center justify-center border text-slate-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                    <span class="text-lg font-black">${r.date.split('-')[2]}</span>
-                                </div>
-                                <div>
-                                    <p class="text-[10px] font-bold text-blue-600 uppercase mb-1">${team ? team.nombre : 'Equipo desconocido'}</p>
-                                    <h4 class="font-bold text-slate-800">${new Date(r.date).toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })}</h4>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-8">
-                                <div class="text-right">
-                                    <p class="text-xs font-bold text-slate-400 uppercase">Asistencia</p>
-                                    <p class="text-lg font-black text-slate-800">${presentes}/${total}</p>
-                                </div>
-                                <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 group-hover:text-blue-600"></i>
-                            </div>
-                        </div>
-                    `;
-                }).join('') || `<div class="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-                    <i data-lucide="check-square" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
-                    <p class="text-slate-400">No hay informes de asistencia registrados.</p>
-                </div>`}
+            <div class="space-y-8 animate-in fade-in duration-500">
+                <!-- Search and Controls -->
+                <div class="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                    <div class="relative w-full">
+                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300"></i>
+                        <input type="text" 
+                            id="asistencia-search"
+                            placeholder="Buscar por nombre o equipo..." 
+                            value="${asistenciaFilters.search}"
+                            oninput="window.updateAsistenciaSearch(this.value)"
+                            class="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50/50 transition-all font-medium text-slate-700">
+                    </div>
+                </div>
+
+                <!-- Team Tabs -->
+                <div class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
+                    <button onclick="window.setAsistenciaTeam('TODOS')" 
+                        class="px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${asistenciaFilters.activeTeamId === 'TODOS' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                        Todos los Equipos
+                    </button>
+                    ${teams.map(t => `
+                        <button onclick="window.setAsistenciaTeam('${t.id}')" 
+                            class="px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${asistenciaFilters.activeTeamId == t.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                            ${t.nombre}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <!-- Table Content -->
+                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/50">
+                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Nombre del Informe</th>
+                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Fecha</th>
+                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Equipo</th>
+                                    <th class="px-6 py-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Jugadores</th>
+                                    <th class="px-6 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-50">
+                                ${filteredReports.map(r => {
+                                    const team = teams.find(t => t.id == r.equipoid);
+                                    const presentes = Object.values(r.data || {}).filter(s => s === 'presente').length;
+                                    const total = Object.keys(r.data || {}).length;
+                                    const reportName = r.nombre || `Informe ${r.date}`;
+                                    
+                                    return `
+                                        <tr class="hover:bg-slate-50/50 transition-colors group">
+                                            <td class="px-6 py-5">
+                                                <span class="font-bold text-slate-800 text-sm">${reportName}</span>
+                                            </td>
+                                            <td class="px-6 py-5">
+                                                <span class="text-xs font-black text-slate-400 uppercase">${new Date(r.date + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                            </td>
+                                            <td class="px-6 py-5">
+                                                <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-tight">${team ? team.nombre : 'General'}</span>
+                                            </td>
+                                            <td class="px-6 py-5 text-center">
+                                                <div class="flex flex-col items-center">
+                                                    <span class="text-sm font-black text-slate-800">${presentes}/${total}</span>
+                                                    <div class="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                                                        <div class="h-full bg-emerald-500" style="width: ${(presentes/total)*100}%"></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-5 text-right">
+                                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onclick="window.viewAsistenciaReport(${r.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Editar">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.deleteAsistenciaReport(${r.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Eliminar">
+                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('') || `<tr><td colspan="5" class="py-20 text-center"><p class="text-slate-400 text-sm font-bold uppercase tracking-widest">No se encontraron informes</p></td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         `;
+        if (window.lucide) lucide.createIcons();
     }
+
+    window.updateAsistenciaSearch = (val) => {
+        asistenciaFilters.search = val;
+        renderAsistencia(contentContainer);
+    };
+
+    window.setAsistenciaTeam = (id) => {
+        asistenciaFilters.activeTeamId = id;
+        renderAsistencia(contentContainer);
+    };
+
+    window.deleteAsistenciaReport = async (id) => {
+        if (!confirm('¿Estás seguro de que quieres eliminar este informe de asistencia?')) return;
+        try {
+            const { error } = await supabaseClient.from('asistencia').delete().eq('id', id);
+            if (error) throw error;
+            window.customAlert('¡Eliminado!', 'El informe ha sido borrado correctamente.', 'success');
+            renderView('asistencia');
+        } catch (err) {
+            alert('Error al eliminar: ' + err.message);
+        }
+    };
 
     window.newAsistenciaReport = async () => {
         const wrapper = document.createElement('div');
@@ -5119,14 +5317,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
-        if (!window.formationsState) window.formationsState = {};
-        const sectionKey = type.toLowerCase();
-        window.formationsState[sectionKey] = formationId;
+        if (!window.formationsState) {
+            const saved = localStorage.getItem('ms_coach_formation_state');
+            window.formationsState = saved ? JSON.parse(saved) : { teams: {}, torneos: {}, convocatorias: {} };
+        }
         
-        // Persistir preferencia
-        const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
-        savedPrefs[sectionKey] = formationId;
-        localStorage.setItem('ms_coach_formation_prefs', JSON.stringify(savedPrefs));
+        const sectionMapping = {
+            'Torneo': 'torneos',
+            'Convocatoria': 'convocatorias'
+        };
+        const sectionKey = sectionMapping[type] || 'convocatorias';
+        
+        if (!window.formationsState[sectionKey]) window.formationsState[sectionKey] = {};
+        window.formationsState[sectionKey][id] = formationId;
+        
+        // Persistir en localStorage
+        localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
         
         if (type === 'Torneo') {
             window.viewTorneoRendimiento(id);
@@ -5441,20 +5647,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         Pizarra Táctica
                                     </h4>
                                     <div class="flex items-center gap-2">
-                                        <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Convocatoria')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                        <select onchange="window.updateModalPitch(this.value, '${conv.id}', 'Convocatoria')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
                                             ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                                const current = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+                                                const current = (window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433';
                                                 return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
                                             }).join('')}
                                         </select>
-                                        <button onclick="window.openFullScreenPitch('conv', ${conv.id}, '${(window.formationsState && window.formationsState.convocatoria) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                        <button onclick="window.openFullScreenPitch('conv', '${conv.id}', '${(window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                             <i data-lucide="maximize" class="w-4 h-4"></i>
                                             Panorámica
                                         </button>
                                     </div>
                                 </div>
                                 <div id="modal-pitch-view" class="relative animate-in fade-in duration-500">
-                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatoria) || 'F11_433', 'horizontal')}
+                                    ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433', 'horizontal')}
                                 </div>
                             </div>
                         </div>
@@ -5802,6 +6008,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
     };
 
+    let asistenciaFilters = {
+        search: '',
+        activeTeamId: 'TODOS'
+    };
+
     let campogramaFilters = {
         sistema: window.formationsState?.campograma || 'F11_433',
         equipos: [],
@@ -5883,7 +6094,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             'repeating-linear-gradient(90deg, #1a4d2e, #1a4d2e 40px, #164328 40px, #164328 80px)';
         
         return `
-            <div class="relative w-full ${aspect} bg-[#1a4d2e] rounded-[2.5rem] p-4 shadow-xl overflow-hidden border-[10px] border-[#133a22] group/pitch">
+            <div class="relative w-full mx-auto ${aspect} max-h-[70vh] md:max-h-[85vh] bg-[#1a4d2e] rounded-[2.5rem] p-4 shadow-xl overflow-hidden border-[10px] border-[#133a22] group/pitch">
                 <!-- Grass Stripes -->
                 <div class="absolute inset-0 pointer-events-none" style="background: ${bgGradient};"></div>
                 
@@ -6458,20 +6669,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                          Pizarra Táctica
                                      </h4>
                                      <div class="flex items-center gap-2">
-                                         <select onchange="window.updateModalPitch(this.value, ${conv.id}, 'Torneo')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
+                                         <select onchange="window.updateModalPitch(this.value, '${conv.id}', 'Torneo')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
                                              ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                                 const current = (window.formationsState && window.formationsState.torneo) || 'F11_433';
+                                                 const current = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
                                                  return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
                                              }).join('')}
                                          </select>
-                                         <button onclick="window.openFullScreenPitch('conv', ${conv.id}, '${(window.formationsState && window.formationsState.torneo) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                         <button onclick="window.openFullScreenPitch('torneo', '${conv.id}', '${(window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                             <i data-lucide="maximize" class="w-4 h-4"></i>
                                             Panorámica
                                          </button>
                                      </div>
                                  </div>
                                  <div id="pitch-display-area" class="relative">
-                                     ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneo) || 'F11_433', 'horizontal')}
+                                     ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433', 'horizontal')}
                                  </div>
                              </div>
                         </div>
@@ -6506,7 +6717,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             if (p) {
                 p.posicion = newPos;
                 const pitchArea = document.getElementById('pitch-display-area');
-                const currentFormation = (window.formationsState && window.formationsState.torneo) || 'F11_433';
+                const currentFormation = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
                 pitchArea.innerHTML = renderTacticalPitchHtml(convocados, currentFormation, 'horizontal');
                 if (window.lucide) lucide.createIcons();
             }
@@ -6864,13 +7075,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const baseData = Object.fromEntries(formData.entries());
 
             try {
+                const userRes = await supabaseClient.auth.getUser();
+                const currentUser = userRes.data?.user;
+                if (!currentUser) throw new Error("Usuario no autenticado");
+
                 // 1. Crear Evento
                 const evento = {
                     nombre: baseData.nombre,
                     categoria: baseData.categoria,
                     fecha: baseData.fecha,
                     hora: baseData.hora,
-                    completada: false
+                    completada: false,
+                    createdBy: currentUser.id
                 };
                 const { data: evRes, error: evErr } = await supabaseClient.from('eventos').insert(evento).select();
                 if (evErr) throw evErr;
@@ -6878,11 +7094,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 // 2. Crear Sesión si procede
                 if (sCheck.checked) {
                     const session = {
-                        titulo: baseData.nombre, // Reutilizamos el nombre
+                        titulo: baseData.nombre, 
                         fecha: baseData.fecha,
                         hora: baseData.hora,
                         equipoid: baseData.session_equipoid,
-                        taskids: baseData.session_tasks ? baseData.session_tasks.split(';').map(id => id.trim()) : []
+                        taskids: baseData.session_tasks ? baseData.session_tasks.split(';').map(id => id.trim()) : [],
+                        createdBy: currentUser.id
                     };
                     await supabaseClient.from('sesiones').insert(session);
                 }
@@ -6895,13 +7112,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         hora: baseData.hora,
                         tipo: baseData.conv_tipo,
                         equipoid: baseData.conv_equipoid,
-                        playerids: formData.getAll('conv_playerids')
+                        playerids: formData.getAll('conv_playerids'),
+                        createdBy: currentUser.id
                     };
                     await supabaseClient.from('convocatorias').insert(conv);
                 }
 
+                // Forzar actualización de IndexedDB para que se vea en el calendario sin esperar al pooler
+                if (window.syncAllData) await window.syncAllData();
+
                 window.customAlert('¡Planificado!', 'Se han creado los registros solicitados.', 'success');
                 closeModal();
+                
                 // Refresh calendar view
                 window.switchView('calendario');
             } catch (err) {
