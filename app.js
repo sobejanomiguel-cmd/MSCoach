@@ -872,11 +872,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'dashboard': await renderDashboard(wrapper); break;
             case 'calendario': await renderCalendario(wrapper); break;
             case 'campograma': await renderCampograma(wrapper); break;
-            case 'eventos': await renderEventos(wrapper); break;
-            case 'tareas': await renderTareas(wrapper); break;
-            case 'sesiones': await renderSesiones(wrapper); break;
+            case 'eventos': await window.renderEventos(wrapper); break;
+            case 'tareas': await window.renderTareas(wrapper); break;
+            case 'sesiones': await window.renderSesiones(wrapper); break;
             case 'equipos': await renderEquipos(wrapper); break;
-            case 'jugadores': await renderJugadores(wrapper); break;
+            case 'jugadores': await window.renderJugadores(wrapper); break;
             case 'asistencia': await renderAsistencia(wrapper); break;
             case 'convocatorias': await renderConvocatorias(wrapper); break;
             case 'torneos': await renderTorneos(wrapper); break;
@@ -1191,35 +1191,114 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    async function renderEventos(container) {
+    window.renderEventos = async function(container, onlyTable = false) {
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         const allEvents = await db.getAll('eventos');
-        const tasks = allEvents.filter(e => e.createdBy === currentUser.id || (e.sharedWith && e.sharedWith.includes(currentUser.id)));
+        const tasks = allEvents.filter(e => {
+            if (e.createdBy === currentUser.id) return true;
+            if (e.sharedWith) {
+                const sw = Array.isArray(e.sharedWith) ? e.sharedWith : [e.sharedWith.toString()];
+                if (sw.includes(currentUser.id)) return true;
+            }
+            return false;
+        });
         
-        container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                ${tasks.map(e => `
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:border-blue-100 transition-all group relative overflow-hidden">
-                        <div class="flex items-start gap-4">
-                            <input type="checkbox" ${e.completada ? 'checked' : ''} onclick="window.toggleTaskStatus(${e.id})" class="mt-1 w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer">
-                            <div class="flex-1 ${e.completada ? 'opacity-40 grayscale' : ''}">
-                                <div class="flex justify-between items-start mb-2">
-                                    <span class="px-2 py-1 bg-slate-50 text-slate-400 rounded text-[10px] font-black uppercase tracking-widest">${e.hora}</span>
-                                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">${e.categoria}</span>
-                                </div>
-                                <h4 class="font-bold text-slate-800 text-lg leading-tight mb-2 ${e.completada ? 'line-through' : ''}">${e.nombre}</h4>
-                                <p class="text-xs text-slate-500 mb-4">${e.fecha} ${e.lugar ? `• ${e.lugar}` : ''}</p>
-                            </div>
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-slate-50 flex justify-end gap-2">
-                            <button onclick="window.viewEvento(${e.id})" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 text-red-400 hover:text-red-600 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </div>
+        if (!window.eventFilters) window.eventFilters = { search: '' };
+
+        const filteredTasks = tasks.filter(t => {
+            const searchVal = (window.eventFilters.search || '').toLowerCase();
+            return (t.nombre || '').toLowerCase().includes(searchVal) || 
+                   (t.categoria || '').toLowerCase().includes(searchVal) ||
+                   (t.lugar || '').toLowerCase().includes(searchVal);
+        }).sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+
+        if (!onlyTable) {
+            container.innerHTML = `
+                <div class="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <div class="relative flex-1 w-full">
+                        <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" id="event-search-input" value="${window.eventFilters.search}" placeholder="Buscar en la agenda (nombre, categoría, lugar...)" 
+                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
+                            oninput="window.eventFilters.search = this.value; window.renderEventos(document.getElementById('content-container'), true)">
                     </div>
-                `).join('') || '<div class="col-span-full py-20 text-center text-slate-400 italic">No hay tareas pendientes en la agenda.</div>'}
-            </div>
-        `;
-        
+                </div>
+
+                <div id="events-list-container" class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
+                    <!-- Tabla de eventos -->
+                </div>
+            `;
+        }
+
+        const eventsContainer = onlyTable ? document.getElementById('events-list-container') : container.querySelector('#events-list-container');
+        if (eventsContainer) {
+            eventsContainer.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/50">
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Evento / Tarea</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Categoría</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha & Hora</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Lugar</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${filteredTasks.map(e => `
+                                <tr class="hover:bg-blue-50/30 transition-colors group ${e.completada ? 'bg-slate-50/10' : ''}">
+                                    <td class="px-8 py-6">
+                                        <input type="checkbox" ${e.completada ? 'checked' : ''} onclick="window.toggleTaskStatus(${e.id}, 'eventos')" 
+                                            class="w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all">
+                                    </td>
+                                    <td class="px-8 py-6">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-black text-slate-800 ${e.completada ? 'line-through opacity-40' : ''}">${e.nombre}</span>
+                                            ${e.notas ? `<span class="text-[10px] text-slate-400 mt-1 line-clamp-1">${e.notas}</span>` : ''}
+                                        </div>
+                                    </td>
+                                    <td class="px-8 py-6 text-center">
+                                        <span class="inline-flex px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                                            ${e.categoria || 'Otro'}
+                                        </span>
+                                    </td>
+                                    <td class="px-8 py-6">
+                                        <div class="flex flex-col">
+                                            <span class="text-xs font-bold text-slate-600">${e.fecha}</span>
+                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${e.hora}</span>
+                                        </div>
+                                    </td>
+                                    <td class="px-8 py-6">
+                                        <span class="text-xs font-medium text-slate-500 line-clamp-1">${e.lugar || '---'}</span>
+                                    </td>
+                                    <td class="px-8 py-6 text-right">
+                                        <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onclick="window.viewEvento(${e.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
+                                                <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                            </button>
+                                            <button onclick="event.stopPropagation(); window.deleteEvento(${e.id})" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-400 hover:bg-red-50 transition-all">
+                                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('') || `
+                                <tr>
+                                    <td colspan="6" class="px-8 py-20 text-center">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <i data-lucide="calendar-off" class="w-12 h-12 text-slate-200 mb-2"></i>
+                                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sin compromisos encontrados</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        if (window.lucide) lucide.createIcons();
     }
 
     window.viewEvento = async (id) => {
@@ -1334,37 +1413,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tasksPerPage = 12;
     let currentTaskPage = 1;
 
-    async function renderTareas(container) {
+    window.renderTareas = async function(container, onlyTable = false) {
         let tasks = await db.getAll('tareas');
         
-        container.innerHTML = `
-            <div class="mb-6 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-                <div class="flex flex-col md:flex-row gap-3">
-                    <div class="flex-1 relative">
-                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Buscar por nombre de tarea..." class="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-transparent rounded-xl focus:bg-white focus:ring-4 ring-blue-50 transition-all text-sm">
+        if (!onlyTable) {
+            container.innerHTML = `
+                <div class="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between animate-in slide-in-from-top-4 duration-500">
+                    <div class="relative flex-1 w-full">
+                        <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Filtrar biblioteca de ejercicios..." 
+                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
                     </div>
-                    <div class="grid grid-cols-2 gap-2 md:w-[360px]">
-                        <select id="task-type-filter" class="px-3 py-2.5 bg-slate-50 border-transparent rounded-xl text-[10px] font-bold text-slate-600 outline-none focus:bg-white transition-all">
+                    <div class="flex gap-3 w-full md:w-auto">
+                        <select id="task-type-filter" class="flex-1 md:w-48 px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
                             <option value="TODOS">TODOS LOS TIPOS</option>
                             ${TASK_TYPES.map(t => `<option value="${t}" ${taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select>
-                        <select id="task-cat-filter" class="px-3 py-2.5 bg-slate-50 border-transparent rounded-xl text-[10px] font-bold text-slate-600 outline-none focus:bg-white transition-all">
-                            <option value="TODAS">TODAS ETAPAS</option>
+                        <select id="task-cat-filter" class="flex-1 md:w-48 px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
+                            <option value="TODAS">TODAS LAS ETAPAS</option>
                             ${TASK_CATEGORIES.map(c => `<option value="${c}" ${taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
                         </select>
                     </div>
                 </div>
-            </div>
 
-            <div class="task-grid" id="main-task-grid"></div>
-            
-            <div id="load-more-container" class="mt-12 text-center hidden">
-                <button id="load-more-tasks-btn" class="px-8 py-4 bg-white border border-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-50 transition-all shadow-sm">
-                    Cargar más ejercicios
-                </button>
-            </div>
-        `;
+                <div id="tasks-table-container" class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
+                    <!-- Aquí se inyecta la tabla -->
+                </div>
+            `;
+        }
+
+        const tableContainer = onlyTable ? document.getElementById('tasks-table-container') : container.querySelector('#tasks-table-container');
+        if (tableContainer) {
+            const filteredTasks = tasks.filter(t => {
+                const matchesSearch = !taskFilters.search || t.name.toLowerCase().includes(taskFilters.search.toLowerCase());
+                const matchesType = taskFilters.type === 'TODOS' || t.type === taskFilters.type;
+                const matchesCat = taskFilters.categoria === 'TODAS' || t.categoria === taskFilters.categoria;
+                return matchesSearch && matchesType && matchesCat;
+            }).sort((a,b) => a.name.localeCompare(b.name));
+
+            tableContainer.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50/50">
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vista Previa</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Nombre del Ejercicio</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Etapa</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Duración</th>
+                                <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${filteredTasks.map(t => `
+                                <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTask(${t.id})">
+                                    <td class="px-8 py-4">
+                                        <div class="w-20 h-12 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
+                                            ${t.image ? `<img src="${t.image}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center"><i data-lucide="image" class="w-4 h-4 text-slate-300"></i></div>`}
+                                        </div>
+                                    </td>
+                                    <td class="px-8 py-4">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-black text-slate-800">${t.name}</span>
+                                            <span class="text-[10px] text-slate-400 line-clamp-1">${t.description || 'Sin descripción...'}</span>
+                                        </div>
+                                    </td>
+                                    <td class="px-8 py-4">
+                                        <span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-black uppercase tracking-tight">${t.type || 'FÚTBOL'}</span>
+                                    </td>
+                                    <td class="px-8 py-4 text-center">
+                                        <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">${t.categoria || '---'}</span>
+                                    </td>
+                                    <td class="px-8 py-4 text-center">
+                                        <span class="text-xs font-bold text-slate-600">${t.duration} min</span>
+                                    </td>
+                                    <td class="px-8 py-4 text-right">
+                                        <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            ${t.video ? `<button onclick="event.stopPropagation(); window.open('${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}', '_blank')" class="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-all"><i data-lucide="play-circle" class="w-5 h-5"></i></button>` : ''}
+                                            <button onclick="event.stopPropagation(); window.viewTask(${t.id})" class="p-2 text-blue-500 hover:bg-blue-100 rounded-xl transition-all"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                                            <button onclick="event.stopPropagation(); window.deleteTask(${t.id})" class="p-2 text-red-400 hover:bg-red-100 rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('') || `
+                                <tr>
+                                    <td colspan="6" class="px-8 py-20 text-center">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <i data-lucide="search-x" class="w-12 h-12 text-slate-200 mb-2"></i>
+                                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">No se encontraron tareas con estos filtros</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
 
         // Listeners para los filtros
         const searchInput = document.getElementById('task-search-input');
@@ -1375,10 +1520,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (searchInput) {
             searchInput.oninput = (e) => {
                 taskFilters.search = e.target.value;
-                currentTaskPage = 1;
                 clearTimeout(searchTimer);
                 searchTimer = setTimeout(() => {
-                    updateTaskGrid(container);
+                    window.renderTareas(container, true);
                 }, 250);
             };
         }
@@ -1386,22 +1530,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (typeFilter) {
             typeFilter.onchange = (e) => {
                 taskFilters.type = e.target.value;
-                currentTaskPage = 1;
-                window.renderView('tareas');
+                window.renderTareas(container, false);
             };
         }
 
         if (catFilter) {
             catFilter.onchange = (e) => {
                 taskFilters.categoria = e.target.value;
-                currentTaskPage = 1;
-                window.renderView('tareas');
+                window.renderTareas(container, false);
             };
         }
 
-        lucide.createIcons();
-        currentTaskPage = 1;
-        updateTaskGrid(container);
+        if (window.lucide) lucide.createIcons();
     }
 
     let isUpdatingGrid = false;
@@ -1819,7 +1959,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         }
 
-        const listContainer = document.getElementById('sessions-list-container');
+        const listContainer = onlyTable ? document.getElementById('sessions-list-container') : container.querySelector('#sessions-list-container');
         if (listContainer) {
             listContainer.innerHTML = `
                 <!-- Desktop View -->
@@ -3006,7 +3146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `;
             }
 
-            const tableContainer = document.getElementById('players-table-container');
+            const tableContainer = onlyTable ? document.getElementById('players-table-container') : container.querySelector('#players-table-container');
             const searchInput = container.querySelector('#player-search-input');
             const teamFilter = container.querySelector('#player-team-filter');
             const clubFilter = container.querySelector('#player-club-filter');
