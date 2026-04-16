@@ -5047,17 +5047,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                  <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
                                  <input name="nombre" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
                             </div>
-                            <div class="col-span-1 md:col-span-2">
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipos</label>
-                                 <div id="conv-equipos-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto p-4 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
-                                     ${teams.map(t => `
-                                         <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                             <input type="checkbox" name="equipoids" value="${t.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 team-checkbox">
-                                             <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre}</span>
-                                         </label>
-                                     `).join('')}
-                                 </div>
-                            </div>
                             
                             ${activeTab === 'Ciclo' ? `
                                 <!-- SESION 1 -->
@@ -5103,16 +5092,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                             `}
                         </div>
 
-                    <div id="player-selector-container" class="hidden space-y-4 pt-4 border-t border-slate-100">
+                    <div id="player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex items-center justify-between">
-                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Jugadores: <span id="selected-team-label" class="text-blue-600"></span></label>
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest text-blue-600">Selección de Jugadores</label>
                             <button type="button" id="conv-select-all" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Seleccionar Todos</button>
                         </div>
-                        <div class="relative">
-                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                            <input type="text" id="conv-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs outline-none focus:bg-white focus:ring-2 ring-blue-50">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="relative">
+                                <i data-lucide="users" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <select id="conv-team-filter" class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                    <option value="all">TODOS LOS EQUIPOS</option>
+                                    ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="relative">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <input type="text" id="conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
                         </div>
-                        <div id="filtered-players-list" class="max-h-64 overflow-y-auto border rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
+                        <div id="filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
                             <!-- Los jugadores se cargarán aquí -->
                         </div>
                     </div>
@@ -5143,58 +5141,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalOverlay.classList.add('active');
         lucide.createIcons();
 
-        const equipoSelect = document.getElementById('conv-equipo');
-        const playerContainer = document.getElementById('player-selector-container');
-        const playerList = document.getElementById('filtered-players-list');
-        const teamLabel = document.getElementById('selected-team-label');
+        const teamFilter = document.getElementById('conv-team-filter');
         const searchInput = document.getElementById('conv-player-search');
         const selectAllBtn = document.getElementById('conv-select-all');
+        const playerList = document.getElementById('filtered-players-list');
+        const selectedPlayerIds = new Set();
 
-        let currentFilteredPlayers = [];
+        const updatePlayers = () => {
+            const teamId = teamFilter.value;
+            const searchText = (searchInput.value || '').toLowerCase();
+            
+            let filtered = players;
+            if (teamId !== 'all') {
+                filtered = filtered.filter(p => p.equipoid?.toString() === teamId.toString());
+            }
+            if (searchText) {
+                filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
+            }
 
-        const renderFilteredList = (filterText = '') => {
-            const list = currentFilteredPlayers.filter(p => !filterText || p.nombre.toLowerCase().includes(filterText.toLowerCase()));
+            renderFilteredList(filtered);
+        };
+
+        const renderFilteredList = (list) => {
             if (list.length > 0) {
                 playerList.innerHTML = list.map(p => `
                     <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group conv-player-label">
                         <div class="flex items-center gap-3">
-                            <input type="checkbox" name="playerids" value="${p.id}" class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600">
+                            <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
                             <span class="text-sm font-bold text-slate-700 conv-player-name">${p.nombre}</span>
                         </div>
                         <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</span>
                     </label>
                 `).join('');
+
+                playerList.querySelectorAll('.player-check').forEach(chk => {
+                    chk.onchange = (e) => {
+                        if (e.target.checked) selectedPlayerIds.add(String(e.target.value));
+                        else selectedPlayerIds.delete(String(e.target.value));
+                    };
+                });
             } else {
                 playerList.innerHTML = `<p class="text-center py-6 text-slate-400 italic text-xs">No hay jugadores que coincidan.</p>`;
             }
         };
 
-        const teamCheckboxes = document.querySelectorAll('.team-checkbox');
+        teamFilter.onchange = updatePlayers;
+        searchInput.oninput = updatePlayers;
         
-        teamCheckboxes.forEach(cb => {
-            cb.onchange = () => {
-                const selectedTeamIds = Array.from(teamCheckboxes).filter(c => c.checked).map(c => c.value);
-                
-                if (selectedTeamIds.length === 0) {
-                    playerContainer.classList.add('hidden');
-                    return;
-                }
-
-                const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
-                teamLabel.textContent = selectedTeams.map(t => t.nombre).join(', ');
-                playerContainer.classList.remove('hidden');
-                
-                currentFilteredPlayers = players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()));
-                renderFilteredList();
-            };
-        });
-
-        searchInput.oninput = (e) => renderFilteredList(e.target.value);
+        updatePlayers();
         
         selectAllBtn.onclick = () => {
-            const checks = playerList.querySelectorAll('input[type="checkbox"]');
+            const checks = playerList.querySelectorAll('.player-check');
             const allChecked = Array.from(checks).every(c => c.checked);
-            checks.forEach(c => c.checked = !allChecked);
+            checks.forEach(c => {
+                c.checked = !allChecked;
+                if (c.checked) selectedPlayerIds.add(String(c.value));
+                else selectedPlayerIds.delete(String(c.value));
+            });
         };
 
         document.getElementById('new-convocatoria-form').onsubmit = async (e) => {
@@ -5248,21 +5251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="grid grid-cols-2 gap-4">
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
-                             <input name="nombre" value="${conv.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
-                        </div>
-                        <div class="col-span-2">
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipos</label>
-                             <div id="edit-conv-equipos-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto p-4 bg-slate-50 rounded-xl border border-slate-100 custom-scrollbar">
-                                 ${teams.map(t => {
-                                     const isSelected = (conv.equipoids && conv.equipoids.includes(t.id.toString())) || (conv.equipoid == t.id);
-                                     return `
-                                         <label class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                             <input type="checkbox" name="equipoids" value="${t.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 edit-team-checkbox">
-                                             <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre}</span>
-                                         </label>
-                                     `;
-                                 }).join('')}
-                             </div>
+                             <input name="nombre" value="${conv.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all" placeholder="Ej: Entrenamiento Lunes" required>
                         </div>
                         <div>
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
@@ -5280,14 +5269,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     <div id="edit-player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex items-center justify-between">
-                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Jugadores: <span id="edit-selected-team-label" class="text-blue-600"></span></label>
+                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest text-blue-600">Reclutamiento de Jugadores</label>
                             <button type="button" id="edit-conv-select-all" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Seleccionar Todos</button>
                         </div>
-                        <div class="relative">
-                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                            <input type="text" id="edit-conv-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs outline-none focus:bg-white focus:ring-2 ring-blue-50">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="relative">
+                                <i data-lucide="users" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <select id="edit-conv-team-filter" class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                    <option value="all">TODOS LOS EQUIPOS</option>
+                                    ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="relative">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <input type="text" id="edit-conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
                         </div>
-                        <div id="edit-filtered-players-list" class="max-h-64 overflow-y-auto border rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
+                        <div id="edit-filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
                             <!-- Los jugadores se cargarán aquí -->
                         </div>
                     </div>
@@ -5302,62 +5300,80 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalOverlay.classList.add('active');
         lucide.createIcons();
 
-        const equipoSelect = document.getElementById('edit-conv-equipo');
-        const playerList = document.getElementById('edit-filtered-players-list');
-        const teamLabel = document.getElementById('edit-selected-team-label');
+        const teamFilter = document.getElementById('edit-conv-team-filter');
         const searchInput = document.getElementById('edit-conv-player-search');
         const selectAllBtn = document.getElementById('edit-conv-select-all');
+        const playerList = document.getElementById('edit-filtered-players-list');
+        const selectedPlayerIds = new Set((conv.playerids || []).map(String));
 
-        let currentFilteredPlayers = [];
-        const currentPids = conv.playerids || [];
+        const updatePlayers = () => {
+            const teamId = teamFilter.value;
+            const searchText = (searchInput.value || '').toLowerCase();
+            
+            let filtered = players;
+            if (teamId !== 'all') {
+                filtered = filtered.filter(p => p.equipoid?.toString() === teamId.toString());
+            }
+            if (searchText) {
+                filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
+            }
 
-        const renderFilteredList = (filterText = '') => {
-            const list = currentFilteredPlayers.filter(p => !filterText || p.nombre.toLowerCase().includes(filterText.toLowerCase()));
+            renderFilteredList(filtered);
+        };
+
+        const renderFilteredList = (list) => {
             if (list.length > 0) {
                 playerList.innerHTML = list.map(p => `
                     <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group edit-conv-player-label">
                         <div class="flex items-center gap-3">
-                            <input type="checkbox" name="playerids" value="${p.id}" ${currentPids.includes(p.id.toString()) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600">
+                            <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
                             <span class="text-sm font-bold text-slate-700 edit-conv-player-name">${p.nombre}</span>
                         </div>
                         <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'} (${p.anionacimiento || '--'})</span>
                     </label>
                 `).join('');
+
+                // Persistence logic
+                playerList.querySelectorAll('.player-check').forEach(chk => {
+                    chk.onchange = (e) => {
+                        if (e.target.checked) selectedPlayerIds.add(String(e.target.value));
+                        else selectedPlayerIds.delete(String(e.target.value));
+                    };
+                });
             } else {
                 playerList.innerHTML = `<p class="text-center py-6 text-slate-400 italic text-xs">No hay jugadores que coincidan.</p>`;
             }
         };
 
-        const updateTeams = () => {
-            const selectedTeamIds = Array.from(document.querySelectorAll('.edit-team-checkbox')).filter(c => c.checked).map(c => c.value);
-            const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
-            teamLabel.textContent = selectedTeams.map(t => t.nombre).join(', ');
-            currentFilteredPlayers = players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()));
-            renderFilteredList();
-        };
-
-        document.querySelectorAll('.edit-team-checkbox').forEach(cb => {
-            cb.onchange = updateTeams;
-        });
-        updateTeams();
-
-        searchInput.oninput = (e) => renderFilteredList(e.target.value);
+        teamFilter.onchange = updatePlayers;
+        searchInput.oninput = updatePlayers;
+        
+        // Initial load
+        updatePlayers();
         
         selectAllBtn.onclick = () => {
-            const checks = playerList.querySelectorAll('input[type="checkbox"]');
+            const checks = playerList.querySelectorAll('.player-check');
             const allChecked = Array.from(checks).every(c => c.checked);
-            checks.forEach(c => c.checked = !allChecked);
+            checks.forEach(c => {
+                c.checked = !allChecked;
+                if (c.checked) selectedPlayerIds.add(String(c.value));
+                else selectedPlayerIds.delete(String(c.value));
+            });
         };
 
         document.getElementById('edit-convocatoria-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-            data.playerids = formData.getAll('playerids');
-            data.equipoids = formData.getAll('equipoids');
             
-            // For compatibility
-            if (data.equipoids.length > 0) data.equipoid = data.equipoids[0];
+            // Collect IDs from Set
+            data.playerids = Array.from(selectedPlayerIds);
+            
+            // Calculate teams based on selection
+            const selectedPlayersData = players.filter(p => selectedPlayerIds.has(String(p.id)));
+            const involvedTeamIds = [...new Set(selectedPlayersData.map(p => p.equipoid?.toString()).filter(id => id))];
+            data.equipoids = involvedTeamIds;
+            if (involvedTeamIds.length > 0) data.equipoid = involvedTeamIds[0];
             
             const idToUpdate = data.id;
             delete data.id;
@@ -6623,9 +6639,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
             if (error) throw error;
 
-            const players = await db.getAll('jugadores');
+            // Fetch players directly from Supabase for maximum reliability in this view
+            const { data: players } = await supabaseClient.from('jugadores').select('*');
+            const teams = await db.getAll('equipos');
             const { data: users } = await supabaseClient.from('profiles').select('*');
-            const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
+            
+            const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
             const convocados = players.filter(p => pids.includes(p.id.toString()));
             const rendimiento = conv.rendimiento || {};
             const team = (conv.equipoid && conv.equipoid !== 'null') ? await db.get('equipos', conv.equipoid) : null;
@@ -6651,7 +6670,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         <!-- Left: Evaluation Table -->
                         <div class="lg:col-span-7 space-y-6">
-                            <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm">
                                 <form id="torneo-rendimiento-form">
                                     <input type="hidden" name="convocatoriaId" value="${conv.id}">
                                     <div class="overflow-x-auto">
@@ -6697,16 +6716,32 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 }).join('')}
                                                 
                                                 <!-- Row for adding new players -->
-                                                <tr class="bg-blue-50/30">
-                                                    <td class="p-4" colspan="2">
-                                                        <div class="relative">
-                                                            <i data-lucide="user-plus" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i>
-                                                            <input type="text" id="add-player-torneo-input" placeholder="Añadir jugador..." class="w-full pl-10 pr-4 py-2 bg-white border border-blue-100 rounded-xl text-[11px] font-bold outline-none focus:ring-2 ring-blue-100">
-                                                            <div id="add-player-results" class="hidden absolute top-full left-0 right-0 bg-white border border-slate-100 shadow-2xl rounded-2xl mt-1 z-50 max-h-48 overflow-y-auto custom-scrollbar"></div>
+                                                <tr class="bg-blue-50/10">
+                                                    <td class="p-4" colspan="4">
+                                                        <div class="space-y-4">
+                                                            <div class="flex flex-col md:flex-row gap-3">
+                                                                <div class="relative w-full md:w-1/3">
+                                                                    <i data-lucide="users" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i>
+                                                                    <select id="torneo-team-add-filter" class="w-full pl-10 pr-4 py-2.5 bg-white border border-blue-100 rounded-xl text-[11px] font-black uppercase outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                                                        <option value="none">Elegir Equipo para añadir...</option>
+                                                                        ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                                                    </select>
+                                                                </div>
+                                                                <div class="relative flex-1">
+                                                                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i>
+                                                                    <input type="text" id="add-player-torneo-input" placeholder="O busca por nombre..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-blue-100 rounded-xl text-[11px] font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                                                </div>
+                                                            </div>
+                                                            <!-- Checklist Area -->
+                                                            <div id="add-player-results" class="hidden relative bg-white border border-blue-50 rounded-2xl overflow-hidden transition-all duration-300">
+                                                                <!-- Listado con checks -->
+                                                            </div>
                                                         </div>
                                                     </td>
-                                                    <td colspan="3" class="p-4 text-[10px] font-bold text-blue-400 uppercase italic">
-                                                        Selecciona un jugador para añadirlo al torneo
+                                                    <td class="p-4 bg-blue-50/20 text-center align-bottom">
+                                                        <button type="button" id="confirm-bulk-add" class="hidden w-10 h-10 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 flex items-center justify-center hover:bg-blue-700 transition-all animate-in zoom-in">
+                                                            <i data-lucide="user-plus" class="w-5 h-5"></i>
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             </tbody>
@@ -6815,24 +6850,102 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // Add player search logic
         const addInput = document.getElementById('add-player-torneo-input');
+        const teamAddFilter = document.getElementById('torneo-team-add-filter');
         const addResults = document.getElementById('add-player-results');
-        if (addInput) {
-            addInput.oninput = (e) => {
-                const term = e.target.value.toLowerCase();
-                if (term.length < 2) { addResults.classList.add('hidden'); return; }
-                
-                const notInTorneo = players.filter(p => !pids.includes(p.id.toString()) && p.nombre.toLowerCase().includes(term));
-                if (notInTorneo.length > 0) {
-                    addResults.innerHTML = notInTorneo.map(p => `
-                        <div class="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0" onclick="window.addPlayerToTorneo(${conv.id}, ${p.id})">
-                            <p class="text-xs font-black text-slate-800 uppercase">${p.nombre}</p>
-                            <p class="text-[9px] text-slate-400 font-bold uppercase">${p.equipoConvenido || 'Sin Club'} • ${p.posicion || '--'}</p>
-                        </div>
-                    `).join('');
-                    addResults.classList.remove('hidden');
-                } else {
-                    addResults.innerHTML = '<p class="p-4 text-[10px] text-slate-400 italic">No se encontraron jugadores</p>';
-                    addResults.classList.remove('hidden');
+        const confirmBtn = document.getElementById('confirm-bulk-add');
+        
+        const bulkSelection = new Set();
+
+        const updateAddResults = () => {
+            const term = (addInput.value || '').toLowerCase().trim();
+            const teamId = String(teamAddFilter.value);
+
+            if (teamId === 'none' && term.length < 2) {
+                addResults.classList.add('hidden');
+                addResults.innerHTML = '';
+                return;
+            }
+
+            if (!players) return;
+
+            // Filtrar los que NO están ya en el torneo
+            let filtered = players.filter(p => !pids.includes(String(p.id)));
+            
+            // Filtro por equipo
+            if (teamId !== 'none') {
+                filtered = filtered.filter(p => String(p.equipoid) === teamId);
+            }
+            
+            // Filtro por término
+            if (term.length >= 2) {
+                filtered = filtered.filter(p => (p.nombre || '').toLowerCase().includes(term));
+            }
+
+            addResults.classList.remove('hidden');
+
+            if (filtered.length > 0) {
+                addResults.innerHTML = `
+                    <div class="p-3 bg-slate-50 border-b border-blue-50 flex justify-between items-center">
+                        <span class="text-[9px] font-black text-blue-600 uppercase tracking-widest">Disponibles (${filtered.length})</span>
+                        <button type="button" id="add-select-all-ficha" class="text-[9px] font-black text-slate-400 uppercase hover:text-blue-600">Marcar Todos</button>
+                    </div>
+                    <div class="max-h-64 overflow-y-auto p-2 grid grid-cols-1 md:grid-cols-2 gap-2 custom-scrollbar">
+                        ${filtered.map(p => `
+                            <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-blue-50/50 hover:border-blue-400 cursor-pointer transition-all group/p">
+                                <input type="checkbox" value="${p.id}" ${bulkSelection.has(String(p.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 torneo-add-check">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-[10px] font-bold text-slate-700 truncate group-hover/p:text-blue-600 transition-colors uppercase">${p.nombre}</p>
+                                    <p class="text-[8px] text-slate-400 font-bold uppercase">${p.posicion || '--'}</p>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                `;
+
+                addResults.classList.remove('hidden');
+
+                // Toggle logic
+                addResults.querySelectorAll('.torneo-add-check').forEach(chk => {
+                    chk.onchange = (e) => {
+                        if (e.target.checked) bulkSelection.add(String(e.target.value));
+                        else bulkSelection.delete(String(e.target.value));
+                        confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
+                    };
+                });
+
+                const selectAll = addResults.querySelector('#add-select-all-ficha');
+                if (selectAll) {
+                    selectAll.onclick = () => {
+                        const checks = addResults.querySelectorAll('.torneo-add-check');
+                        const allChecked = Array.from(checks).every(c => c.checked);
+                        checks.forEach(c => {
+                            c.checked = !allChecked;
+                            if (c.checked) bulkSelection.add(String(c.value));
+                            else bulkSelection.delete(String(c.value));
+                        });
+                        confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
+                    };
+                }
+            } else {
+                addResults.innerHTML = '<div class="p-6 text-center text-[10px] text-slate-400 uppercase tracking-widest font-bold">No hay jugadores disponibles</div>';
+                addResults.classList.remove('hidden');
+            }
+            if (window.lucide) lucide.createIcons();
+        };
+
+        if (addInput) addInput.oninput = updateAddResults;
+        if (teamAddFilter) teamAddFilter.onchange = updateAddResults;
+
+        if (confirmBtn) {
+            confirmBtn.onclick = async () => {
+                if (bulkSelection.size === 0) return;
+                const newPids = [...pids, ...Array.from(bulkSelection)];
+                try {
+                    const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
+                    if (error) throw error;
+                    window.viewTorneoRendimiento(id);
+                } catch (err) {
+                    alert("Error al añadir jugadores: " + err.message);
                 }
             };
         }
