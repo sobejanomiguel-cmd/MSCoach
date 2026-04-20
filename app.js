@@ -1988,11 +1988,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tableContainer = onlyTable ? document.getElementById('tasks-table-container') : container.querySelector('#tasks-table-container');
         if (tableContainer) {
             const filteredTasks = tasks.filter(t => {
-                const matchesSearch = !taskFilters.search || (t.name || '').toLowerCase().includes(taskFilters.search.toLowerCase());
-                const matchesType = taskFilters.type === 'TODOS' || t.type === taskFilters.type;
-                const matchesCat = taskFilters.categoria === 'TODAS' || t.categoria === taskFilters.categoria;
-                const matchesObj = taskFilters.objetivo === 'TODOS' || t.objetivo === taskFilters.objetivo;
-                const matchesEsp = taskFilters.espacio === 'TODOS' || t.espacio === taskFilters.espacio;
+                const searchLower = (taskFilters.search || '').toLowerCase();
+                const matchesSearch = !searchLower || (t.name || '').toLowerCase().includes(searchLower);
+                
+                const typeVal = (t.type || '').toUpperCase();
+                const matchesType = taskFilters.type === 'TODOS' || typeVal === taskFilters.type;
+                
+                const catVal = (t.categoria || '').toUpperCase();
+                const matchesCat = taskFilters.categoria === 'TODAS' || catVal === taskFilters.categoria;
+                
+                const objVal = (t.objetivo || '').toUpperCase();
+                const matchesObj = taskFilters.objetivo === 'TODOS' || objVal === taskFilters.objetivo;
+                
+                const espVal = (t.espacio || '').toUpperCase();
+                const matchesEsp = taskFilters.espacio === 'TODOS' || espVal === taskFilters.espacio;
+                
                 return matchesSearch && matchesType && matchesCat && matchesObj && matchesEsp;
             }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
 
