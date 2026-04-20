@@ -9080,8 +9080,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         return `
                         <div data-notif-id="${item.type}_${item.id}" class="notif-swipe-container rounded-2xl">
                             <div class="notif-swipe-actions">
-                                <div class="notif-swipe-action-left items-center opacity-0 uppercase">BORRAR</div>
-                                <div class="notif-swipe-action-right items-center opacity-0 uppercase">${isSeen ? 'LEER' : 'VISTO'}</div>
+                                <div class="notif-swipe-action-left flex items-center opacity-0 gap-2">
+                                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                    <span>${isSeen ? 'POR LEER' : 'LEÍDO'}</span>
+                                </div>
+                                <div class="notif-swipe-action-right flex items-center opacity-0 gap-2">
+                                    <span>BORRAR</span>
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </div>
                             </div>
                             <div class="notif-swipe-content flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group">
                                 <div class="w-10 h-10 ${
@@ -9191,29 +9197,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 let isDragging = false;
                 const threshold = 80;
 
-                content.ontouchstart = e => {
-                    startX = e.touches[0].clientX;
+                const onStart = (e) => {
+                    startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
                     isDragging = true;
                     content.style.transition = 'none';
+                    content.style.cursor = 'grabbing';
                 };
 
-                content.ontouchmove = e => {
+                const onMove = (e) => {
                     if (!isDragging) return;
-                    const x = e.touches[0].clientX;
+                    const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
                     currentTranslate = x - startX;
                     
-                    // Limit overscroll
                     if (currentTranslate > 120) currentTranslate = 120;
                     if (currentTranslate < -120) currentTranslate = -120;
 
                     content.style.transform = `translateX(${currentTranslate}px)`;
                     
-                    // Reveal actions
-                    if (currentTranslate < -20) {
-                        actionLeft.style.opacity = Math.min(1, Math.abs(currentTranslate) / 60);
+                    if (currentTranslate > 20) {
+                        // Deslizando a la derecha -> Revela acción izquierda (Leído)
+                        actionLeft.style.opacity = Math.min(1, currentTranslate / 60);
                         actionRight.style.opacity = 0;
-                    } else if (currentTranslate > 20) {
-                        actionRight.style.opacity = Math.min(1, currentTranslate / 60);
+                    } else if (currentTranslate < -20) {
+                        // Deslizando a la izquierda -> Revela acción derecha (Borrar)
+                        actionRight.style.opacity = Math.min(1, Math.abs(currentTranslate) / 60);
                         actionLeft.style.opacity = 0;
                     } else {
                         actionLeft.style.opacity = 0;
@@ -9221,26 +9228,34 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     }
                 };
 
-                content.ontouchend = () => {
+                const onEnd = () => {
                     if (!isDragging) return;
                     isDragging = false;
                     content.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                    content.style.cursor = 'pointer';
                     
-                    if (currentTranslate < -threshold) {
-                        // Swipe Left: Delete
-                        content.style.transform = 'translateX(-100%)';
-                        setTimeout(() => window.dismissIndividualNotif(fullId), 200);
-                    } else if (currentTranslate > threshold) {
-                        // Swipe Right: Read/Unread
+                    if (currentTranslate > threshold) {
+                        // Swipe Right: Mark Read
                         content.style.transform = 'translateX(0px)';
                         const isSeen = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]').includes(fullId);
                         window.toggleNotifSeen(fullId, isSeen);
+                    } else if (currentTranslate < -threshold) {
+                        // Swipe Left: Delete
+                        content.style.transform = 'translateX(-100%)';
+                        setTimeout(() => window.dismissIndividualNotif(fullId), 200);
                     } else {
-                        // Reset
                         content.style.transform = 'translateX(0px)';
                     }
                     currentTranslate = 0;
                 };
+
+                content.addEventListener('touchstart', onStart, { passive: true });
+                content.addEventListener('touchmove', onMove, { passive: true });
+                content.addEventListener('touchend', onEnd);
+                
+                content.addEventListener('mousedown', onStart);
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onEnd);
             });
         };
 
