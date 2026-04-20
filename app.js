@@ -8992,13 +8992,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     const isMine = item.createdBy === currentUser.id;
                     const isSharedWithMe = item.sharedWith && item.sharedWith.includes(currentUser.id);
                     const notSeen = !seenNotifs.includes(`${item.type}_${item.id}`);
+                    const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
+                    const isDismissed = dismissedNotifs.includes(`${item.type}_${item.id}`);
                     
                     // Mostrar si:
                     // 1. Es para hoy o mañana (mío o compartido)
                     // 2. Es ALGO NUEVO compartido conmigo (de cualquier fecha futura)
+                    // Y no ha sido descartada (borrada)
                     const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
                     
-                    return (isTodayOrTomorrow || isUpcomingShared) && !item.completada;
+                    return (isTodayOrTomorrow || isUpcomingShared) && !item.completada && !isDismissed;
                 })
                  .sort((a, b) => {
                      // Prioridad: Hoy > Mañana > Futuros Compartidos
@@ -9032,17 +9035,19 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         if (isShared && !isSeen) dateLabel = "¡NUEVO COMPARTIDO!";
 
                         return `
-                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative" onclick="window.switchView('${item.view}')">
-                            ${!isSeen ? '<div class="absolute right-3 top-3 w-2 h-2 bg-blue-500 rounded-full"></div>' : ''}
+                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative">
+                            <div onclick="event.stopPropagation(); window.toggleNotifSeen('${item.type}_${item.id}', ${isSeen})" class="absolute right-3 top-3 p-1.5 hover:bg-white rounded-lg transition-all group-hover:block ${isSeen ? 'text-slate-200 hover:text-blue-500' : 'text-blue-500'}">
+                                <i data-lucide="${isSeen ? 'mail' : 'mail-open'}" class="w-3 h-3"></i>
+                            </div>
                             <div class="w-10 h-10 ${
                                 item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 
                                 item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
                                 item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
                                 'bg-indigo-50 text-indigo-600'
-                            } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white">
+                            } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white" onclick="window.switchView('${item.view}')">
                                 <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                             </div>
-                            <div class="flex-1 min-w-0">
+                            <div class="flex-1 min-w-0" onclick="window.switchView('${item.view}')">
                                 <div class="flex justify-between items-start mb-0.5">
                                     <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today || (isShared && !isSeen) ? 'text-blue-500' : 'text-slate-400'}">${dateLabel} · ${item.hora || '--:--'}</span>
                                 </div>
@@ -9085,10 +9090,39 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
-                notifPanel.classList.add('hidden');
-                window.refreshNotifications(); // Refresh to update seen dots
+                window.refreshNotifications();
             };
         }
+
+        const dismissNotifsBtn = document.getElementById('dismiss-notifs');
+        if (dismissNotifsBtn) {
+            dismissNotifsBtn.onclick = () => {
+                const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
+                const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
+                const updatedDismissed = [...new Set([...dismissedNotifs, ...currentIds])];
+                localStorage.setItem('ms_coach_dismissed_notifs', JSON.stringify(updatedDismissed));
+                
+                notifBadge.classList.add('hidden');
+                if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
+                if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
+                notifPanel.classList.add('hidden');
+                window.refreshNotifications();
+            };
+        }
+
+        // Marcar una notificación individual como leída/no leída
+        window.toggleNotifSeen = (fullId, currentIsSeen) => {
+            let seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+            if (currentIsSeen) {
+                // Mark as UNREAD: remove from seen
+                seenNotifs = seenNotifs.filter(id => id !== fullId);
+            } else {
+                // Mark as READ: add to seen
+                if (!seenNotifs.includes(fullId)) seenNotifs.push(fullId);
+            }
+            localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(seenNotifs));
+            window.refreshNotifications();
+        };
 
         // Trigger check at start
         await window.refreshNotifications();
