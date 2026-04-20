@@ -8986,9 +8986,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         view: c.tipo === 'Torneo' ? 'torneos' : 'convocatorias'
                     }))
                 ];
-
                 const agendaItems = allItems.filter(item => {
-                    const isTodayOrTomorrow = (item.fecha === today || item.fecha === tomorrowStr);
+                    const now = new Date();
+                    const itemDateTime = new Date(`${item.fecha}T${item.hora || '00:00'}`);
+                    
+                    const isTime = itemDateTime <= now;
                     const isMine = item.createdBy === currentUser.id;
                     const isSharedWithMe = item.sharedWith && item.sharedWith.includes(currentUser.id);
                     const notSeen = !seenNotifs.includes(`${item.type}_${item.id}`);
@@ -8996,18 +8998,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     const isDismissed = dismissedNotifs.includes(`${item.type}_${item.id}`);
                     
                     // Mostrar si:
-                    // 1. Es para hoy o mañana (mío o compartido)
-                    // 2. Es ALGO NUEVO compartido conmigo (de cualquier fecha futura)
-                    // Y no ha sido descartada (borrada)
+                    // 1. Ya ha llegado su hora (pasado o presente)
+                    // 2. Es ALGO NUEVO compartido conmigo (de cualquier fecha futura) -> esto lo mantenemos para avisar de novedades
+                    // Y no ha sido descartada (borrada) ni completada
                     const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
                     
-                    return (isTodayOrTomorrow || isUpcomingShared) && !item.completada && !isDismissed;
-                })
-                 .sort((a, b) => {
-                     // Prioridad: Hoy > Mañana > Futuros Compartidos
-                     if (a.fecha === b.fecha) return (a.hora || '00:00').localeCompare(b.hora || '00:00');
-                     return a.fecha.localeCompare(b.fecha);
-                 });
+                    return (isTime || isUpcomingShared) && !item.completada && !isDismissed;
+                }).sort((a, b) => {
+                    if (a.fecha === b.fecha) return (a.hora || '00:00').localeCompare(b.hora || '00:00');
+                    return a.fecha.localeCompare(b.fecha);
+                });
 
                 if (agendaItems.length > 0) {
                     const hasUnseen = agendaItems.some(item => !seenNotifs.includes(`${item.type}_${item.id}`));
@@ -9127,8 +9127,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         // Trigger check at start
         await window.refreshNotifications();
         
-        // Refresh every 5 minutes
-        setInterval(window.refreshNotifications, 5 * 60 * 1000);
+        // Refresh every minute to check time-based notifications
+        setInterval(window.refreshNotifications, 60 * 1000);
     };
 
     // === EMAIL NOTIFICATIONS ===
