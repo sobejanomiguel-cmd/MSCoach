@@ -7855,6 +7855,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     // --- SECCIÓN DE TORNEOS ---
     let torneoSearchTerm = '';
     let currentTorneoTeamId = 'all';
+    let currentTorneoStatusTab = 'upcoming'; // 'upcoming' or 'finished'
 
     window.updateTorneoSearch = (val) => {
         torneoSearchTerm = val;
@@ -7863,6 +7864,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.switchTorneoTeamTab = (tid) => {
         currentTorneoTeamId = tid;
+        window.renderView('torneos');
+    };
+
+    window.switchTorneoStatusTab = (st) => {
+        currentTorneoStatusTab = st;
         window.renderView('torneos');
     };
 
@@ -7906,6 +7912,97 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             return matchesTeam && matchesSearch;
         });
 
+        const today = new Date().toISOString().split('T')[0];
+        const showStatusTabs = !torneoSearchTerm;
+
+        // Determine segments based on status tab
+        let displaySections = [];
+        if (showStatusTabs) {
+            const upcoming = filtered.filter(c => c.fecha >= today);
+            const finished = filtered.filter(c => c.fecha < today);
+            
+            if (currentTorneoStatusTab === 'upcoming') {
+                displaySections = [{ title: 'Próximos Torneos y Citas', items: upcoming }];
+            } else {
+                displaySections = [{ title: 'Torneos Finalizados', items: finished }];
+            }
+        } else {
+            displaySections = [{ title: '', items: filtered }];
+        }
+
+        // Helper for Mobile Card
+        const renderTorneoCard = (c) => {
+            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+            return `
+                <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                            </div>
+                        </div>
+                        <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest">${teamName}</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-4">
+                        <div class="flex items-center gap-2 text-blue-600 font-black">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            <span class="text-xs uppercase">${playerCount} Convocados</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        // Helper for Desktop Row
+        const renderTorneoRow = (c) => {
+            let displayLugar = c.lugar || '--';
+            if (displayLugar.includes(' ||| ')) displayLugar = displayLugar.split(' ||| ')[0];
+            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+            return `
+                <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTorneoRendimiento(${c.id})">
+                    <td class="p-4 md:p-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
+                            <p class="text-xs md:text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                        </div>
+                    </td>
+                    <td class="p-4 md:p-6">
+                        <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
+                    </td>
+                    <td class="p-4 md:p-6">
+                        <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest">${teamName}</span>
+                    </td>
+                    <td class="p-4 md:p-6">
+                        <p class="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase truncate max-w-[80px] md:max-w-[150px]">${displayLugar}</p>
+                    </td>
+                    <td class="p-4 md:p-6 text-center">
+                        <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl border border-blue-100/50">
+                            <i data-lucide="users" class="w-3.5 h-3.5 md:w-4 h-4"></i>
+                            <span class="text-xs md:text-sm font-black tracking-tight">${playerCount}</span>
+                        </div>
+                    </td>
+                    <td class="p-4 md:p-6 text-right">
+                        <div class="flex justify-end gap-1 md:gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5 md:w-4 h-4"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5 md:w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        };
+
         const teamsWithTorneos = teams.filter(t => 
             convs.some(c => {
                 const extra = safeGetExtra(c.lugar);
@@ -7946,99 +8043,73 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
             </div>
 
+            ${showStatusTabs ? `
+                <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-full md:w-fit mb-8 shadow-inner">
+                    <button onclick="window.switchTorneoStatusTab('upcoming')" class="flex-1 md:flex-none px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentTorneoStatusTab === 'upcoming' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                        Próximas Citas
+                    </button>
+                    <button onclick="window.switchTorneoStatusTab('finished')" class="flex-1 md:flex-none px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentTorneoStatusTab === 'finished' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                        Torneos Jugados
+                    </button>
+                </div>
+            ` : ''}
+
             <!-- Mobile View (Cards) -->
-            <div class="md:hidden space-y-4">
-                ${filtered.map(c => {
-                    const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
-                    const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-                    return `
-                        <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
-                            <div class="flex justify-between items-start mb-4">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
-                                    <div>
-                                        <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
-                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
-                                    </div>
-                                </div>
-                                <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest">${teamName}</span>
-                            </div>
-                            <div class="flex items-center justify-between mt-4">
-                                <div class="flex items-center gap-2 text-blue-600 font-black">
-                                    <i data-lucide="users" class="w-4 h-4"></i>
-                                    <span class="text-xs uppercase">${playerCount} Convocados</span>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                    <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                </div>
-                            </div>
+            <div class="md:hidden space-y-10">
+                ${displaySections.map(sec => `
+                    ${sec.title ? `
+                        <div class="px-2 pt-6 pb-2 border-b border-slate-100 mb-2">
+                            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">${sec.title}</h3>
                         </div>
-                    `;
-                }).join('') || `<div class="py-20 text-center italic text-slate-400">No hay torneos</div>`}
+                    ` : ''}
+                    <div class="space-y-4">
+                        ${sec.items.map(c => renderTorneoCard(c)).join('') || `
+                            <div class="py-10 text-center italic text-slate-300 text-xs">No hay torneos en esta sección</div>
+                        `}
+                    </div>
+                `).join('')}
+                ${filtered.length === 0 ? `<div class="py-20 text-center italic text-slate-400">No hay torneos registrados</div>` : ''}
             </div>
 
             <!-- Desktop View (Table) -->
-            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-slate-50 border-b border-slate-100">
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Torneo / Evento</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Convocados</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${filtered.map(c => {
-                                let displayLugar = c.lugar || '--';
-                                if (displayLugar.includes(' ||| ')) displayLugar = displayLugar.split(' ||| ')[0];
-                                
-                                const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
-                                const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-                                
-                                return `
-                                    <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTorneoRendimiento(${c.id})">
-                                        <td class="p-6">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1)}</div>
-                                                <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                                            </div>
-                                        </td>
-                                        <td class="p-6">
-                                            <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
-                                        </td>
-                                        <td class="p-6">
-                                            <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamName}</span>
-                                        </td>
-                                        <td class="p-6">
-                                            <p class="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[150px]">${displayLugar}</p>
-                                        </td>
-                                        <td class="p-6 text-center">
-                                            <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-4 py-2 rounded-2xl border border-blue-100/50 shadow-sm transition-all hover:bg-blue-100/50">
-                                                <i data-lucide="users" class="w-4 h-4"></i>
-                                                <span class="text-sm font-black tracking-tight">${playerCount}</span>
-                                            </div>
-                                        </td>
-                                        <td class="p-6 text-right">
-                                            <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
-                                                    <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                </button>
-                                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('') || `<tr><td colspan="6" class="p-20 text-center text-slate-300 italic">No se han encontrado torneos.</td></tr>`}
-                        </tbody>
-                    </table>
-                </div>
+            <div class="hidden md:block space-y-12">
+                ${displaySections.map(sec => `
+                    <div class="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                        ${sec.title ? `
+                            <div class="flex items-center gap-4 mb-6 px-4">
+                                <h3 class="text-[11px] font-black text-slate-800 uppercase tracking-[0.3em]">${sec.title}</h3>
+                                <div class="h-px flex-1 bg-slate-100"></div>
+                                <span class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">${sec.items.length}</span>
+                            </div>
+                        ` : ''}
+                        <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50 border-b border-slate-100">
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Torneo / Evento</th>
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha</th>
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Convocados</th>
+                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-50">
+                                        ${sec.items.map(c => renderTorneoRow(c)).join('') || `
+                                            <tr><td colspan="6" class="p-12 text-center text-slate-300 italic text-xs">No hay torneos en esta sección.</td></tr>
+                                        `}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+                ${filtered.length === 0 ? `
+                    <div class="bg-white rounded-[2.5rem] border border-slate-100 p-20 text-center italic text-slate-300">
+                        No se han encontrado torneos registrados.
+                    </div>
+                ` : ''}
             </div>
             <div class="mt-8 flex justify-between items-center px-4">
                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizado con Supabase · ${filtered.length} torneos listados</p>
