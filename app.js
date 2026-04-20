@@ -9044,10 +9044,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
                     const isDismissed = dismissedNotifs.includes(`${item.type}_${item.id}`);
                     
-                    // Mostrar si:
-                    // 1. Ya ha llegado su hora (pasado o presente)
-                    // 2. Es ALGO NUEVO compartido conmigo (de cualquier fecha futura) -> esto lo mantenemos para avisar de novedades
-                    // Y no ha sido descartada (borrada) ni completada
                     const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
                     
                     return (isTime || isUpcomingShared) && !item.completada && !isDismissed;
@@ -9079,32 +9075,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         const isShared = item.sharedWith && item.sharedWith.includes(currentUser.id) && item.createdBy !== currentUser.id;
                         
                         let dateLabel = item.fecha === today ? 'Hoy' : item.fecha === tomorrowStr ? 'Mañana' : item.fecha;
-                        if (isShared && !isSeen) dateLabel = "¡NUEVO COMPARTIDO!";
+                        if (isShared && !isSeen) dateLabel = "¡NUEVO!";
 
                         return `
-                        <div data-notif-id="${item.type}_${item.id}" class="flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group relative">
-                            <div onclick="event.stopPropagation(); window.toggleNotifSeen('${item.type}_${item.id}', ${isSeen})" class="absolute right-3 top-3 p-1.5 hover:bg-white rounded-lg transition-all group-hover:block ${isSeen ? 'text-slate-200 hover:text-blue-500' : 'text-blue-500'}">
-                                <i data-lucide="${isSeen ? 'mail' : 'mail-open'}" class="w-3 h-3"></i>
+                        <div data-notif-id="${item.type}_${item.id}" class="notif-swipe-container rounded-2xl">
+                            <div class="notif-swipe-actions">
+                                <div class="notif-swipe-action-left items-center opacity-0 uppercase">BORRAR</div>
+                                <div class="notif-swipe-action-right items-center opacity-0 uppercase">${isSeen ? 'LEER' : 'VISTO'}</div>
                             </div>
-                            <div class="w-10 h-10 ${
-                                item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 
-                                item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
-                                item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
-                                'bg-indigo-50 text-indigo-600'
-                            } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white" onclick="window.switchView('${item.view}')">
-                                <i data-lucide="${item.icon}" class="w-4 h-4"></i>
-                            </div>
-                            <div class="flex-1 min-w-0" onclick="window.switchView('${item.view}')">
-                                <div class="flex justify-between items-start mb-0.5">
-                                    <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today || (isShared && !isSeen) ? 'text-blue-500' : 'text-slate-400'}">${dateLabel} · ${item.hora || '--:--'}</span>
+                            <div class="notif-swipe-content flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group">
+                                <div class="w-10 h-10 ${
+                                    item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 
+                                    item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
+                                    item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
+                                    'bg-indigo-50 text-indigo-600'
+                                } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white" onclick="window.switchView('${item.view}')">
+                                    <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                                 </div>
-                                <h5 class="text-[11px] font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors">${item.nombre || 'Sin título'}</h5>
-                                <p class="text-[9px] text-slate-500 truncate">${isShared ? 'Compartido por Staff' : (item.lugar || item.equiponombre || 'Campo Principal')}</p>
+                                <div class="flex-1 min-w-0" onclick="window.switchView('${item.view}')">
+                                    <div class="flex justify-between items-start mb-0.5">
+                                        <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today || (isShared && !isSeen) ? 'text-blue-500' : 'text-slate-400'}">${dateLabel} · ${item.hora || '--:--'}</span>
+                                    </div>
+                                    <h5 class="text-[11px] font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase">${item.nombre || 'Sin título'}</h5>
+                                    <p class="text-[9px] text-slate-500 truncate lowercase italic">${isShared ? 'Compartido por Staff' : (item.lugar || item.equiponombre || 'Campo Principal')}</p>
+                                </div>
                             </div>
                         </div>
-                    `;
+                        `;
                     }).join('');
                     if (window.lucide) lucide.createIcons();
+                    window.initNotifSwiping();
                 } else {
                     notifList.innerHTML = `
                         <div class="py-12 text-center text-slate-300">
@@ -9112,7 +9112,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <i data-lucide="calendar-check" class="w-8 h-8 opacity-20 text-slate-400"></i>
                             </div>
                             <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">Todo al día</p>
-                            <p class="text-[9px] lowercase italic mt-1 text-slate-400/60">No hay planes para hoy ni mañana</p>
                         </div>
                     `;
                     notifCount.textContent = '0 nuevas';
@@ -9169,6 +9168,80 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             }
             localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(seenNotifs));
             window.refreshNotifications();
+        };
+        // Descartar notificación individual (Borrar)
+        window.dismissIndividualNotif = (fullId) => {
+            const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
+            if (!dismissedNotifs.includes(fullId)) dismissedNotifs.push(fullId);
+            localStorage.setItem('ms_coach_dismissed_notifs', JSON.stringify(dismissedNotifs));
+            window.refreshNotifications();
+        };
+
+        // Swipe Functionality Logic
+        window.initNotifSwiping = () => {
+            const containers = document.querySelectorAll('.notif-swipe-container');
+            containers.forEach(container => {
+                const content = container.querySelector('.notif-swipe-content');
+                const actionLeft = container.querySelector('.notif-swipe-action-left');
+                const actionRight = container.querySelector('.notif-swipe-action-right');
+                const fullId = container.dataset.notifId;
+                
+                let startX = 0;
+                let currentTranslate = 0;
+                let isDragging = false;
+                const threshold = 80;
+
+                content.ontouchstart = e => {
+                    startX = e.touches[0].clientX;
+                    isDragging = true;
+                    content.style.transition = 'none';
+                };
+
+                content.ontouchmove = e => {
+                    if (!isDragging) return;
+                    const x = e.touches[0].clientX;
+                    currentTranslate = x - startX;
+                    
+                    // Limit overscroll
+                    if (currentTranslate > 120) currentTranslate = 120;
+                    if (currentTranslate < -120) currentTranslate = -120;
+
+                    content.style.transform = `translateX(${currentTranslate}px)`;
+                    
+                    // Reveal actions
+                    if (currentTranslate < -20) {
+                        actionLeft.style.opacity = Math.min(1, Math.abs(currentTranslate) / 60);
+                        actionRight.style.opacity = 0;
+                    } else if (currentTranslate > 20) {
+                        actionRight.style.opacity = Math.min(1, currentTranslate / 60);
+                        actionLeft.style.opacity = 0;
+                    } else {
+                        actionLeft.style.opacity = 0;
+                        actionRight.style.opacity = 0;
+                    }
+                };
+
+                content.ontouchend = () => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    content.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                    
+                    if (currentTranslate < -threshold) {
+                        // Swipe Left: Delete
+                        content.style.transform = 'translateX(-100%)';
+                        setTimeout(() => window.dismissIndividualNotif(fullId), 200);
+                    } else if (currentTranslate > threshold) {
+                        // Swipe Right: Read/Unread
+                        content.style.transform = 'translateX(0px)';
+                        const isSeen = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]').includes(fullId);
+                        window.toggleNotifSeen(fullId, isSeen);
+                    } else {
+                        // Reset
+                        content.style.transform = 'translateX(0px)';
+                    }
+                    currentTranslate = 0;
+                };
+            });
         };
 
         // Trigger check at start
