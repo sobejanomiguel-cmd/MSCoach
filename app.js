@@ -895,7 +895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tasks = allTasks; // Tareas are always global (library)
         const sessions = filterByVisibility(allSessions);
         const convocatorias = filterByVisibility(allConvocatorias);
-        const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
+        const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
         
         // Calculate dynamic attendance for each team
         teams.forEach(t => {
@@ -6171,13 +6171,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const filtered = convs.filter(c => {
             const matchesTab = c.tipo === currentConvocatoriaTab;
-            
-            // Filter by visibility mode and sharedWith if Convenido
-            if (!isGlobal) {
-                const sw = c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : [];
-                const isShared = sw.includes(currentUser.id);
-                if (c.createdBy !== currentUser.id && !isShared) return false;
-            }
 
             const matchesTeam = currentConvocatoriaTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
@@ -7999,13 +7992,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const filtered = convs.filter(c => {
             const extra = safeGetExtra(c.lugar);
-
-            // Filter by visibility mode and sharedWith if Convenido
-            if (!isGlobal) {
-                const sw = extra.sw || (c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : []);
-                const isShared = sw.includes(currentUser.id);
-                if (c.createdBy !== currentUser.id && !isShared) return false;
-            }
 
             const matchesTeam = currentTorneoTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
