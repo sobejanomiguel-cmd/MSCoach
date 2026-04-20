@@ -73,28 +73,38 @@ class CoachDB {
 
 
     async getAll(storeName) {
-        if (supabaseClient) {
-            try {
-                const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
-                if (!error && data) {
-                    // Sincronizamos SIEMPRE que la respuesta sea exitosa (incluso si viene vacío [])
-                    await this.syncLocal(storeName, data);
-                    return data;
+        // Ejecutamos la sincronización en segundo plano sin esperar a que termine para no bloquear la UI
+        const syncPromise = (async () => {
+            if (supabaseClient) {
+                try {
+                    const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
+                    if (!error && data) {
+                        await this.syncLocal(storeName, data);
+                        return data;
+                    }
+                } catch (err) {
+                    console.warn(`Background sync failed for ${storeName}`);
                 }
-                if (error) {
-                    console.error(`Supabase error (${storeName}):`, error);
-                }
-            } catch (err) {
-                console.warn(`Supabase offline for ${storeName}, using local cache.`);
             }
-        }
+            return null;
+        })();
 
-        return new Promise((resolve) => {
+        // Devolvemos IMMEDIATAMENTE lo que tengamos en Local para una carga instantánea
+        const localData = await new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
             const request = store.getAll();
             request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve([]);
         });
+
+        // Si no hay datos locales (primera vez), entonces sí esperamos a la nube
+        if (localData.length === 0 && supabaseClient) {
+            const cloudData = await syncPromise;
+            return cloudData || [];
+        }
+
+        return localData;
     }
 
     async syncLocal(storeName, remoteData) {

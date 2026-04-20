@@ -6155,7 +6155,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.renderView('convocatorias');
     };
 
-    async function renderConvocatorias(container) {
+    window.renderConvocatorias = async function(container) {
         const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false }).order('hora', { ascending: false });
         if (error) {
             container.innerHTML = `<p class="p-10 text-red-500">Error: ${error.message}</p>`;
@@ -6737,6 +6737,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', idToUpdate);
                 if (error) throw error;
+
+                // SYNC ASISTENCIA
+                try {
+                    const allAsist = await db.getAll('asistencia');
+                    const syncTeamIds = Array.isArray(extra.eids) ? extra.eids.map(String) : [String(data.equipoid)];
+                    const reports = allAsist.filter(a => a.fecha === data.fecha && syncTeamIds.includes(String(a.equipoid)));
+                    for (const r of reports) {
+                        let changed = false;
+                        const newPids = data.playerids.map(String);
+                        const updatedPls = { ...r.players };
+                        for (const pid in updatedPls) {
+                            if (!newPids.includes(String(pid))) {
+                                delete updatedPls[pid];
+                                changed = true;
+                            }
+                        }
+                        if (changed) await db.update('asistencia', { ...r, players: updatedPls });
+                    }
+                } catch (e) { console.warn("Asistencia sync failed:", e); }
                 
                 window.customAlert('¡Actualizado!', 'Los cambios se han guardado correctamente.', 'success');
                 closeModal();
@@ -6834,8 +6853,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const currentView = document.querySelector('[data-view].active')?.getAttribute('id');
             const container = document.getElementById('main-content');
             if (container && (currentView === 'convocatorias' || currentView === 'torneos')) {
-                 if (currentView === 'convocatorias') window.renderConvocatorias(container.firstChild);
-                 else window.renderTorneosRendimiento(container.firstChild);
+                 if (currentView === 'convocatorias') window.renderConvocatorias(container);
+                 else window.renderTorneos(container);
             }
         } catch (err) {
             alert("Error al guardar: " + err.message);
@@ -7250,7 +7269,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         newPids.push(pid);
                         const posSel = label.querySelector('.mgmt-player-pos');
                         if (posSel && posSel.value) {
-                            customPositions[pid] = posSel.value;
+                            const pObj = players.find(p => p.id == pid);
+                            // Solo guardamos si es diferente a la base para permitir herencia
+                            if (!pObj || pObj.posicion !== posSel.value) {
+                                customPositions[pid] = posSel.value;
+                            }
                         }
                     }
                 });
@@ -7270,6 +7293,29 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         playerids: newPids,
                         lugar: updatedLugar
                     });
+
+                    // SYNC ASISTENCIA
+                    try {
+                        const allAsist = await db.getAll('asistencia');
+                        let currentEids = [];
+                        if (updatedLugar.includes(" ||| ")) {
+                            try { const ex = JSON.parse(updatedLugar.split(" ||| ")[1]); currentEids = ex.eids || []; } catch(e){}
+                        }
+                        const syncTeams = currentEids.length > 0 ? currentEids.map(String) : [String(conv.equipoid)];
+                        const reports = allAsist.filter(a => a.fecha === conv.fecha && syncTeams.includes(String(a.equipoid)));
+                        for (const r of reports) {
+                            let changed = false;
+                            const updatedPls = { ...r.players };
+                            const newPidsStrings = newPids.map(String);
+                            for (const pid in updatedPls) {
+                                if (!newPidsStrings.includes(String(pid))) {
+                                    delete updatedPls[pid];
+                                    changed = true;
+                                }
+                            }
+                            if (changed) await db.update('asistencia', { ...r, players: updatedPls });
+                        }
+                    } catch (e) { console.warn("Asistencia sync failed:", e); }
                     
                     window.customAlert('¡Convocatoria Actualizada!', 'Los jugadores y sus posiciones han sido guardados correctamente.', 'success');
                     window.viewConvocatoria(id, activeTab);
@@ -7280,7 +7326,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         const container = document.getElementById('content-container');
                         if (container) {
                             if (currentViewSelection === 'convocatorias') window.renderConvocatorias(container);
-                            else window.renderTorneosRendimiento(container);
+                            else window.renderTorneos(container);
                         }
                     }
                 } catch (err) {
@@ -7305,7 +7351,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (activeTab === 'sesiones') {
             const container = document.getElementById('async-sessions-container');
             const allSesiones = await db.getAll('sesiones');
-            const relatedSesiones = allSesiones.filter(s => s.fecha === conv.fecha && s.equipoid == conv.equipoid);
+            const convTeamIds = Array.isArray(conv.equipoid) ? conv.equipoid.map(String) : [String(conv.equipoid)];
+            const relatedSesiones = allSesiones.filter(s => s.fecha === conv.fecha && convTeamIds.includes(String(s.equipoid)));
             
             if (relatedSesiones.length === 0) {
                 container.innerHTML = `
@@ -7971,7 +8018,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderView('torneos');
     };
 
-    async function renderTorneos(container) {
+    window.renderTorneos = async function(container) {
         const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').in('tipo', ['Torneo', 'TORNEO']).order('fecha', { ascending: false }).order('hora', { ascending: false });
         if (error) {
             container.innerHTML = `<p class="p-10 text-red-500 font-bold uppercase tracking-tight">Error de Sincronización: ${error.message}</p>`;
