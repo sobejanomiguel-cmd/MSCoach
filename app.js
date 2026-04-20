@@ -841,13 +841,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // View Renderers
     async function renderDashboard(container) {
-        const tasks = await db.getAll('tareas');
-        const sessions = await db.getAll('sesiones');
-        const teams = await db.getAll('equipos');
-        const convocatorias = await db.getAll('convocatorias');
-        const players = await db.getAll('jugadores');
+        const [tasks, sessions, teams, convocatorias, players, attendance] = await Promise.all([
+            db.getAll('tareas'),
+            db.getAll('sesiones'),
+            db.getAll('equipos'),
+            db.getAll('convocatorias'),
+            db.getAll('jugadores'),
+            db.getAll('asistencia')
+        ]);
+        
         const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
         
+        // Calculate dynamic attendance for each team
+        teams.forEach(t => {
+            const teamReports = attendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
+            let totalPresent = 0;
+            let totalPossible = 0;
+            teamReports.forEach(r => {
+                const pData = Object.values(r.players || r.data || {});
+                totalPresent += pData.filter(s => {
+                    const status = typeof s === 'object' ? s.status : s;
+                    return status === 'asiste' || status === 'presente';
+                }).length;
+                totalPossible += pData.length;
+            });
+            t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
+        });
+
         const totalMale = players.filter(p => p.sexo === 'Masculino').length;
         const totalFemale = players.filter(p => p.sexo === 'Femenino').length;
  
@@ -912,10 +932,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                                 <div class="flex justify-between items-center mb-4 px-1">
                                     <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${e.nombre}</span>
-                                    <span class="text-xs font-black text-blue-600">${e.asistenciamedia || 0}%</span>
+                                    <span class="text-xs font-black text-blue-600">${e.computedAsistencia || 0}%</span>
                                 </div>
                                 <div class="h-3 bg-white rounded-full overflow-hidden border border-slate-200">
-                                    <div class="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.3)]" style="width: ${e.asistenciamedia || 0}%"></div>
+                                    <div class="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.3)]" style="width: ${e.computedAsistencia || 0}%"></div>
                                 </div>
                             </div>
                         `).join('')}
@@ -3275,12 +3295,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
     async function renderEquipos(container) { 
-        const [teams, allPlayers, allConvs, allSessions] = await Promise.all([
+        const [teams, allPlayers, allConvs, allSessions, allAttendance] = await Promise.all([
             db.getAll('equipos'),
             db.getAll('jugadores'),
             db.getAll('convocatorias'),
-            db.getAll('sesiones')
+            db.getAll('sesiones'),
+            db.getAll('asistencia')
         ]);
+        
+        // Calculate dynamic attendance for each team
+        teams.forEach(t => {
+            const teamReports = allAttendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
+            let totalPresent = 0;
+            let totalPossible = 0;
+            teamReports.forEach(r => {
+                const pData = Object.values(r.players || r.data || {});
+                totalPresent += pData.filter(s => {
+                    const status = typeof s === 'object' ? s.status : s;
+                    return status === 'asiste' || status === 'presente';
+                }).length;
+                totalPossible += pData.length;
+            });
+            t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
+        });
 
         const sortedTeams = window.getSortedTeams(teams);
 
@@ -3304,9 +3341,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="space-y-4 mb-6">
                             <div class="flex justify-between items-end">
                                 <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Asistencia Media</span>
-                                <span class="text-sm font-black text-blue-600">${e.asistenciamedia || 0}%</span>
+                                <span class="text-sm font-black text-blue-600">${e.computedAsistencia || 0}%</span>
                             </div>
-                            <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.asistenciamedia || 0}%"></div></div>
+                            <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.computedAsistencia || 0}%"></div></div>
                         </div>
                         <div class="grid grid-cols-3 gap-2">
                             <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Plantilla</p><p class="text-sm font-black text-slate-700">${playersCount}</p></div>
@@ -5054,31 +5091,43 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             container.innerHTML = `
                 <div class="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
-                    <div class="p-8 border-b bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <div class="flex items-center gap-4">
-                            <button onclick="window.switchView('asistencia')" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-100 rounded-xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all text-slate-500">
-                                <i data-lucide="chevron-left" class="w-4 h-4"></i>
-                                <span class="text-[10px] font-black uppercase tracking-widest">Volver</span>
-                            </button>
-                            <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">${existingReport ? 'EDITAR ASISTENCIA' : 'NUEVA ASISTENCIA'}</h3>
-                        </div>
-                        <div class="w-full md:w-64">
-                            <input type="text" id="report-name" value="${existingReport ? (existingReport.nombre || '') : 'Asistencia ' + selectedDate}" placeholder="Nombre del Informe" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-2 ring-blue-100 w-full">
-                        </div>
-                        <div class="flex flex-col md:flex-row gap-3 w-full md:w-auto">
-                            <input id="date-sel" type="date" value="${selectedDate}" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-2 ring-blue-100">
+                    <div class="p-8 border-b bg-slate-50/50">
+                        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+                            <div class="flex items-center gap-4">
+                                <button onclick="window.switchView('asistencia')" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-100 rounded-xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all text-slate-500">
+                                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                    <span class="text-[10px] font-black uppercase tracking-widest">Volver</span>
+                                </button>
+                                <div>
+                                    <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-1">${existingReport ? 'EDITAR ASISTENCIA' : 'NUEVA ASISTENCIA'}</h3>
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Control de presencia diario</p>
+                                </div>
+                            </div>
                             
-                            <select id="team-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-2 ring-blue-100" ${existingReport ? 'disabled' : ''}>
-                                <option value="">- Seleccionar Equipo -</option>
-                                ${sortedTeams.map(t => `<option value="${t.id}" ${selectedTeamId == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
-                            </select>
+                            <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                                <div class="relative flex-1 lg:flex-none min-w-[200px]">
+                                    <i data-lucide="tag" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                    <input type="text" id="report-name" value="${existingReport ? (existingReport.nombre || '') : 'Asistencia ' + selectedDate}" placeholder="Nombre del Informe" class="pl-12 pr-4 py-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 w-full transition-all">
+                                </div>
+                                <input id="date-sel" type="date" value="${selectedDate}" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all">
+                                
+                                <select id="team-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer ${existingReport ? 'opacity-50' : ''}" ${existingReport ? 'disabled' : ''}>
+                                    <option value="">- Equipo -</option>
+                                    ${sortedTeams.map(t => `<option value="${t.id}" ${selectedTeamId == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                                </select>
 
-                            <select id="conv-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-2 ring-blue-100" ${existingReport ? 'disabled' : ''}>
-                                <option value="">- Todos los del equipo -</option>
-                                ${dateConvs.map(c => `<option value="${c.id}" ${selectedConvId == c.id ? 'selected' : ''}>[${c.tipo}] ${c.nombre}</option>`).join('')}
-                            </select>
+                                <select id="conv-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer ${existingReport ? 'opacity-50' : ''}" ${existingReport ? 'disabled' : ''}>
+                                    <option value="">- Convocatoria (Opcional) -</option>
+                                    ${dateConvs.map(c => `<option value="${c.id}" ${selectedConvId == c.id ? 'selected' : ''}>[${c.tipo}] ${c.nombre}</option>`).join('')}
+                                </select>
 
-                            <button id="save-report" class="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black shadow-lg shadow-blue-500/20 hover:scale-105 transition-all text-[10px] uppercase tracking-widest whitespace-nowrap">Guardar Informe</button>
+                                <button id="save-report" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl shadow-blue-600/30 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0 transition-all text-xs uppercase tracking-widest whitespace-nowrap ml-auto">
+                                    <div class="flex items-center gap-2">
+                                        <i data-lucide="save" class="w-4 h-4"></i>
+                                        Finalizar Informe
+                                    </div>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
