@@ -9081,8 +9081,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <div data-notif-id="${item.type}_${item.id}" class="notif-swipe-container rounded-2xl">
                             <div class="notif-swipe-actions">
                                 <div class="notif-swipe-action-left flex items-center opacity-0 gap-2">
-                                    <i data-lucide="check-circle" class="w-4 h-4"></i>
-                                    <span>${isSeen ? 'POR LEER' : 'LEÍDO'}</span>
+                                    <i data-lucide="mail-open" class="w-4 h-4"></i>
+                                    <span>${isSeen ? 'POR LEER' : 'VISTO'}</span>
                                 </div>
                                 <div class="notif-swipe-action-right flex items-center opacity-0 gap-2">
                                     <span>BORRAR</span>
@@ -9095,14 +9095,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
                                     item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
                                     'bg-indigo-50 text-indigo-600'
-                                } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white" onclick="window.switchView('${item.view}')">
+                                } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white relative" onclick="window.switchView('${item.view}')">
                                     <i data-lucide="${item.icon}" class="w-4 h-4"></i>
+                                    ${!isSeen ? '<span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white"></span>' : ''}
                                 </div>
                                 <div class="flex-1 min-w-0" onclick="window.switchView('${item.view}')">
                                     <div class="flex justify-between items-start mb-0.5">
                                         <span class="text-[9px] font-black uppercase tracking-widest ${item.fecha === today || (isShared && !isSeen) ? 'text-blue-500' : 'text-slate-400'}">${dateLabel} · ${item.hora || '--:--'}</span>
                                     </div>
-                                    <h5 class="text-[11px] font-bold text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase">${item.nombre || 'Sin título'}</h5>
+                                    <h5 class="text-[11px] font-bold ${isSeen ? 'text-slate-500' : 'text-slate-800'} line-clamp-1 group-hover:text-blue-600 transition-colors uppercase">${item.nombre || 'Sin título'}</h5>
                                     <p class="text-[9px] text-slate-500 truncate lowercase italic">${isShared ? 'Compartido por Staff' : (item.lugar || item.equiponombre || 'Campo Principal')}</p>
                                 </div>
                             </div>
