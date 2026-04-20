@@ -103,6 +103,18 @@
                 <img src="RS.png" alt="RS CENTRO Logo" class="w-full max-w-[120px] h-auto object-contain">
             </div>
 
+            <!-- Workspace Toggle -->
+            <div class="px-6 py-4 border-b border-slate-50 admin-only">
+                <div class="bg-slate-100 p-1.5 rounded-2xl flex gap-1 relative overflow-hidden">
+                    <button id="mode-personal" onclick="window.toggleVisibility('personal')" class="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative z-10 bg-white text-blue-600 shadow-sm">
+                        Mí Espacio
+                    </button>
+                    <button id="mode-global" onclick="window.toggleVisibility('global')" class="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative z-10 text-slate-400 hover:text-slate-600">
+                        Global
+                    </button>
+                </div>
+            </div>
+
             <nav class="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
                 <a href="#" data-view="dashboard" class="nav-link active flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
                     <i data-lucide="home" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>

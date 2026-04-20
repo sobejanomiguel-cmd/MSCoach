@@ -1,6 +1,39 @@
 const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 
+window.currentVisibilityMode = 'personal'; 
+window.toggleVisibility = (mode) => {
+    // Security check: only ELITE users can see global
+    if (mode === 'global' && db.userRole !== 'ELITE') {
+        window.customAlert('Acceso Restringido', 'No tienes permisos para ver el espacio global.', 'error');
+        return;
+    }
+
+    window.currentVisibilityMode = mode;
+    
+    // Update UI buttons
+    const personalBtn = document.getElementById('mode-personal');
+    const globalBtn = document.getElementById('mode-global');
+    
+    if (mode === 'personal') {
+        personalBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
+        personalBtn.classList.remove('text-slate-400');
+        globalBtn.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
+        globalBtn.classList.add('text-slate-400');
+    } else {
+        globalBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
+        globalBtn.classList.remove('text-slate-400');
+        personalBtn.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
+        personalBtn.classList.add('text-slate-400');
+    }
+    
+    // Refresh current view
+    const container = document.getElementById('content-container');
+    if (window.currentView) {
+        window.renderView(window.currentView);
+    }
+};
+
 window.getSortedTeams = (teams) => {
     if (!teams || !Array.isArray(teams)) return [];
     return [...teams].sort((a, b) => {
@@ -841,7 +874,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // View Renderers
     async function renderDashboard(container) {
-        const [tasks, sessions, teams, convocatorias, players, attendance] = await Promise.all([
+        const [allTasks, allSessions, teams, allConvocatorias, players, attendance] = await Promise.all([
             db.getAll('tareas'),
             db.getAll('sesiones'),
             db.getAll('equipos'),
@@ -850,6 +883,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             db.getAll('asistencia')
         ]);
         
+        const userRes = await supabaseClient.auth.getUser();
+        const currentUser = userRes.data?.user;
+
+        const isGlobal = window.currentVisibilityMode === 'global';
+        const filterByVisibility = (items) => {
+            if (isGlobal) return items;
+            return items.filter(i => i.createdBy === currentUser?.id || (i.sharedWith && i.sharedWith.includes(currentUser?.id)));
+        };
+
+        const tasks = allTasks; // Tareas are always global (library)
+        const sessions = filterByVisibility(allSessions);
+        const convocatorias = filterByVisibility(allConvocatorias);
         const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
         
         // Calculate dynamic attendance for each team
@@ -978,10 +1023,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+            const isGlobal = window.currentVisibilityMode === 'global';
 
-            const sessions = allSessions.filter(s => s.createdBy === currentUser.id || isSharedWithMe(s));
-            const eventos = allEventos.filter(e => e.createdBy === currentUser.id || isSharedWithMe(e));
-            const convocatorias = allConvocatorias.filter(c => !isConvenido || c.createdBy === currentUser.id || isSharedWithMe(c));
+            const sessions = isGlobal ? allSessions : allSessions.filter(s => s.createdBy === currentUser.id || isSharedWithMe(s));
+            const eventos = isGlobal ? allEventos : allEventos.filter(e => e.createdBy === currentUser.id || isSharedWithMe(e));
+            const filterConvs = isGlobal ? allConvocatorias : allConvocatorias.filter(c => !isConvenido || c.createdBy === currentUser.id || isSharedWithMe(c));
+            const convocatorias = filterConvs;
             
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -1414,7 +1461,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.renderEventos = async function(container, onlyTable = false) {
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         const allEvents = await db.getAll('eventos');
+        const isGlobal = window.currentVisibilityMode === 'global';
+
         const tasks = allEvents.filter(e => {
+            if (isGlobal) return true;
             if (e.createdBy === currentUser.id) return true;
             if (e.sharedWith) {
                 const sw = Array.isArray(e.sharedWith) ? e.sharedWith : [e.sharedWith.toString()];
@@ -2546,7 +2596,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentUser = userRes.data?.user;
         if (!currentUser) return;
         
-        const mySessions = sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
+        const isGlobal = window.currentVisibilityMode === 'global';
+        const mySessions = isGlobal ? sessions : sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
 
         const filteredSessions = mySessions.filter(s => {
             const matchesTeam = sessionFilters.team === 'TODOS' || s.equipoid == sessionFilters.team;
@@ -6116,13 +6167,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const userRes = await supabaseClient.auth.getUser();
         const currentUser = userRes.data?.user;
-        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+        const isGlobal = window.currentVisibilityMode === 'global';
 
         const filtered = convs.filter(c => {
             const matchesTab = c.tipo === currentConvocatoriaTab;
             
-            // Filter by sharedWith if Convenido
-            if (isConvenido) {
+            // Filter by visibility mode and sharedWith if Convenido
+            if (!isGlobal) {
                 const sw = c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : [];
                 const isShared = sw.includes(currentUser.id);
                 if (c.createdBy !== currentUser.id && !isShared) return false;
@@ -7944,13 +7995,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const userRes = await supabaseClient.auth.getUser();
         const currentUser = userRes.data?.user;
-        const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
+        const isGlobal = window.currentVisibilityMode === 'global';
 
         const filtered = convs.filter(c => {
             const extra = safeGetExtra(c.lugar);
 
-            // Filter by sharedWith if Convenido
-            if (isConvenido) {
+            // Filter by visibility mode and sharedWith if Convenido
+            if (!isGlobal) {
                 const sw = extra.sw || (c.sharedWith ? (Array.isArray(c.sharedWith) ? c.sharedWith : [c.sharedWith.toString()]) : []);
                 const isShared = sw.includes(currentUser.id);
                 if (c.createdBy !== currentUser.id && !isShared) return false;
