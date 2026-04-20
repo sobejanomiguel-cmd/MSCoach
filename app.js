@@ -4006,6 +4006,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             lesionado: playerAsistencias.filter(a => a.data[id] === 'lesionado' || a.data[id] === 'lesion').length,
             seleccion: playerAsistencias.filter(a => a.data[id] === 'seleccion').length,
             zubieta: playerAsistencias.filter(a => a.data[id] === 'zubieta').length,
+            estudiar: playerAsistencias.filter(a => a.data[id] === 'estudiar').length,
             otro: playerAsistencias.filter(a => a.data[id] === 'otro').length,
             total: playerAsistencias.length
         };
@@ -4165,6 +4166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     { label: 'Lesionado', val: stats.lesionado, color: 'text-amber-500' },
                                     { label: 'Selección', val: stats.seleccion, color: 'text-blue-400' },
                                     { label: 'Zubieta', val: stats.zubieta, color: 'text-indigo-400' },
+                                    { label: 'Estudiar', val: stats.estudiar, color: 'text-violet-400' },
                                     { label: 'Otro', val: stats.otro, color: 'text-slate-400' }
                                 ].map(s => `
                                     <div class="flex justify-between items-center text-[11px]">
@@ -4363,7 +4365,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             lesionado: playerAsist.filter(a => a.players[id].status === 'lesionado').length,
             enfermo: playerAsist.filter(a => a.players[id].status === 'enfermo').length,
             seleccion: playerAsist.filter(a => a.players[id].status === 'seleccion').length,
-            zubieta: playerAsist.filter(a => a.players[id].status === 'zubieta').length
+            zubieta: playerAsist.filter(a => a.players[id].status === 'zubieta').length,
+            estudiar: playerAsist.filter(a => a.players[id].status === 'estudiar').length
         };
         const attendanceRate = stats.total > 0 ? Math.round((stats.asiste / stats.total) * 100) : 0;
 
@@ -4515,7 +4518,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     { label: 'Presencias', val: stats.asiste, color: 'text-emerald-400' },
                                     { label: 'Ausencias', val: stats.ausente, color: 'text-rose-400' },
                                     { label: 'Lesiones', val: stats.lesionado, color: 'text-amber-400' },
-                                    { label: 'Zubieta / Sel.', val: stats.zubieta + stats.seleccion, color: 'text-blue-400' }
+                                    { label: 'Zubieta / Sel.', val: stats.zubieta + stats.seleccion, color: 'text-blue-400' },
+                                    { label: 'Estudios', val: stats.estudiar, color: 'text-indigo-400' }
                                 ].map(s => `
                                     <div class="flex justify-between items-center text-[11px] border-b border-white/10 pb-2">
                                         <span class="font-bold text-white/40">${s.label}</span>
@@ -4834,6 +4838,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { id: 'lesionado', label: 'Lesionado' },
                 { id: 'seleccion', label: 'Seleccion' },
                 { id: 'zubieta', label: 'Zubieta' },
+                { id: 'estudiar', label: 'Estudiar' },
                 { id: 'otro', label: 'Otro' }
             ];
 
@@ -4864,7 +4869,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div class="flex flex-wrap justify-end gap-1 animate-in fade-in slide-in-from-right-2 duration-200">
                                         <span class="text-[9px] font-black text-slate-300 uppercase self-center mr-2">Motivo:</span>
                                         ${motives.map(m => `
-                                            <button onclick="window.setPlayerStatus(${j.id}, '${m.id}')" class="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${status === m.id ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100'}">
+                                            <button onclick="window.setPlayerStatus(${j.id}, '${m.id}')" class="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${statusStr === m.id ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100'}">
                                                 ${m.label}
                                             </button>
                                         `).join('')}
