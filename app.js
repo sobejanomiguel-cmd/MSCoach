@@ -2136,15 +2136,128 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (video.includes('drive.google.com')) {
             const match = video.match(/\/file\/d\/([^\/]+)/) || video.match(/id=([^\&]+)/);
             if (match) embedUrl = `https://drive.google.com/file/d/${match[1]}/preview`;
+            else embedUrl = video;
         } else if (!video.startsWith('http')) {
-            embedUrl = `https://drive.google.com/file/d/${video}/preview`;
+            embedUrl = `https://www.youtube.com/embed/${video}`;
         } else {
             embedUrl = video;
         }
-
+        
         return `<div class="video-container mb-6 overflow-hidden border-4 border-slate-900 shadow-2xl">
-                    <iframe src="${embedUrl}" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                    <iframe src="${embedUrl}" allow="autoplay; fullscreen" allowfullscreen class="w-full aspect-video"></iframe>
                 </div>`;
+    };
+
+    window.previewTask = async (id) => {
+        if (!id) return;
+        const tasks = await db.getAll('tareas');
+        const task = tasks.find(t => t.id == id);
+        if (!task) return;
+
+        const previewOverlay = document.getElementById('preview-overlay');
+        const previewContent = document.getElementById('preview-content');
+        
+        const videoEmbed = window.getTaskVideoEmbed(task.video);
+
+        previewContent.innerHTML = `
+            <div class="p-8 md:p-12">
+                <div class="mb-10">
+                    <span class="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-[0.2em] mb-4 inline-block">${task.type}</span>
+                    <h3 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-tight">${task.name}</h3>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div class="space-y-8">
+                        ${task.image ? `
+                            <div class="rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-slate-50 relative group">
+                                <img src="${task.image}" class="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-110">
+                                <div class="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            </div>
+                        ` : `
+                            <div class="aspect-square bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
+                                <i data-lucide="image" class="w-16 h-16 mb-4"></i>
+                                <p class="font-black uppercase tracking-widest text-xs">Sin Gráfico disponible</p>
+                            </div>
+                        `}
+
+                        ${task.video ? `
+                            <div class="space-y-4">
+                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="play-circle" class="w-4 h-4 text-blue-600"></i>
+                                    Video Demostrativo
+                                </h4>
+                                ${videoEmbed}
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="space-y-10">
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Objetivo</p>
+                                <p class="text-sm font-bold text-slate-700 font-outfit uppercase">${task.objetivo || 'No definido'}</p>
+                            </div>
+                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Duración</p>
+                                <p class="text-sm font-bold text-slate-700 font-outfit uppercase">${task.duration} MINUTOS</p>
+                            </div>
+                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Espacio</p>
+                                <p class="text-sm font-bold text-slate-700 font-outfit uppercase">${task.espacio || 'No definido'}</p>
+                            </div>
+                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Categoría</p>
+                                <p class="text-sm font-bold text-slate-700 font-outfit uppercase">${task.categoria || 'No definido'}</p>
+                            </div>
+                        </div>
+
+                        ${task.material ? `
+                            <div>
+                                <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Material Necesario</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    ${task.material.split(', ').map(m => `
+                                        <span class="px-4 py-2 bg-blue-50 text-blue-600 text-[10px] font-black rounded-xl uppercase tracking-tight">${m}</span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div>
+                            <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Descripción de la Tarea</h4>
+                            <div class="prose prose-slate max-w-none">
+                                <p class="text-sm text-slate-600 leading-relaxed font-medium whitespace-pre-line">${task.description}</p>
+                            </div>
+                        </div>
+
+                        ${task.variantes ? `
+                            <div class="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
+                                <h4 class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-3">Variantes Sugeridas</h4>
+                                <p class="text-xs text-emerald-900/70 leading-relaxed italic font-medium">${task.variantes}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        previewOverlay.classList.remove('hidden');
+        setTimeout(() => {
+            previewOverlay.classList.add('opacity-100');
+            previewOverlay.querySelector('#preview-container').classList.remove('scale-95');
+            previewOverlay.querySelector('#preview-container').classList.add('scale-100');
+        }, 10);
+        
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.closePreview = () => {
+        const previewOverlay = document.getElementById('preview-overlay');
+        previewOverlay.classList.remove('opacity-100');
+        previewOverlay.querySelector('#preview-container').classList.remove('scale-100');
+        previewOverlay.querySelector('#preview-container').classList.add('scale-95');
+        setTimeout(() => {
+            previewOverlay.classList.add('hidden');
+        }, 300);
     };
 
     window.viewTask = async (id) => {
@@ -2663,11 +2776,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <span class="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase tracking-widest">Tarea ${num}</span>
                                         <button type="button" onclick="window.clearSessionSlot(${num})" class="text-[9px] font-bold text-slate-400 hover:text-red-500 uppercase transition-colors">Limpiar</button>
                                     </div>
-                                    <div class="relative">
-                                        <select id="slot-type-${num}" class="w-full p-2 text-[10px] border-none bg-white rounded-xl shadow-sm outline-none mb-2">
-                                            <option value="TODOS">TODOS LOS TIPOS</option>
-                                            ${TASK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-                                        </select>
+                                    <div class="relative flex flex-col gap-2">
+                                        <div class="flex gap-2">
+                                            <select id="slot-type-${num}" class="flex-1 p-2 text-[10px] border-none bg-white rounded-xl shadow-sm outline-none">
+                                                <option value="TODOS">TODOS LOS TIPOS</option>
+                                                ${TASK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                                            </select>
+                                            <button type="button" onclick="window.previewTask(document.getElementById('task-select-${num}').value)" class="p-2 bg-white text-blue-600 rounded-xl shadow-sm hover:bg-blue-50 transition-all border border-blue-50" title="Previsualizar Tarea">
+                                                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                                            </button>
+                                        </div>
                                         <select id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
                                             <option value="">Seleccionar ejercicio...</option>
                                             ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num-1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}

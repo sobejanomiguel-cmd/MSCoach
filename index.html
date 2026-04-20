@@ -289,6 +289,16 @@
         </div>
     </div>
 
+    <!-- Preview Modal Container -->
+    <div id="preview-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4 md:p-12">
+        <div id="preview-container" class="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] transform scale-95 transition-transform duration-300 custom-scrollbar relative">
+            <button onclick="window.closePreview()" class="absolute top-6 right-6 p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all z-10">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+            <div id="preview-content"></div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="db.js"></script>
     <script src="app.js"></script>
