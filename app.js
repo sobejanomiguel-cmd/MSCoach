@@ -1943,7 +1943,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', currentPage: 1 };
+    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', objetivo: 'TODOS', espacio: 'TODOS', currentPage: 1 };
     let playerFilters = { search: '', team: 'TODOS' };
     let tasksPerPage = 12;
     let currentTaskPage = 1;
@@ -1959,14 +1959,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Filtrar biblioteca de ejercicios..." 
                             class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
                     </div>
-                    <div class="flex gap-3 w-full md:w-auto">
-                        <select id="task-type-filter" class="flex-1 md:w-48 px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
-                            <option value="TODOS">TODOS LOS TIPOS</option>
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full lg:w-auto">
+                        <select id="task-type-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
+                            <option value="TODOS">TIPOS</option>
                             ${TASK_TYPES.map(t => `<option value="${t}" ${taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select>
-                        <select id="task-cat-filter" class="flex-1 md:w-48 px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
-                            <option value="TODAS">TODAS LAS ETAPAS</option>
+                        <select id="task-cat-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
+                            <option value="TODAS">ETAPAS</option>
                             ${TASK_CATEGORIES.map(c => `<option value="${c}" ${taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
+                        </select>
+                        <select id="task-obj-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
+                            <option value="TODOS">OBJETIVOS</option>
+                            ${TASK_OBJECTIVES.map(o => `<option value="${o}" ${taskFilters.objetivo === o ? 'selected' : ''}>${o}</option>`).join('')}
+                        </select>
+                        <select id="task-esp-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
+                            <option value="TODOS">ESPACIOS</option>
+                            ${TASK_SPACES.map(s => `<option value="${s}" ${taskFilters.espacio === s ? 'selected' : ''}>${s}</option>`).join('')}
                         </select>
                     </div>
                 </div>
@@ -1980,11 +1988,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tableContainer = onlyTable ? document.getElementById('tasks-table-container') : container.querySelector('#tasks-table-container');
         if (tableContainer) {
             const filteredTasks = tasks.filter(t => {
-                const matchesSearch = !taskFilters.search || t.name.toLowerCase().includes(taskFilters.search.toLowerCase());
+                const matchesSearch = !taskFilters.search || (t.name || '').toLowerCase().includes(taskFilters.search.toLowerCase());
                 const matchesType = taskFilters.type === 'TODOS' || t.type === taskFilters.type;
                 const matchesCat = taskFilters.categoria === 'TODAS' || t.categoria === taskFilters.categoria;
-                return matchesSearch && matchesType && matchesCat;
-            }).sort((a,b) => a.name.localeCompare(b.name));
+                const matchesObj = taskFilters.objetivo === 'TODOS' || t.objetivo === taskFilters.objetivo;
+                const matchesEsp = taskFilters.espacio === 'TODOS' || t.espacio === taskFilters.espacio;
+                return matchesSearch && matchesType && matchesCat && matchesObj && matchesEsp;
+            }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
 
             const pageSize = 25;
             const totalTasks = filteredTasks.length;
@@ -2090,6 +2100,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const searchInput = document.getElementById('task-search-input');
         const typeFilter = document.getElementById('task-type-filter');
         const catFilter = document.getElementById('task-cat-filter');
+        const objFilter = document.getElementById('task-obj-filter');
+        const espFilter = document.getElementById('task-esp-filter');
 
         let searchTimer;
         if (searchInput) {
@@ -2114,6 +2126,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (catFilter) {
             catFilter.onchange = (e) => {
                 taskFilters.categoria = e.target.value;
+                taskFilters.currentPage = 1;
+                window.renderTareas(container, true);
+            };
+        }
+        if (objFilter) {
+            objFilter.onchange = (e) => {
+                taskFilters.objetivo = e.target.value;
+                taskFilters.currentPage = 1;
+                window.renderTareas(container, true);
+            };
+        }
+        if (espFilter) {
+            espFilter.onchange = (e) => {
+                taskFilters.espacio = e.target.value;
                 taskFilters.currentPage = 1;
                 window.renderTareas(container, true);
             };
