@@ -1943,7 +1943,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     };
 
-    let taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', objetivo: 'TODOS', espacio: 'TODOS', currentPage: 1 };
+    window.taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', objetivo: 'TODOS', espacio: 'TODOS', currentPage: 1 };
     let playerFilters = { search: '', team: 'TODOS' };
     let tasksPerPage = 12;
     let currentTaskPage = 1;
@@ -1956,27 +1956,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between animate-in slide-in-from-top-4 duration-500">
                     <div class="relative flex-1 w-full">
                         <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input type="text" id="task-search-input" value="${taskFilters.search}" placeholder="Filtrar biblioteca de ejercicios..." 
+                        <input type="text" id="task-search-input" value="${window.taskFilters.search}" placeholder="Filtrar biblioteca de ejercicios..." 
                             class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
                     </div>
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full lg:w-auto">
                         <select id="task-type-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
                             <option value="TODOS">TIPOS</option>
-                            ${TASK_TYPES.map(t => `<option value="${t}" ${taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+                            ${TASK_TYPES.map(t => `<option value="${t}" ${window.taskFilters.type === t ? 'selected' : ''}>${t}</option>`).join('')}
                         </select>
                         <select id="task-cat-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
                             <option value="TODAS">ETAPAS</option>
-                            ${TASK_CATEGORIES.map(c => `<option value="${c}" ${taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
+                            ${TASK_CATEGORIES.map(c => `<option value="${c}" ${window.taskFilters.categoria === c ? 'selected' : ''}>${c}</option>`).join('')}
                         </select>
                         <select id="task-obj-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
                             <option value="TODOS">OBJETIVOS</option>
-                            ${TASK_OBJECTIVES.map(o => `<option value="${o}" ${taskFilters.objetivo === o ? 'selected' : ''}>${o}</option>`).join('')}
+                            ${TASK_OBJECTIVES.map(o => `<option value="${o}" ${window.taskFilters.objetivo === o ? 'selected' : ''}>${o}</option>`).join('')}
                         </select>
                         <select id="task-esp-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
                             <option value="TODOS">ESPACIOS</option>
-                            ${TASK_SPACES.map(s => `<option value="${s}" ${taskFilters.espacio === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            ${TASK_SPACES.map(s => `<option value="${s}" ${window.taskFilters.espacio === s ? 'selected' : ''}>${s}</option>`).join('')}
                         </select>
                     </div>
+                    <button id="clear-task-filters" class="w-full md:w-auto px-6 py-4 bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+                        Limpiar
+                    </button>
                 </div>
 
                 <div id="tasks-table-container" class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden min-h-[400px]">
@@ -1988,20 +1991,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tableContainer = onlyTable ? document.getElementById('tasks-table-container') : container.querySelector('#tasks-table-container');
         if (tableContainer) {
             const filteredTasks = tasks.filter(t => {
-                const searchLower = (taskFilters.search || '').toLowerCase();
-                const matchesSearch = !searchLower || (t.name || '').toLowerCase().includes(searchLower);
+                const f = window.taskFilters || {};
+                const searchLower = (f.search || '').trim().toLowerCase();
+                const matchesSearch = !searchLower || (t.name || '').toLowerCase().includes(searchLower) || (t.description || '').toLowerCase().includes(searchLower);
                 
-                const typeVal = (t.type || '').toUpperCase();
-                const matchesType = taskFilters.type === 'TODOS' || typeVal === taskFilters.type;
+                const typeVal = (t.type || '').trim().toUpperCase();
+                const filterType = (f.type || 'TODOS').toUpperCase();
+                const matchesType = filterType === 'TODOS' || typeVal === filterType;
                 
-                const catVal = (t.categoria || '').toUpperCase();
-                const matchesCat = taskFilters.categoria === 'TODAS' || catVal === taskFilters.categoria;
+                const catVal = (t.categoria || '').trim().toUpperCase();
+                const filterCat = (f.categoria || 'TODAS').toUpperCase();
+                const matchesCat = filterCat === 'TODAS' || catVal === filterCat;
                 
-                const objVal = (t.objetivo || '').toUpperCase();
-                const matchesObj = taskFilters.objetivo === 'TODOS' || objVal === taskFilters.objetivo;
+                const objVal = (t.objetivo || '').trim().toUpperCase();
+                const filterObj = (f.objetivo || 'TODOS').toUpperCase();
+                const matchesObj = filterObj === 'TODOS' || objVal === filterObj;
                 
-                const espVal = (t.espacio || '').toUpperCase();
-                const matchesEsp = taskFilters.espacio === 'TODOS' || espVal === taskFilters.espacio;
+                const espVal = (t.espacio || '').trim().toUpperCase();
+                const filterEsp = (f.espacio || 'TODOS').toUpperCase();
+                const matchesEsp = filterEsp === 'TODOS' || espVal === filterEsp;
                 
                 return matchesSearch && matchesType && matchesCat && matchesObj && matchesEsp;
             }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
@@ -2009,9 +2017,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pageSize = 25;
             const totalTasks = filteredTasks.length;
             const totalPages = Math.ceil(totalTasks / pageSize);
-            if (taskFilters.currentPage > totalPages) taskFilters.currentPage = Math.max(1, totalPages);
+            if (window.taskFilters.currentPage > totalPages) window.taskFilters.currentPage = Math.max(1, totalPages);
             
-            const startIdx = (taskFilters.currentPage - 1) * pageSize;
+            const startIdx = (window.taskFilters.currentPage - 1) * pageSize;
             const pageTasks = filteredTasks.slice(startIdx, startIdx + pageSize);
 
             tableContainer.innerHTML = `
@@ -2079,14 +2087,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             Mostrando ${startIdx + 1} - ${Math.min(startIdx + pageSize, totalTasks)} de ${totalTasks} ejercicios
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="window.changeTaskPage(${taskFilters.currentPage - 1})" ${taskFilters.currentPage === 1 ? 'disabled' : ''} 
+                            <button onclick="window.changeTaskPage(${window.taskFilters.currentPage - 1})" ${window.taskFilters.currentPage === 1 ? 'disabled' : ''} 
                                 class="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-slate-600">
                                 <i data-lucide="chevron-left" class="w-4 h-4"></i>
                             </button>
                             <div class="flex items-center px-4 text-[10px] font-black text-slate-600 uppercase tracking-widest bg-white rounded-xl border border-slate-100 shadow-sm">
-                                Página ${taskFilters.currentPage} / ${totalPages}
+                                Página ${window.taskFilters.currentPage} / ${totalPages}
                             </div>
-                            <button onclick="window.changeTaskPage(${taskFilters.currentPage + 1})" ${taskFilters.currentPage === totalPages ? 'disabled' : ''} 
+                            <button onclick="window.changeTaskPage(${window.taskFilters.currentPage + 1})" ${window.taskFilters.currentPage === totalPages ? 'disabled' : ''} 
                                 class="p-2 bg-white rounded-xl shadow-sm border border-slate-100 text-slate-600 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-white disabled:hover:text-slate-600">
                                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
                             </button>
@@ -2097,7 +2105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         window.changeTaskPage = (page) => {
-            taskFilters.currentPage = page;
+            window.taskFilters.currentPage = page;
             window.renderTareas(container, true);
         };
 
@@ -2106,51 +2114,60 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        // Listeners para los filtros
-        const searchInput = document.getElementById('task-search-input');
-        const typeFilter = document.getElementById('task-type-filter');
-        const catFilter = document.getElementById('task-cat-filter');
-        const objFilter = document.getElementById('task-obj-filter');
-        const espFilter = document.getElementById('task-esp-filter');
+        // Listeners para los filtros - Buscamos dentro de 'container' porque aún puede no estar en el document
+        const searchInput = container.querySelector('#task-search-input');
+        const typeFilter = container.querySelector('#task-type-filter');
+        const catFilter = container.querySelector('#task-cat-filter');
+        const objFilter = container.querySelector('#task-obj-filter');
+        const espFilter = container.querySelector('#task-esp-filter');
+        const clearBtn = container.querySelector('#clear-task-filters');
+
+        if (clearBtn) {
+            clearBtn.onclick = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                window.taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', objetivo: 'TODOS', espacio: 'TODOS', currentPage: 1 };
+                window.renderView('tareas'); 
+            };
+        }
 
         let searchTimer;
         if (searchInput) {
             searchInput.oninput = (e) => {
-                taskFilters.search = e.target.value;
-                taskFilters.currentPage = 1;
+                window.taskFilters.search = e.target.value;
+                window.taskFilters.currentPage = 1;
                 clearTimeout(searchTimer);
                 searchTimer = setTimeout(() => {
                     window.renderTareas(container, true);
-                }, 400);
+                }, 300);
             };
         }
         
         if (typeFilter) {
-            typeFilter.onchange = (e) => {
-                taskFilters.type = e.target.value;
-                taskFilters.currentPage = 1;
+            typeFilter.oninput = (e) => {
+                window.taskFilters.type = e.target.value;
+                window.taskFilters.currentPage = 1;
                 window.renderTareas(container, true);
             };
         }
 
         if (catFilter) {
-            catFilter.onchange = (e) => {
-                taskFilters.categoria = e.target.value;
-                taskFilters.currentPage = 1;
+            catFilter.oninput = (e) => {
+                window.taskFilters.categoria = e.target.value;
+                window.taskFilters.currentPage = 1;
                 window.renderTareas(container, true);
             };
         }
         if (objFilter) {
-            objFilter.onchange = (e) => {
-                taskFilters.objetivo = e.target.value;
-                taskFilters.currentPage = 1;
+            objFilter.oninput = (e) => {
+                window.taskFilters.objetivo = e.target.value;
+                window.taskFilters.currentPage = 1;
                 window.renderTareas(container, true);
             };
         }
         if (espFilter) {
-            espFilter.onchange = (e) => {
-                taskFilters.espacio = e.target.value;
-                taskFilters.currentPage = 1;
+            espFilter.oninput = (e) => {
+                window.taskFilters.espacio = e.target.value;
+                window.taskFilters.currentPage = 1;
                 window.renderTareas(container, true);
             };
         }
@@ -3164,6 +3181,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         const allMaterials = sessionTasks.map(t => t.material || '').join(',').split(',').map(m => m.trim()).filter(m => m !== '');
         const uniqueMaterialList = [...new Set(allMaterials)].join(', ') || 'Estándar';
 
+        // Lógica de nombre de archivo PDF: 26.04.22_sesion1_Calahorra_2011
+        const d = new Date(session.fecha);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        const dateStr = `${day}.${month}.${yy}`;
+        
+        const daySessions = (await db.getAll('sesiones'))
+            .filter(s => s.fecha === session.fecha && s.equipoid === session.equipoid)
+            .sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
+        const sesIdx = daySessions.findIndex(s => s.id == session.id) + 1;
+        const sesNum = `sesion${sesIdx}`;
+        
+        const lugarClean = (session.lugar || 'Lugar').split(' - ')[0].trim().replace(/\s+/g, '');
+        const teamYear = (session.equiponombre || '').match(/\d{4}/)?.[0] || '';
+        const pdfFileName = `${dateStr}_${sesNum}_${lugarClean}_${teamYear}`;
+
+        window.doPrintSession = () => {
+            const originalTitle = document.title;
+            document.title = pdfFileName;
+            window.print();
+            setTimeout(() => { document.title = originalTitle; }, 1000);
+        };
+
         const printDiv = document.createElement('div');
         printDiv.className = 'print-view bg-slate-100 fixed inset-0 z-[200] overflow-y-auto p-4 md:p-12';
         printDiv.innerHTML = `
@@ -3217,7 +3258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             <div class="no-print sticky top-0 mb-8 flex justify-center gap-4 z-[300]">
                 <div class="bg-white/90 backdrop-blur-md p-3 rounded-[2.5rem] border border-white shadow-2xl flex gap-3">
-                    <button onclick="window.print()" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/30 hover:bg-blue-700 transition-all flex items-center gap-3">
+                    <button onclick="window.doPrintSession()" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/30 hover:bg-blue-700 transition-all flex items-center gap-3">
                         <i data-lucide="file-down" class="w-5 h-5"></i>
                         GUARDAR PDF
                     </button>
@@ -3306,14 +3347,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     ${t.video ? `
                                         <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                                             <div class="flex items-center gap-2">
-                                                <a href="${t.video}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all">
+                                                <a href="${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
                                                 </a>
-                                                <span class="text-[8px] font-black text-blue-600 uppercase">Video</span>
+                                                <span class="text-[8px] font-black text-blue-600 uppercase">Ver Video Interactivo</span>
                                             </div>
                                             <div class="flex items-center gap-2">
                                                 <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
-                                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
+                                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
                                             </div>
                                         </div>
                                     ` : ''}
@@ -3349,14 +3390,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 ${t.video ? `
                                                     <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                                                         <div class="flex items-center gap-2">
-                                                            <a href="${t.video}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10">
+                                                            <a href="${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
                                                             </a>
-                                                            <span class="text-[8px] font-black text-blue-600 uppercase">Video</span>
+                                                            <span class="text-[8px] font-black text-blue-600 uppercase">Ver Video</span>
                                                         </div>
                                                         <div class="flex items-center gap-2">
                                                             <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
-                                                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
+                                                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
                                                         </div>
                                                     </div>
                                                 ` : ''}
@@ -7650,6 +7691,151 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
 
         doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
+    };
+
+    window.exportSessionPDF = async (id) => {
+        const { jsPDF } = window.jspdf;
+        const session = (await db.getAll('sesiones')).find(s => s.id == id);
+        if (!session) return;
+        
+        const allTasks = await db.getAll('tareas');
+        const teams = await db.getAll('equipos');
+        const currentTeam = teams.find(t => t.id == session.equipoid);
+        const sessionTasks = (session.taskids || []).map(taskId => allTasks.find(t => t.id == taskId)).filter(Boolean);
+
+        const doc = new jsPDF();
+        const blue = [37, 99, 235];
+        const slate = [30, 41, 59];
+        const lightGray = [241, 245, 249];
+
+        // --- PAGE 1: HEADER & INFO ---
+        if (currentTeam && currentTeam.escudo) {
+            try { doc.addImage(currentTeam.escudo, 'PNG', 15, 12, 20, 20); } catch (e) {}
+        }
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(blue[0], blue[1], blue[2]);
+        doc.text("RS CENTRO", 40, 22);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text("PLAN DE ENTRENAMIENTO PROFESIONAL", 40, 28);
+
+        // Session Box
+        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
+        doc.roundedRect(15, 38, 180, 25, 3, 3, 'F');
+        
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text("NOMBRE DE LA SESIÓN", 20, 45);
+        doc.text("EQUIPO / CATEGORÍA", 100, 45);
+        doc.text("FECHA / HORA", 155, 45);
+
+        doc.setFontSize(10);
+        doc.setTextColor(slate[0], slate[1], slate[2]);
+        doc.text((session.titulo || session.nombre || 'SESIÓN').toUpperCase(), 20, 52);
+        doc.text((session.equiponombre || 'GENERAL').toUpperCase(), 100, 52);
+        doc.text(`${session.fecha} | ${session.hora || '--:--'}`, 155, 52);
+
+        // Tasks Summary
+        let currentY = 75;
+        doc.setFontSize(12);
+        doc.setTextColor(blue[0], blue[1], blue[2]);
+        doc.text(`CONTENIDO DE LA SESIÓN (${sessionTasks.length} EJERCICIOS)`, 15, currentY);
+        
+        currentY += 10;
+        sessionTasks.forEach((t, i) => {
+            doc.setFontSize(10);
+            doc.setTextColor(slate[0], slate[1], slate[2]);
+            doc.text(`${i + 1}. ${(t.name || 'Tarea').toUpperCase()}`, 20, currentY);
+            doc.setFontSize(8);
+            doc.setTextColor(148, 163, 184);
+            const typeText = `${t.type || 'FÚTBOL'} | ${t.duration || '15'} min`;
+            doc.text(typeText, 140, currentY);
+            currentY += 8;
+        });
+
+        // --- TASKS PAGES ---
+        sessionTasks.forEach((t, i) => {
+            doc.addPage();
+            
+            // Header Mini
+            doc.setFillColor(blue[0], blue[1], blue[2]);
+            doc.rect(15, 15, 2, 8, 'F');
+            doc.setFontSize(14);
+            doc.setTextColor(slate[0], slate[1], slate[2]);
+            doc.setFont("helvetica", "bold");
+            doc.text(`${i + 1}. ${(t.name || 'Tarea').toUpperCase()}`, 20, 21);
+
+            // Image Area
+            let imageY = 30;
+            const imgWidth = 180;
+            const imgHeight = 110;
+            
+            if (t.image) {
+                try {
+                    doc.addImage(t.image, 'JPEG', 15, imageY, imgWidth, imgHeight);
+                } catch (e) {
+                    doc.setDrawColor(226, 232, 240);
+                    doc.rect(15, imageY, imgWidth, imgHeight);
+                    doc.text("Imagen no disponible en PDF", 15 + imgWidth/2, imageY + imgHeight/2, { align: 'center' });
+                }
+            } else {
+                doc.setDrawColor(226, 232, 240);
+                doc.rect(15, imageY, imgWidth, imgHeight);
+                doc.setTextColor(203, 213, 225);
+                doc.text("Ejercicio sin gráfico táctico", 15 + imgWidth/2, imageY + imgHeight/2, { align: 'center' });
+            }
+
+            // Description
+            let descY = imageY + imgHeight + 15;
+            doc.setFontSize(9);
+            doc.setTextColor(100, 116, 139);
+            doc.setFont("helvetica", "bold");
+            doc.text("EXPLICACIÓN TÉCNICA", 15, descY);
+            
+            descY += 6;
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(51, 65, 85);
+            const splitDesc = doc.splitTextToSize(t.description || 'Sin descripción detallada.', 180);
+            doc.text(splitDesc, 15, descY);
+
+            // INTERACTIVE VIDEO BUTTON
+            if (t.video) {
+                const videoUrl = t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`;
+                const buttonY = 250;
+                
+                // Button box
+                doc.setFillColor(blue[0], blue[1], blue[2]);
+                doc.roundedRect(15, buttonY, 60, 12, 2, 2, 'F');
+                
+                // Button text
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(10);
+                doc.setFont("helvetica", "bold");
+                doc.text("VER VIDEO", 45, buttonY + 7.5, { align: 'center' });
+                
+                // CLICKABLE LINK OVER BUTTON
+                doc.link(15, buttonY, 60, 12, { url: videoUrl });
+
+                // QR Code
+                try {
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(videoUrl)}`;
+                    doc.addImage(qrUrl, 'PNG', 165, buttonY - 5, 30, 30);
+                    doc.setFontSize(7);
+                    doc.setTextColor(148, 163, 184);
+                    doc.text("ESCANEA QR", 180, buttonY + 28, { align: 'center' });
+                } catch (e) {}
+            }
+
+            // Page Footer
+            doc.setFontSize(8);
+            doc.setTextColor(203, 213, 225);
+            doc.text(`RS CENTRO • ${session.titulo || 'Sesión'} • Tarea ${i + 1}/${sessionTasks.length}`, 15, 285);
+        });
+
+        doc.save(`Sesion_${session.titulo || 'Entrenamiento'}_${session.fecha}.pdf`);
     };
 
     // PDF Generation Utilities
