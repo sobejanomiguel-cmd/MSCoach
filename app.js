@@ -20,6 +20,12 @@ window.getSortedTeams = (teams) => {
         return nameA.localeCompare(nameB);
     });
 };
+
+window.cleanLugar = (l) => {
+    if (!l) return '';
+    if (typeof l !== 'string') return l;
+    return l.split(' ||| ')[0];
+};
 window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCallback = "") => {
     const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
                  selectedPositions.length === 1 ? selectedPositions[0] : 
@@ -1481,7 +1487,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </div>
                                     </td>
                                     <td class="px-8 py-6">
-                                        <span class="text-xs font-medium text-slate-500 line-clamp-1">${e.lugar || '---'}</span>
+                                        <span class="text-xs font-medium text-slate-500 line-clamp-1">${window.cleanLugar(e.lugar) || '---'}</span>
                                     </td>
                                     <td class="px-8 py-6 text-right">
                                         <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1546,7 +1552,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
-                                        ${evento.lugar || 'Ubicación no definida'}
+                                        ${window.cleanLugar(evento.lugar) || 'Ubicación no definida'}
                                     </div>
                                 </div>
                             </div>
@@ -1590,7 +1596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div class="space-y-6 relative z-10">
                                     <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
                                         <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Entorno</p>
-                                        <p class="text-sm font-bold text-white uppercase">${evento.lugar || 'Sede Central'}</p>
+                                        <p class="text-sm font-bold text-white uppercase">${window.cleanLugar(evento.lugar) || 'Sede Central'}</p>
                                     </div>
                                     <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
                                         <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Equipos Vinculados</p>
@@ -1659,9 +1665,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
                                 ${session.hora || '--:--'}
                             </div>
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i>
-                                ${session.lugar || 'No especificado'}
+                            <div class="flex items-center gap-2 mt-1">
+                                <i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-300"></i>
+                                ${window.cleanLugar(session.lugar) || 'No especificado'}
                             </div>
                         </div>
                     </div>
@@ -1801,7 +1807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                          </div>
                          <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                            <input name="lugar" value="${evento.lugar || ''}" placeholder="Lugar" class="w-full p-3 border rounded-xl">
+                            <input name="lugar" value="${window.cleanLugar(evento.lugar) || ''}" placeholder="Lugar" class="w-full p-3 border rounded-xl">
                          </div>
                          <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Notas</label>
@@ -2621,7 +2627,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </div>
                                         </td>
                                         <td class="px-6 py-5">
-                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${s.lugar || 'Campo No Asignado'}</span>
+                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${window.cleanLugar(s.lugar) || 'Campo No Asignado'}</span>
                                         </td>
                                         <td class="px-6 py-5 text-center">
                                             <div class="flex flex-col items-center">
@@ -2763,7 +2769,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="col-span-2">
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar / Campo</label>
-                             <input name="lugar" value="${session.lugar || ''}" placeholder="Ej: Campo 1, Zubieta..." class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100">
+                             <input name="lugar" value="${window.cleanLugar(session.lugar) || ''}" placeholder="Ej: Campo 1, Zubieta..." class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100">
                         </div>
                     </div>
                     
@@ -3142,7 +3148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                     <div class="bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-500">
                         <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Lugar</p>
-                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.lugar || '--'}</p>
+                        <p class="text-[11px] font-bold text-slate-800 uppercase">${window.cleanLugar(session.lugar) || '--'}</p>
                     </div>
                 </div>
 
@@ -4886,7 +4892,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const conv = convocatorias.find(c => c.id == selectedConvId);
             const datePart = formatDateShort(selectedDate);
             const teamName = team ? team.nombre : '';
-            const lugarPart = conv ? (conv.lugar || '') : '';
+            const lugarParts = conv ? (conv.lugar || '').split(' ||| ') : [''];
+            const lugarPart = lugarParts[0];
             
             let name = `Asistencia ${datePart}`;
             if (teamName) name += `_${teamName}`;
@@ -6181,8 +6188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${filtered.map(c => {
-                                let displayLugar = c.lugar || '--';
-                                if (displayLugar.includes(' ||| ')) displayLugar = displayLugar.split(' ||| ')[0];
+                                let displayLugar = window.cleanLugar(c.lugar) || '--';
                                 
                                 const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
                                 const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
@@ -6490,7 +6496,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div>
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                             <input name="lugar" value="${conv.lugar || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
+                             <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
                         </div>
                     </div>
 
@@ -6825,21 +6831,21 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <div class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
                                         <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Sesión 1</p>
                                         <p class="text-xs font-bold text-slate-700">${conv.fecha} • ${conv.hora || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar || 'Sin lugar'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar) || 'Sin lugar'}</p>
                                     </div>
                                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                         <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 2</p>
                                         <p class="text-xs font-bold text-slate-700">${conv.fecha2 || '--'} • ${conv.hora2 || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar2 || 'Sin lugar'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar2) || 'Sin lugar'}</p>
                                     </div>
                                     <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                         <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 3</p>
                                         <p class="text-xs font-bold text-slate-700">${conv.fecha3 || '--'} • ${conv.hora3 || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${conv.lugar3 || 'Sin lugar'}</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar3) || 'Sin lugar'}</p>
                                     </div>
                                 </div>
                             ` : `
-                                <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${conv.lugar || 'Sin lugar asignado'}</p>
+                                <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${window.cleanLugar(conv.lugar) || 'Sin lugar asignado'}</p>
                             `}
                         </div>
 
@@ -7275,7 +7281,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.setTextColor(100, 116, 139);
         doc.setFontSize(9);
         doc.text(`EQUIPO: ${team ? team.nombre : 'General'}`, 45, 37);
-        doc.text(`FECHA: ${conv.fecha}   |   HORA: ${conv.hora || '--'}   |   LUGAR: ${conv.lugar || '--'}`, 45, 42);
+        doc.text(`FECHA: ${conv.fecha}   |   HORA: ${conv.hora || '--'}   |   LUGAR: ${window.cleanLugar(conv.lugar) || '--'}`, 45, 42);
 
         // Línea separadora
         doc.setDrawColor(241, 245, 249);
@@ -7962,8 +7968,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // Helper for Desktop Row
         const renderTorneoRow = (c) => {
-            let displayLugar = c.lugar || '--';
-            if (displayLugar.includes(' ||| ')) displayLugar = displayLugar.split(' ||| ')[0];
+            let displayLugar = window.cleanLugar(c.lugar) || '--';
             const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
             const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
             return `
