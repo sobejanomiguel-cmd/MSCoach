@@ -913,6 +913,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
         });
 
+        // Ordenar equipos por categoría (año) de forma ascendente (2010 primero, 2017 último)
+        teams.sort((a, b) => {
+            const valA = parseInt(a.categoria) || 9999;
+            const valB = parseInt(b.categoria) || 9999;
+            if (valA !== valB) return valA - valB;
+            return (a.nombre || '').localeCompare(b.nombre || '');
+        });
+
         const totalMale = players.filter(p => p.sexo === 'Masculino').length;
         const totalFemale = players.filter(p => p.sexo === 'Femenino').length;
  
@@ -3533,7 +3541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
-                ${teams.map(e => {
+                ${sortedTeams.map(e => {
                     const playersCount = allPlayers.filter(p => p.equipoid == e.id).length;
                     const tournamentsCount = allConvs.filter(c => c.equipoid == e.id && (c.tipo || '').toUpperCase() === 'TORNEO').length;
                     const sessionsCount = allSessions.filter(s => s.equipoid == e.id).length;
@@ -4446,7 +4454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Equipo / Categoría</label>
                                     <select name="equipoid" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
                                         <option value="">Sin equipo</option>
-                                        ${teams.map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                                        ${window.getSortedTeams(teams).map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
                                     </select>
                                 </div>
                                 <div class="col-span-1">
@@ -5845,7 +5853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
                                 <select name="equipoid" class="w-full p-3 border rounded-xl bg-white">
                                     <option value="">Ninguno (Libre)</option>
-                                    ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                    ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                 </select>
                             </div>
                             <div class="col-span-2">
@@ -6683,7 +6691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                                 <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Equipos</label>
                                 <div id="conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                                    ${teams.map(t => `
+                                    ${window.getSortedTeams(teams).map(t => `
                                         <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all shadow-sm">
                                             <input type="checkbox" value="${t.id}" class="w-4 h-4 rounded text-blue-600 conv-team-check">
                                             <span class="text-[9px] font-bold text-slate-700 truncate uppercase">${t.nombre}</span>
@@ -7345,7 +7353,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div class="mb-6 p-4 bg-white border border-slate-100 rounded-3xl shadow-inner-sm">
                                 <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar Jugadores por Squads</label>
                                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
-                                    ${teams.map(t => `
+                                    ${window.getSortedTeams(teams).map(t => `
                                         <label class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-transparent cursor-pointer hover:border-blue-200 transition-all select-none">
                                             <input type="checkbox" value="${t.id}" ${selectedTeamIds.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 conv-team-check">
                                             <span class="text-[9px] font-black text-slate-600 truncate uppercase">${t.nombre}</span>
@@ -7464,7 +7472,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <div class="col-span-2">
                                     <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Equipos Vinculados</label>
                                     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-32 overflow-y-auto p-4 bg-white rounded-[1.5rem] border border-slate-200 custom-scrollbar">
-                                        ${teams.map(t => `
+                                        ${window.getSortedTeams(teams).map(t => `
                                             <label class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-50 cursor-pointer hover:border-blue-200 transition-all select-none">
                                                 <input type="checkbox" name="equipoids" value="${t.id}" ${selectedTeamIds.includes(t.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100 conv-team-check">
                                                 <span class="text-[9px] font-bold text-slate-700 truncate">${t.nombre}</span>
@@ -9300,7 +9308,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div id="session-fields" class="hidden mt-6 pt-6 border-t border-slate-50 space-y-4">
                                     <select name="session_equipoid" id="session-master-equipo" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
                                         <option value="">Selecciona equipo...</option>
-                                        ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                        ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                     </select>
                                     <select id="session-template-selector" class="w-full p-4 border border-blue-100 rounded-2xl bg-white outline-none hidden text-[11px] font-bold text-blue-600">
                                         <option value="">Opcional: Importar sesión existente...</option>
@@ -9328,7 +9336,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </select>
                                 <select name="conv_equipoid" id="conv-master-equipo" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 outline-none">
                                     <option value="">Selecciona equipo...</option>
-                                    ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                                    ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                 </select>
                                 <select id="conv-template-selector" class="w-full p-4 border border-emerald-100 rounded-2xl bg-white outline-none hidden text-[11px] font-bold text-emerald-600">
                                     <option value="">Opcional: Importar convocatoria existente...</option>
