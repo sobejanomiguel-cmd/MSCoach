@@ -4301,11 +4301,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (field === 'nombre' || field === 'posicion' || field === 'equipoConvenido') cleanValue = cleanValue.toUpperCase();
         
         try {
-            const { error } = await supabaseClient.from('jugadores').update({ [field]: cleanValue }).eq('id', Number(id));
-            if (error) throw error;
+            // Usar db.update para sincronizar tanto localmente como en la nube
+            await db.update('jugadores', { id: Number(id), [field]: cleanValue });
             
-            // Si el campo afecta visualmente de forma crítica, refrescamos la vista
-            if (field === 'nivel' || field === 'nombre') {
+            // Si el campo afecta visualmente o a los filtros, refrescamos la tabla
+            if (['nivel', 'nombre', 'posicion', 'equipoConvenido', 'equipoid', 'anionacimiento'].includes(field)) {
                 const container = document.getElementById('content-container');
                 if (container) await window.renderJugadores(container, true);
             }
@@ -6815,10 +6815,47 @@ document.addEventListener('DOMContentLoaded', async () => {
                     bundledData.nombre = (bundledData.nombre || '').toUpperCase().trim();
                     bundledData.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
 
-                    const { error } = await supabaseClient.from('convocatorias').insert(bundledData);
-                    if (error) throw error;
+                    const newConv = await db.add('convocatorias', { ...bundledData, createdBy: currentUser.id });
                     
-                    window.customAlert('¡Éxito!', 'Convocatoria generada correctamente', 'success');
+                    // Crear reportes de asistencia automáticos para que el usuario solo tenga que confirmar
+                    const createAutoAttendance = async (date, nameSuffix = '') => {
+                        if (!date || date === '') return;
+                        const playersData = {};
+                        (data.playerids || []).forEach(pid => { 
+                            playersData[pid] = 'asiste'; 
+                        });
+
+                        const teamNames = checkedTeamIds.map(tid => {
+                            const t = teams.find(team => team.id.toString() === tid.toString());
+                            return t ? t.nombre.split(' ||| ')[0] : tid;
+                        }).join('_');
+
+                        const dateParts = date.split('-');
+                        const dateShort = (dateParts.length === 3) ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0].slice(-2)}` : date;
+                        
+                        const baseName = `ASISTENCIA ${dateShort}${teamNames ? `_${teamNames}` : ''}${nameSuffix ? ` ${nameSuffix}` : ''}`;
+                        const fullName = `${baseName.toUpperCase()} ||| ${JSON.stringify({ eids: checkedTeamIds })}`;
+
+                        await db.add('asistencia', {
+                            nombre: fullName,
+                            equipoid: checkedTeamIds.length > 0 ? parseInt(checkedTeamIds[0]) : null,
+                            fecha: date,
+                            players: playersData,
+                            createdBy: currentUser.id,
+                            convocatoriaid: newConv.id
+                        });
+                    };
+
+                    // Crear asistencia para la fecha principal
+                    await createAutoAttendance(data.fecha);
+
+                    // Si es un ciclo, crear asistencias para las sesiones adicionales si tienen fecha
+                    if (activeTab === 'Ciclo') {
+                        if (data.fecha2) await createAutoAttendance(data.fecha2, '(S2)');
+                        if (data.fecha3) await createAutoAttendance(data.fecha3, '(S3)');
+                    }
+                    
+                    window.customAlert('¡Éxito!', 'Convocatoria y Asistencia generadas correctamente. Ya puedes verlas en Control de Asistencia.', 'success');
                     closeModal();
                     window.switchView(activeTab === 'Torneo' ? 'torneos' : 'convocatorias');
                 } catch (err) {
@@ -7567,14 +7604,25 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             
             mgmtList.innerHTML = filteredPlayers.map(p => {
                 const isConvocado = pids.includes(p.id.toString());
+                const currentPos = (extra.pos && extra.pos[p.id]) || p.posicion || '';
+
                 return `
-                    <label class="flex items-center gap-3 p-4 bg-white rounded-2xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all mgmt-player-label shadow-sm hover:shadow-md">
-                        <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-lg text-blue-600 border-slate-200 focus:ring-blue-100">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-[11px] font-black text-slate-700 truncate mgmt-player-name uppercase tracking-tight">${p.nombre}</p>
-                            <p class="text-[9px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</p>
+                    <div class="flex flex-col gap-2 p-4 bg-white rounded-3xl border border-slate-100 mgmt-player-label shadow-sm hover:shadow-lg transition-all border-transparent hover:border-blue-100 group">
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-xl text-blue-600 border-slate-200 focus:ring-blue-100 mgmt-player-check">
+                            <div class="flex-1 min-w-0">
+                                <p class="text-[11px] font-black text-slate-700 truncate mgmt-player-name uppercase tracking-tight">${p.nombre}</p>
+                                <p class="text-[8px] text-slate-400 font-black uppercase tracking-widest">${p.equipoConvenido || 'Libre'}</p>
+                            </div>
                         </div>
-                    </label>
+                        <div class="mt-2 pt-2 border-t border-slate-50 flex items-center gap-2">
+                            <label class="text-[8px] font-black text-slate-300 uppercase shrink-0">POS:</label>
+                            <select class="flex-1 p-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-600 outline-none mgmt-player-pos transition-all focus:bg-white focus:border-blue-200">
+                                <option value="">${p.posicion || '--'}</option>
+                                ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
                 `;
             }).join('') || '<p class="col-span-full text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona al menos un equipo para ver jugadores.</p>';
         };
@@ -9445,15 +9493,40 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 // 3. Crear Convocatoria si procede
                 if (cCheck.checked) {
+                    const playerIds = formData.getAll('conv_playerids');
                     const conv = {
                         nombre: baseData.nombre,
                         fecha: baseData.fecha,
                         hora: baseData.hora,
                         tipo: baseData.conv_tipo,
                         equipoid: baseData.conv_equipoid,
-                        playerids: formData.getAll('conv_playerids')
+                        playerids: playerIds,
+                        createdBy: currentUser.id
                     };
-                    await supabaseClient.from('convocatorias').insert(conv);
+                    const newConv = await db.add('convocatorias', conv);
+
+                    // Auto-crear asistencia para el planificador
+                    if (playerIds.length > 0) {
+                        const playersData = {};
+                        playerIds.forEach(pid => { playersData[pid] = 'asiste'; });
+                        
+                        const team = teams.find(t => t.id.toString() === (baseData.conv_equipoid || '').toString());
+                        const teamName = team ? team.nombre.split(' ||| ')[0] : '';
+
+                        const dateParts = baseData.fecha.split('-');
+                        const dateShort = (dateParts.length === 3) ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0].slice(-2)}` : baseData.fecha;
+                        
+                        const fullName = `ASISTENCIA ${dateShort}_${teamName.toUpperCase()} ||| ${JSON.stringify({ eids: [baseData.conv_equipoid] })}`;
+
+                        await db.add('asistencia', {
+                            nombre: fullName,
+                            equipoid: baseData.conv_equipoid ? parseInt(baseData.conv_equipoid) : null,
+                            fecha: baseData.fecha,
+                            players: playersData,
+                            createdBy: currentUser.id,
+                            convocatoriaid: newConv.id
+                        });
+                    }
                 }
 
                 // Forzar actualización de IndexedDB para que se vea en el calendario sin esperar al pooler
