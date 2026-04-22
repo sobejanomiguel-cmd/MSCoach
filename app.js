@@ -1723,7 +1723,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex-1">
                         <div class="flex items-center gap-3 mb-4">
                             <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
-                            <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${team ? team.nombre : 'Equipo General'}</span>
+                            ${(() => {
+                                let teamIds = [session.equipoid];
+                                if (session.lugar && session.lugar.includes(' ||| ')) {
+                                    try {
+                                        const ex = JSON.parse(session.lugar.split(' ||| ')[1]);
+                                        if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
+                                    } catch(e) {}
+                                }
+                                return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
+                                    <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
+                                `).join('');
+                            })()}
                         </div>
                         <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-none mb-4">${session.titulo || 'Sesión sin título'}</h2>
                         <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
@@ -2642,18 +2653,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.renderSesiones = async function(container, onlyTable = false) {
         const sessions = await db.getAll('sesiones');
-        const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const { data: profiles } = await supabaseClient.from('profiles').select('*');
-
+        const teams = await db.getAll('equipos');
+        const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
+        const sortedTeams = window.getSortedTeams(teams);
+        
         const userRes = await supabaseClient.auth.getUser();
         const currentUser = userRes.data?.user;
-        if (!currentUser) return;
+
+        const { data: profiles } = await supabaseClient.from('profiles').select('*');
         
         const isGlobal = window.currentVisibilityMode === 'global';
-        const mySessions = isGlobal ? sessions : sessions.filter(s => s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id)));
+        const mySessions = isGlobal ? sessions : sessions.filter(s => {
+            if (!currentUser) return false;
+            return s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id));
+        });
 
         const filteredSessions = mySessions.filter(s => {
-            const matchesTeam = sessionFilters.team === 'TODOS' || s.equipoid == sessionFilters.team;
+            let sessionTeamIds = [String(s.equipoid)];
+            if (s.lugar && s.lugar.includes(' ||| ')) {
+                try {
+                    const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
+                    if (ex.eids) sessionTeamIds = [...new Set([...sessionTeamIds, ...ex.eids.map(String)])];
+                } catch(e) {}
+            }
+
+            const matchesTeam = sessionFilters.team === 'TODOS' || sessionTeamIds.includes(String(sessionFilters.team));
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
             const searchTerm = (sessionFilters.search || '').toLowerCase();
             const matchesSearch = !searchTerm || 
@@ -2682,7 +2706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar flex-1">
                             <button onclick="window.filterSessions('team', 'TODOS')" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${sessionFilters.team === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">Todas las Plantillas</button>
-                            ${teams.map(t => `
+                            ${sortedTeams.map(t => `
                                 <button onclick="window.filterSessions('team', ${t.id})" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${sessionFilters.team == t.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
                                     ${t.nombre.split(' ||| ')[0]}
                                 </button>
@@ -2746,7 +2770,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                         <td class="px-6 py-5">
                                             <div class="flex flex-col gap-1.5">
-                                                <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-tight border border-blue-100/50 w-fit">${s.equiponombre}</span>
+                                                <div class="flex flex-wrap gap-1">
+                                                    ${(() => {
+                                                        let teamIds = [s.equipoid];
+                                                        if (s.lugar && s.lugar.includes(' ||| ')) {
+                                                            try {
+                                                                const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
+                                                                if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
+                                                            } catch(e) {}
+                                                        }
+                                                        return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                                                            <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teamsMap[id].split(' ||| ')[0]}</span>
+                                                        `).join('');
+                                                    })()}
+                                                </div>
                                                 <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">${coach ? (coach.name || coach.nombre) : 'Sistema'}</span>
                                             </div>
                                         </td>
@@ -2793,7 +2830,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <span class="text-sm font-black">${new Date(s.fecha).getDate()}</span>
                                     </div>
                                     <div>
-                                        <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${s.equiponombre}</span>
+                                        <div class="flex flex-wrap gap-1 mb-1">
+                                            ${(() => {
+                                                let teamIds = [s.equipoid];
+                                                if (s.lugar && s.lugar.includes(' ||| ')) {
+                                                    try {
+                                                        const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
+                                                        if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
+                                                    } catch(e) {}
+                                                }
+                                                return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                                                    <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${teamsMap[id].split(' ||| ')[0]}</span>
+                                                `).join('');
+                                            })()}
+                                        </div>
                                         <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
                                     </div>
                                 </div>
@@ -2861,12 +2911,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre de la Sesión</label>
                             <input name="titulo" value="${session.titulo || ''}" placeholder="Ej: S1 Arnedo 2010 (S=Sesión, 1=Num, Arnedo=Lugar, 2010=Equipo)" class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100" required>
                         </div>
-                        <div>
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Equipo</label>
-                            <select name="equipoid" id="session-modal-team-select" class="w-full p-3 border rounded-xl bg-white">
-                                <option value="">Seleccionar equipo...</option>
-                                ${teams.map(t => `<option value="${t.id}" ${session.equipoid == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
-                            </select>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2 px-1">Equipos Participantes</label>
+                            <div id="session-teams-container" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar">
+                                ${teams.map(t => {
+                                    let isSelected = session.equipoid == t.id;
+                                    if (session.lugar && session.lugar.includes(' ||| ')) {
+                                        try {
+                                            const extra = JSON.parse(session.lugar.split(' ||| ')[1]);
+                                            if (extra.eids && extra.eids.includes(t.id.toString())) isSelected = true;
+                                        } catch(e) {}
+                                    }
+                                    return `
+                                        <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                            <input type="checkbox" name="equipoids" value="${t.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 session-team-check">
+                                            <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre.split(' ||| ')[0]}</span>
+                                        </label>
+                                    `;
+                                }).join('')}
+                            </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div>
@@ -2978,11 +3041,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
 
-        const teamSelect = document.getElementById('session-modal-team-select');
         const playersList = document.getElementById('session-modal-players-list');
         const convSelect = document.getElementById('session-modal-conv-select');
         const convSearch = document.getElementById('session-modal-conv-search');
         const sessionPlayerSearch = document.getElementById('session-modal-player-search');
+        const teamChecks = document.querySelectorAll('.session-team-check');
 
         // Filtros slots
         [1,2,3,4,5,6].forEach(num => {
@@ -3001,9 +3064,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.clearSessionSlot = (num) => { document.getElementById(`task-select-${num}`).value = ""; };
 
         const updatePlayers = () => {
-            const equipoid = teamSelect.value;
-            if (!equipoid) return;
-            const teamPlayers = players.filter(p => p.equipoid == equipoid);
+            const selectedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+            if (selectedTeamIds.length === 0) {
+                playersList.innerHTML = '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">Selecciona algún equipo para ver jugadores.</p>';
+                return;
+            }
+            const teamPlayers = players.filter(p => selectedTeamIds.includes(String(p.equipoid)));
             playersList.innerHTML = teamPlayers.map(p => `
                 <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200 transition-all player-label">
                     <input type="checkbox" name="playerids" value="${p.id}" ${session.playerids && session.playerids.includes(p.id.toString()) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
@@ -3013,6 +3079,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             if (window.lucide) lucide.createIcons();
         };
+
+        const updateConvsByTeam = () => {
+            const selectedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+            if (!convSelect) return;
+            
+            let filteredConvs = convs || [];
+            if (selectedTeamIds.length > 0) {
+                filteredConvs = (convs || []).filter(c => selectedTeamIds.includes(String(c.equipoid)));
+            }
+
+            const currentVal = convSelect.value;
+            convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` + 
+                filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha}) [${(c.playerids || []).length} JUG]</option>`).join('');
+            if (currentVal) convSelect.value = currentVal;
+        };
+
+        teamChecks.forEach(c => c.onchange = () => {
+            updatePlayers();
+            updateConvsByTeam();
+        });
+
+        if (Array.from(teamChecks).some(c => c.checked)) {
+            updatePlayers();
+            updateConvsByTeam();
+        }
 
         if (sessionPlayerSearch) {
             sessionPlayerSearch.oninput = (e) => {
@@ -3043,31 +3134,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
         }
 
-        const updateConvsByTeam = () => {
-            const equipoid = teamSelect.value;
-            if (!convSelect) return;
-            
-            let filteredConvs = convs || [];
-            if (equipoid) {
-                filteredConvs = (convs || []).filter(c => c.equipoid == equipoid);
-            }
-
-            const currentVal = convSelect.value;
-            convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` + 
-                filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha}) [${(c.playerids || []).length} JUG]</option>`).join('');
-            if (currentVal) convSelect.value = currentVal;
-        };
-
-        teamSelect.onchange = () => {
-            updatePlayers();
-            updateConvsByTeam();
-        };
-
-        if (session.equipoid) {
-            updatePlayers();
-            updateConvsByTeam();
-        }
-
         convSelect.onchange = () => {
             const opt = convSelect.selectedOptions[0];
             const countBadge = document.getElementById('session-modal-conv-count');
@@ -3094,32 +3160,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('session-modal-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            if (data.id) data.id = parseInt(data.id);
-            data.ciclo = data.ciclo ? parseInt(data.ciclo) : null;
-            data.numSesion = data.numSesion ? parseInt(data.numSesion) : null;
-            if (data.equipoid) data.equipoid = parseInt(data.equipoid);
-            data.sharedWith = formData.getAll('sharedWith'); 
-            data.createdBy = currentUser.id;
             
-            data.taskids = [];
-            for (let i = 1; i <= 6; i++) {
-                const val = document.getElementById(`task-select-${i}`).value;
-                if (val) data.taskids.push(val);
-            }
-            
-            data.playerids = formData.getAll('playerids');
-            const team = teams.find(t => t.id == data.equipoid);
-            data.equiponombre = team ? team.nombre.split(' ||| ')[0] : 'Equipo';
+            const selectedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+            const extra = { eids: selectedTeamIds };
+            const baseLugar = (formData.get('lugar') || '').toUpperCase().trim();
+            const fullLugar = `${baseLugar} ||| ${JSON.stringify(extra)}`;
 
-            if (data.titulo) data.titulo = data.titulo.toUpperCase().trim();
-            if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
-            
-            if (isEdit) await db.update('sesiones', data);
-            else await db.add('sesiones', data);
-            
-            closeModal();
-            window.renderView('sesiones');
+            // Build clean data object with ONLY valid DB columns
+            const data = {
+                titulo: (formData.get('titulo') || '').toUpperCase().trim(),
+                fecha: formData.get('fecha'),
+                hora: formData.get('hora'),
+                lugar: fullLugar,
+                ciclo: formData.get('ciclo') ? parseInt(formData.get('ciclo')) : null,
+                numSesion: formData.get('numSesion') ? parseInt(formData.get('numSesion')) : null,
+                equipoid: selectedTeamIds.length > 0 ? parseInt(selectedTeamIds[0]) : null,
+                createdBy: currentUser?.id || session.createdBy || null,
+                sharedWith: formData.getAll('sharedWith'),
+                playerids: formData.getAll('playerids'),
+                taskids: []
+            };
+
+            if (isEdit && session.id) data.id = parseInt(session.id);
+
+            for (let i = 1; i <= 6; i++) {
+                const sel = document.getElementById(`task-select-${i}`);
+                if (sel && sel.value) data.taskids.push(sel.value);
+            }
+
+            try {
+                if (isEdit && data.id) {
+                    await db.update('sesiones', data);
+                } else {
+                    await db.add('sesiones', data);
+                }
+                closeModal();
+                window.renderView('sesiones');
+            } catch (err) {
+                console.error("Error saving session:", err);
+                const errorMsg = err.message || "Error desconocido";
+                window.customAlert('Error al Guardar', `No se pudo guardar la sesión: ${errorMsg}`, 'error');
+            }
         };
     };
 
@@ -4845,12 +4926,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const filteredReports = reports.filter(r => {
             if (!r || !r.fecha) return false;
-            const team = teams.find(t => t.id == r.equipoid);
-            const teamName = team ? team.nombre.toLowerCase() : '';
-            const reportName = (r.nombre || `Informe ${r.fecha}`).toLowerCase();
+            
+            let reportTeamIds = [String(r.equipoid)];
+            if (r.nombre && r.nombre.includes(' ||| ')) {
+                try {
+                    const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
+                    if (ex.eids) reportTeamIds = [...new Set([...reportTeamIds, ...ex.eids.map(String)])];
+                } catch(e) {}
+            }
+
             const searchTerm = (asistenciaFilters.search || '').toLowerCase();
-            const matchesSearch = reportName.includes(searchTerm) || teamName.includes(searchTerm);
-            const matchesTeam = asistenciaFilters.activeTeamId === 'TODOS' || r.equipoid == asistenciaFilters.activeTeamId;
+            const matchesSearch = !searchTerm || 
+                                 (r.nombre || '').toLowerCase().includes(searchTerm) || 
+                                 reportTeamIds.some(id => teams.find(t => t.id == id)?.nombre.toLowerCase().includes(searchTerm));
+                                 
+            const matchesTeam = asistenciaFilters.activeTeamId === 'TODOS' || reportTeamIds.includes(String(asistenciaFilters.activeTeamId));
             return matchesSearch && matchesTeam;
         }).sort((a,b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
@@ -4892,7 +4982,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
                         const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
                         const total = dataValues.length;
-                        const reportName = r.nombre || `Informe ${r.fecha}`;
+                        const reportName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
                         
                         return `
                             <div onclick="window.viewAsistenciaReport(${r.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
@@ -4901,7 +4991,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <h4 class="font-bold text-slate-800 text-sm">${reportName}</h4>
                                         <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">${new Date(r.fecha + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: 'long' })}</p>
                                     </div>
-                                    <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight">${team ? team.nombre : 'General'}</span>
+                                    <div class="flex flex-wrap gap-1 justify-end max-w-[50%]">
+                                        ${(() => {
+                                            let teamIds = [String(r.equipoid)];
+                                            if (r.nombre && r.nombre.includes(' ||| ')) {
+                                                try {
+                                                    const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
+                                                    if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
+                                                } catch(e) {}
+                                            }
+                                            return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
+                                                <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tight">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
+                                            `).join('');
+                                        })()}
+                                    </div>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <div class="flex items-center gap-2">
@@ -4940,7 +5043,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
                                     const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
                                     const total = dataValues.length;
-                                    const reportName = r.nombre || `Informe ${r.fecha}`;
+                                    const reportName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
                                     
                                     return `
                                         <tr class="hover:bg-slate-50/50 transition-colors group">
@@ -4951,7 +5054,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 <span class="text-xs font-black text-slate-400 uppercase">${new Date(r.fecha + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
                                             </td>
                                             <td class="px-6 py-5">
-                                                <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-tight">${team ? team.nombre : 'General'}</span>
+                                                <div class="flex flex-wrap gap-1">
+                                                    ${(() => {
+                                                        let teamIds = [String(r.equipoid)];
+                                                        if (r.nombre && r.nombre.includes(' ||| ')) {
+                                                            try {
+                                                                const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
+                                                                if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
+                                                            } catch(e) {}
+                                                        }
+                                                        return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
+                                                            <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
+                                                        `).join('');
+                                                    })()}
+                                                </div>
                                             </td>
                                             <td class="px-6 py-5 text-center">
                                                 <div class="flex flex-col items-center">
@@ -5031,12 +5147,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         const players = await db.getAll('jugadores');
         const convocatorias = await db.getAll('convocatorias');
 
-        let selectedTeamId = existingReport ? existingReport.equipoid : null;
+        let selectedTeamIds = [];
+        if (existingReport) {
+            if (existingReport.equipoid) selectedTeamIds.push(String(existingReport.equipoid));
+            if (existingReport.nombre && existingReport.nombre.includes(' ||| ')) {
+                try {
+                    const ex = JSON.parse(existingReport.nombre.split(' ||| ')[1]);
+                    if (ex.eids) selectedTeamIds = [...new Set([...selectedTeamIds, ...ex.eids.map(String)])];
+                } catch(e) {}
+            }
+        }
+        
         let selectedDate = existingReport ? (existingReport.fecha || existingReport.date) : new Date().toISOString().split('T')[0];
         let selectedConvId = existingReport ? (existingReport.convocatoriaid || null) : null;
         // Search dynamically if not explicitly stored
-        if (!selectedConvId && existingReport && selectedDate && selectedTeamId) {
-            const matchingConv = convocatorias.find(c => c.fecha === selectedDate && (c.equipoid == selectedTeamId || (c.equipoid && c.equipoid.toString().split(',').includes(selectedTeamId.toString()))));
+        if (!selectedConvId && existingReport && selectedDate && selectedTeamIds.length > 0) {
+            const matchingConv = convocatorias.find(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
             if (matchingConv) selectedConvId = matchingConv.id;
         }
         
@@ -5053,15 +5179,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const nameInput = container.querySelector('#report-name');
             if (!nameInput || existingReport) return;
             
-            const team = teams.find(t => t.id == selectedTeamId);
+            const selectedTeams = teams.filter(t => selectedTeamIds.includes(String(t.id)));
             const conv = convocatorias.find(c => c.id == selectedConvId);
             const datePart = formatDateShort(selectedDate);
-            const teamName = team ? team.nombre : '';
+            const teamNames = selectedTeams.map(t => t.nombre.split(' ||| ')[0]).join('_');
             const lugarParts = conv ? (conv.lugar || '').split(' ||| ') : [''];
             const lugarPart = lugarParts[0];
             
             let name = `Asistencia ${datePart}`;
-            if (teamName) name += `_${teamName}`;
+            if (teamNames) name += `_${teamNames}`;
             if (lugarPart) name += `_${lugarPart}`;
             
             nameInput.value = name;
@@ -5078,19 +5204,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (conv && Array.isArray(conv.playerids)) {
                     targetPlayers = players.filter(p => conv.playerids.includes(p.id.toString()));
                 }
-            } else if (selectedTeamId) {
-                // If no specific convocatoria is selected, check if there's one for this team on this date
-                const matchingConv = convocatorias.find(c => c.fecha === selectedDate && (c.equipoid == selectedTeamId || (c.equipoid && c.equipoid.toString().split(',').includes(selectedTeamId.toString()))));
-                if (matchingConv && matchingConv.playerids) {
-                    targetPlayers = players.filter(p => matchingConv.playerids.includes(p.id.toString()));
+            } else if (selectedTeamIds.length > 0) {
+                // Check for matching convocatorias for any of the selected teams
+                const matchingConvs = convocatorias.filter(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
+                if (matchingConvs.length > 0) {
+                    const allPids = [...new Set(matchingConvs.flatMap(c => (c.playerids || []).map(String)))];
+                    targetPlayers = players.filter(p => allPids.includes(p.id.toString()));
                 } else {
-                    targetPlayers = players.filter(j => j.equipoid == selectedTeamId);
+                    targetPlayers = players.filter(j => selectedTeamIds.includes(String(j.equipoid)));
                 }
             }
             
-            // If we have no target players yet but have only a date, we could show players from ALL convocatorias of the day?
-            // User said "only summoned on that day". If no team selected, maybe show nothing until a team/conv is picked.
-            if (!selectedTeamId && !selectedConvId && selectedDate) {
+            if (selectedTeamIds.length === 0 && !selectedConvId && selectedDate) {
                  const dayConvs = convocatorias.filter(c => c.fecha === selectedDate);
                  const allPids = [...new Set(dayConvs.flatMap(c => (c.playerids || []).map(String)))];
                  if (allPids.length > 0) {
@@ -5215,7 +5340,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const renderForm = () => {
             const sortedTeams = window.getSortedTeams(teams);
-            const dateConvs = convocatorias.filter(c => c.fecha === selectedDate && (!selectedTeamId || c.equipoid == selectedTeamId));
+            const dateConvs = convocatorias.filter(c => c.fecha === selectedDate && (selectedTeamIds.length === 0 || selectedTeamIds.includes(String(c.equipoid))));
             
             container.innerHTML = `
                 <div class="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
@@ -5239,10 +5364,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                                 <input id="date-sel" type="date" value="${selectedDate}" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all">
                                 
-                                <select id="team-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer ${existingReport ? 'opacity-50' : ''}" ${existingReport ? 'disabled' : ''}>
-                                    <option value="">- Equipo -</option>
-                                    ${sortedTeams.map(t => `<option value="${t.id}" ${selectedTeamId == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
-                                </select>
+                                <div class="relative min-w-[180px]">
+                                    <button id="team-multi-btn" class="w-full p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all flex items-center gap-2 ${existingReport ? 'opacity-50 cursor-not-allowed' : ''}" ${existingReport ? 'disabled' : ''}>
+                                        <i data-lucide="users" class="w-4 h-4 text-slate-400"></i>
+                                        <span class="truncate">${selectedTeamIds.length > 0 ? `${selectedTeamIds.length} Equipos` : 'Equipos'}</span>
+                                        <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400 ml-auto"></i>
+                                    </button>
+                                    <div id="team-multi-dropdown" class="absolute top-full left-0 mt-2 w-72 bg-white border border-slate-100 rounded-3xl shadow-2xl p-4 hidden z-50 animate-in fade-in zoom-in-95 duration-200">
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Seleccionar Equipos</p>
+                                        <div class="grid grid-cols-1 gap-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                            ${sortedTeams.map(t => `
+                                                <label class="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-xl cursor-pointer transition-all">
+                                                    <input type="checkbox" value="${t.id}" ${selectedTeamIds.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 asistencia-team-check">
+                                                    <span class="text-xs font-bold text-slate-700">${t.nombre}</span>
+                                                </label>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <select id="conv-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer ${existingReport ? 'opacity-50' : ''}" ${existingReport ? 'disabled' : ''}>
                                     <option value="">- Convocatoria (Opcional) -</option>
@@ -5281,27 +5420,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
             if (window.lucide) lucide.createIcons();
 
-            const teamSel = container.querySelector('#team-sel');
+            const teamMultiBtn = container.querySelector('#team-multi-btn');
+            const teamDropdown = container.querySelector('#team-multi-dropdown');
             const convSel = container.querySelector('#conv-sel');
             const dateSel = container.querySelector('#date-sel');
             const saveBtn = container.querySelector('#save-report');
 
-            teamSel.onchange = (e) => { 
-                selectedTeamId = e.target.value; 
-                selectedConvId = null;
-                renderForm();
-                updateBoard(); 
-            };
+            if (teamMultiBtn && teamDropdown) {
+                teamMultiBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    teamDropdown.classList.toggle('hidden');
+                };
+                document.addEventListener('click', (e) => {
+                    if (!teamDropdown.contains(e.target) && !teamMultiBtn.contains(e.target)) {
+                        teamDropdown.classList.add('hidden');
+                    }
+                });
+            }
+
+            container.querySelectorAll('.asistencia-team-check').forEach(chk => {
+                chk.onchange = () => {
+                    selectedTeamIds = Array.from(container.querySelectorAll('.asistencia-team-check:checked')).map(c => c.value);
+                    selectedConvId = null;
+                    renderForm();
+                    updateBoard();
+                };
+            });
             
             convSel.onchange = (e) => { 
                 selectedConvId = e.target.value;
                 const selectedConv = convocatorias.find(c => c.id == selectedConvId);
                 if (selectedConv) {
-                    selectedTeamId = selectedConv.equipoid;
-                    teamSel.value = selectedTeamId;
+                    selectedTeamIds = [String(selectedConv.equipoid)];
                 }
                 updateAutoName();
                 updateBoard(); 
+                renderForm();
             };
 
             dateSel.onchange = (e) => {
@@ -5314,26 +5468,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             saveBtn.onclick = async () => {
                 const nameInput = container.querySelector('#report-name');
-                if (!selectedTeamId && !selectedConvId) {
-                    window.customAlert('Faltan Datos', 'Por favor selecciona un equipo o una convocatoria.', 'warning');
+                if (selectedTeamIds.length === 0 && !selectedConvId) {
+                    window.customAlert('Faltan Datos', 'Por favor selecciona al menos un equipo o una convocatoria.', 'warning');
                     return;
                 }
-                // Default to 'asiste' for everyone not explicitly changed
+                
                 const finalData = { ...attendanceData };
                 
-                // Get the current target players to ensure everyone has a record
+                // Aggregate current target players
                 let currentPlayers = [];
                 if (selectedConvId) {
                     const conv = convocatorias.find(c => c.id == selectedConvId);
                     if (conv && Array.isArray(conv.playerids)) {
                         currentPlayers = players.filter(p => conv.playerids.includes(p.id.toString()));
                     }
-                } else if (selectedTeamId) {
-                    const matchingConv = convocatorias.find(c => c.fecha === selectedDate && (c.equipoid == selectedTeamId || (c.equipoid && c.equipoid.toString().split(',').includes(selectedTeamId.toString()))));
-                    if (matchingConv && matchingConv.playerids) {
-                        currentPlayers = players.filter(p => matchingConv.playerids.includes(p.id.toString()));
+                } else if (selectedTeamIds.length > 0) {
+                    const matchingConvs = convocatorias.filter(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
+                    if (matchingConvs.length > 0) {
+                        const allPids = [...new Set(matchingConvs.flatMap(c => (c.playerids || []).map(String)))];
+                        currentPlayers = players.filter(p => allPids.includes(p.id.toString()));
                     } else {
-                        currentPlayers = players.filter(j => j.equipoid == selectedTeamId);
+                        currentPlayers = players.filter(j => selectedTeamIds.includes(String(j.equipoid)));
                     }
                 }
 
@@ -5341,10 +5496,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (!finalData[p.id]) finalData[p.id] = 'asiste';
                 });
 
+                const extra = { eids: selectedTeamIds };
+                const baseName = (nameInput ? nameInput.value : 'Asistencia').toUpperCase().trim();
+                const fullName = `${baseName} ||| ${JSON.stringify(extra)}`;
+
                 const report = { 
                     id: existingReport ? existingReport.id : undefined, 
-                    nombre: nameInput ? nameInput.value : 'Asistencia',
-                    equipoid: selectedTeamId, 
+                    nombre: fullName,
+                    equipoid: selectedTeamIds.length > 0 ? parseInt(selectedTeamIds[0]) : null, 
                     fecha: selectedDate, 
                     players: finalData 
                 };
@@ -6322,7 +6481,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center"><i data-lucide="scroll-text" class="w-5 h-5"></i></div>
                                 <div>
                                     <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        ${c.fecha} • 
+                                        ${(() => {
+                                            if (c.lugar && c.lugar.includes(' ||| ')) {
+                                                try {
+                                                    const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
+                                                    if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
+                                                } catch(e) {}
+                                            }
+                                            return c.hora || '--:--';
+                                        })()}
+                                    </p>
                                 </div>
                             </div>
                             <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${c.tipo}</span>
@@ -6371,7 +6541,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <td class="p-6">
                                             <div class="flex flex-col">
                                                 <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
-                                                <span class="text-[10px] font-black text-slate-400 uppercase">${c.hora || '--:--'}</span>
+                                                <span class="text-[10px] font-black text-slate-400 uppercase">
+                                                    ${(() => {
+                                                        if (c.lugar && c.lugar.includes(' ||| ')) {
+                                                            try {
+                                                                const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
+                                                                if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
+                                                            } catch(e) {}
+                                                        }
+                                                        return c.hora || '--:--';
+                                                    })()}
+                                                </span>
                                             </div>
                                         </td>
                                         <td class="p-6">
@@ -6468,13 +6648,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </div>
                                 </div>
                             ` : `
+                                 <div class="col-span-2 grid grid-cols-3 gap-3">
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
+                                         <input name="hora_llegada" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                                    </div>
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
+                                         <input name="hora_inicio" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
+                                    </div>
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
+                                         <input name="hora_salida" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                                    </div>
+                                </div>
                                 <div>
                                      <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
                                      <input name="fecha" type="date" class="w-full p-3 border rounded-xl outline-none" required>
-                                </div>
-                                <div>
-                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
-                                     <input name="hora" type="time" class="w-full p-3 border rounded-xl outline-none" required>
                                 </div>
                                 <div class="col-span-2">
                                      <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
@@ -6612,12 +6802,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const extra = {
                         s2: { f: data.fecha2, h: data.hora2, l: (data.lugar2 || '').toUpperCase().trim() },
                         s3: { f: data.fecha3, h: data.hora3, l: (data.lugar3 || '').toUpperCase().trim() },
+                        hl: data.hora_llegada,
+                        hi: data.hora_inicio,
+                        hs: data.hora_salida,
                         sw: data.sharedWith,
                         eids: checkedTeamIds
                     };
                     
                     const bundledData = { ...data };
-                    ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith'].forEach(f => delete bundledData[f]);
+                    bundledData.hora = data.hora_inicio || data.hora;
+                    ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith', 'hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete bundledData[f]);
                     bundledData.nombre = (bundledData.nombre || '').toUpperCase().trim();
                     bundledData.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
 
@@ -6660,9 +6854,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
                              <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-3 border rounded-xl outline-none" required>
                         </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Hora</label>
-                             <input name="hora" value="${conv.hora || ''}" type="time" class="w-full p-3 border rounded-xl outline-none" required>
+                        <div class="col-span-2 grid grid-cols-3 gap-3">
+                            <div>
+                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
+                                 <input name="hora_llegada" value="${(() => {
+                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
+                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hl || ''; } catch(e) {}
+                                     }
+                                     return '';
+                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                            </div>
+                            <div>
+                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
+                                 <input name="hora_inicio" value="${(() => {
+                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
+                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hi || conv.hora || ''; } catch(e) {}
+                                     }
+                                     return conv.hora || '';
+                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
+                            </div>
+                            <div>
+                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
+                                 <input name="hora_salida" value="${(() => {
+                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
+                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hs || ''; } catch(e) {}
+                                     }
+                                     return '';
+                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                            </div>
                         </div>
                         <div>
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
@@ -6802,6 +7021,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try { extra = JSON.parse(conv.lugar.split(' ||| ')[1]); } catch (e) {}
                 }
                 extra.eids = checkedTeamIds;
+                extra.hl = data.hora_llegada;
+                extra.hi = data.hora_inicio;
+                extra.hs = data.hora_salida;
+                data.hora = data.hora_inicio || data.hora;
+                ['hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete data[f]);
 
                 // Handle sub-session locations if they exist in the form (for Ciclos)
                 if (data.lugar2) extra.s2 = { ...extra.s2, l: data.lugar2.toUpperCase().trim() };
@@ -6913,12 +7137,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const extra = {
                 s2: { f: data.fecha2, h: data.hora2, l: data.lugar2 },
                 s3: { f: data.fecha3, h: data.hora3, l: data.lugar3 },
+                hl: data.hora_llegada,
+                hi: data.hora_inicio,
+                hs: data.hora_salida,
                 sw: data.sharedWith,
                 eids: selectedTeams
             };
             
             const bundledData = { ...data };
-            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids'].forEach(f => delete bundledData[f]);
+            bundledData.hora = data.hora_inicio || data.hora;
+            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids', 'hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete bundledData[f]);
             bundledData.lugar = `${data.lugar || ''} ||| ${JSON.stringify(extra)}`;
             
             await db.update('convocatorias', { ...bundledData, id });
@@ -7034,7 +7262,29 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </div>
                                 </div>
                             ` : `
-                                <p class="text-slate-500 font-bold">${conv.fecha} • ${conv.hora || '--'} • ${window.cleanLugar(conv.lugar) || 'Sin lugar asignado'}</p>
+                                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 mt-2">
+                                    <p class="text-slate-500 font-bold flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-4 h-4 opacity-40"></i>
+                                        ${conv.fecha}
+                                    </p>
+                                    ${(() => {
+                                        let times = [];
+                                        if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                                            try {
+                                                const ex = JSON.parse(rawConv.lugar.split(' ||| ')[1]);
+                                                if (ex.hl) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Llegada</span><span class="text-xs font-bold text-slate-700">${ex.hl}</span></div>`);
+                                                if (ex.hi) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Inicio</span><span class="text-xs font-bold text-slate-700">${ex.hi}</span></div>`);
+                                                if (ex.hs) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Salida</span><span class="text-xs font-bold text-slate-700">${ex.hs}</span></div>`);
+                                            } catch(e) {}
+                                        }
+                                        if (times.length === 0) return `<p class="text-slate-500 font-bold flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 opacity-40"></i> ${conv.hora || '--:--'}</p>`;
+                                        return `<div class="flex items-center gap-4">${times.join('<div class="w-px h-4 bg-slate-200"></div>')}</div>`;
+                                    })()}
+                                    <p class="text-slate-500 font-bold flex items-center gap-2">
+                                        <i data-lucide="map-pin" class="w-4 h-4 opacity-40"></i>
+                                        ${window.cleanLugar(conv.lugar) || 'Sin lugar asignado'}
+                                    </p>
+                                </div>
                             `}
                         </div>
 
@@ -7144,9 +7394,34 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Fecha</label>
                                         <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
                                     </div>
-                                    <div>
-                                        <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora</label>
-                                        <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 ring-blue-500">
+                                    <div class="col-span-2 grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Llegada</label>
+                                            <input name="hora_llegada" type="time" value="${(() => {
+                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hl || ''; } catch(e) {}
+                                                }
+                                                return '';
+                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Inicio</label>
+                                            <input name="hora_inicio" type="time" value="${(() => {
+                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hi || conv.hora || ''; } catch(e) {}
+                                                }
+                                                return conv.hora || '';
+                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Salida</label>
+                                            <input name="hora_salida" type="time" value="${(() => {
+                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hs || ''; } catch(e) {}
+                                                }
+                                                return '';
+                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                                        </div>
                                     </div>
                                 `}
                                 <div class="col-span-2">
@@ -8335,7 +8610,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                     </td>
                     <td class="p-4 md:p-6">
-                        <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
+                        <div class="flex flex-col">
+                            <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
+                            <span class="text-[9px] font-black text-slate-400 uppercase">
+                                ${(() => {
+                                    if (c.lugar && c.lugar.includes(' ||| ')) {
+                                        try {
+                                            const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
+                                            if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
+                                        } catch(e) {}
+                                    }
+                                    return c.hora || '--:--';
+                                })()}
+                            </span>
+                        </div>
                     </td>
                     <td class="p-4 md:p-6">
                         <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest">${teamName}</span>
