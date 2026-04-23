@@ -180,10 +180,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load formation preferences
     const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
+    // Load formation preferences
+    const savedState = JSON.parse(localStorage.getItem('ms_coach_formation_state') || '{}');
     window.formationsState = {
         convocatoria: savedPrefs.convocatoria || 'F11_433',
         torneo: savedPrefs.torneo || 'F11_433',
-        campograma: savedPrefs.campograma || 'F11_433'
+        campograma: savedPrefs.campograma || 'F11_433',
+        teams: savedState.teams || {},
+        torneos: savedState.torneos || {},
+        convocatorias: savedState.convocatorias || {}
     };
 
     // Initial Auth Check
@@ -7854,6 +7859,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const team = teams.find(t => t.id == conv.equipoid);
         const convocados = players.filter(p => conv.playerids.includes(p.id.toString()));
 
+        // Aplicar posiciones específicas del torneo (herencia del rendimiento)
+        const rendimiento = conv.rendimiento || {};
+        convocados.forEach(p => {
+            if (rendimiento[p.id] && rendimiento[p.id].pos) {
+                p.posicion = rendimiento[p.id].pos;
+            }
+        });
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
 
@@ -7889,17 +7902,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.line(15, 50, 195, 50);
 
         // Tabla de Jugadores
-        const tableBody = convocados.map((p, index) => [
-            index + 1,
-            p.nombre,
-            team ? team.nombre : '--',
-            p.posicion || '--',
-            p.anionacimiento || '--'
-        ]);
+        const isTorneo = (conv.tipo || '').toUpperCase() === 'TORNEO';
+        const tableBody = convocados.map((p, index) => {
+            const row = [
+                index + 1,
+                p.nombre,
+                p.equipoConvenido || (team ? team.nombre : '--'),
+                p.posicion || '--',
+                p.anionacimiento || '--'
+            ];
+            if (isTorneo) {
+                const rend = (conv.rendimiento && conv.rendimiento[p.id]) ? conv.rendimiento[p.id].score : '--';
+                row.push(rend);
+            }
+            return row;
+        });
+
+        const tableHead = ['#', 'JUGADOR', 'CLUB / EQUIPO', 'POSICIÓN', 'AÑO'];
+        if (isTorneo) tableHead.push('NOTA');
 
         doc.autoTable({
             startY: 55,
-            head: [['#', 'JUGADOR', 'EQUIPO', 'POSICIÓN', 'AÑO']],
+            head: [tableHead],
             body: tableBody,
             headStyles: {
                 fillColor: blueColor,
@@ -7920,7 +7944,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 0: { halign: 'center', cellWidth: 15 },
                 2: { halign: 'center' },
                 3: { halign: 'center' },
-                4: { halign: 'center' }
+                4: { halign: 'center' },
+                5: { halign: 'center' }
             },
             margin: { left: 15, right: 15 }
         });
@@ -7933,7 +7958,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
         doc.text("DISPOSICIÓN TÁCTICA", 15, 25);
         
-        const formationId = (window.formationsState && window.formationsState.convocatoria) || 'F11_433';
+        let formationId = 'F11_433';
+        if (window.formationsState) {
+            if (isTorneo) formationId = window.formationsState.torneos?.[id] || 'F11_433';
+            else formationId = window.formationsState.convocatorias?.[id] || 'F11_433';
+        }
         const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
         doc.setFontSize(10);
         doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
@@ -8921,6 +8950,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                         </div>
                         <div class="flex gap-2">
+                             <button onclick="window.exportConvocatoria(${conv.id})" class="p-2 bg-slate-900 text-white rounded-full hover:bg-black transition-all shadow-lg" title="Exportar PDF"><i data-lucide="file-down" class="w-5 h-5"></i></button>
                              <button onclick="window.viewTorneoRendimiento(${conv.id})" class="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-all"><i data-lucide="refresh-cw" class="w-5 h-5"></i></button>
                              <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                         </div>
