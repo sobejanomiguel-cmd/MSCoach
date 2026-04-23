@@ -499,7 +499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // State
-    let currentView = 'dashboard';
+    let currentView = window.currentView = 'dashboard';
     let attendanceData = {};
     const DB_VERSION = 7;
 
@@ -571,7 +571,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.switchView = async (viewId) => {
-        currentView = viewId;
+        window.currentView = currentView = viewId;
         navLinks.forEach(l => l.classList.remove('active'));
         navLinksMobile.forEach(l => {
             l.classList.remove('text-blue-600');
@@ -1059,8 +1059,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return (a.nombre || '').localeCompare(b.nombre || '');
         });
 
-        const totalMale = players.filter(p => p.sexo === 'Masculino').length;
-        const totalFemale = players.filter(p => p.sexo === 'Femenino').length;
+        const totalMale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('m')).length;
+        const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
  
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
@@ -3315,6 +3315,22 @@ await db.update('sesiones', { ...data, id: session.id });
         const userRes = await supabaseClient.auth.getUser();
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
+        const clubsMap = {};
+        players.forEach(p => {
+            const raw = (p.equipoConvenido || '').trim();
+            if (raw) {
+                // Normalización para agrupar clubes similares (ej. Balsas y UD Balsas, Baztan y Baztán)
+                const normalized = raw.toUpperCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quitar acentos
+                    .replace(/^(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF)\s+/i, '')
+                    .trim();
+                
+                if (!clubsMap[normalized] || raw.length > clubsMap[normalized].length) {
+                    clubsMap[normalized] = raw;
+                }
+            }
+        });
+        const clubs = Object.values(clubsMap).sort((a,b) => a.localeCompare(b));
 
         const isEdit = convData !== null;
         const activeTab = isEdit ? convData.tipo : defaultType;
@@ -3483,9 +3499,18 @@ await db.update('sesiones', { ...data, id: session.id });
                             </div>
                         </div>
 
-                        <div class="relative">
-                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                            <input type="text" id="unified-conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="relative">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <input type="text" id="unified-conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase">
+                            </div>
+                            <div class="relative">
+                                <i data-lucide="building-2" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
+                                <select id="unified-conv-club-filter" class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase appearance-none">
+                                    <option value="all">TODOS LOS CLUBES</option>
+                                    ${clubs.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('')}
+                                </select>
+                            </div>
                         </div>
 
                         <div id="unified-filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar"></div>
@@ -3511,17 +3536,23 @@ await db.update('sesiones', { ...data, id: session.id });
         const updatePlayers = () => {
             const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
             const searchText = (searchInput.value || '').toLowerCase();
+            const clubFilter = document.getElementById('unified-conv-club-filter')?.value || 'all';
+            
             let filtered = players;
             if (checkedTeamIds.length > 0) filtered = filtered.filter(p => checkedTeamIds.includes(String(p.equipoid)));
             if (searchText) filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
+            if (clubFilter !== 'all') filtered = filtered.filter(p => p.equipoConvenido === clubFilter);
             
             playerList.innerHTML = filtered.length > 0 ? filtered.map(p => `
                 <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
                     <div class="flex items-center gap-3">
                         <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
-                        <span class="text-sm font-bold text-slate-700 uppercase">${p.nombre}</span>
+                        <div>
+                            <span class="block text-sm font-bold text-slate-700 uppercase">${p.nombre}</span>
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</span>
+                        </div>
                     </div>
-                    <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion_siglas || '--'}</span>
+                    <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${p.posicion_siglas || '--'}</span>
                 </label>
             `).join('') : '<p class="text-center py-6 text-slate-400 text-xs font-black uppercase">No se encontraron jugadores</p>';
 
@@ -3535,6 +3566,8 @@ await db.update('sesiones', { ...data, id: session.id });
 
         teamChecks.forEach(c => c.onchange = updatePlayers);
         searchInput.oninput = updatePlayers;
+        const clubSelect = document.getElementById('unified-conv-club-filter');
+        if (clubSelect) clubSelect.onchange = updatePlayers;
         document.getElementById('unified-conv-select-all').onclick = () => {
             const checks = playerList.querySelectorAll('.player-check');
             const allChecked = Array.from(checks).every(c => c.checked);
@@ -3544,6 +3577,23 @@ await db.update('sesiones', { ...data, id: session.id });
                 else selectedPlayerIds.delete(String(c.value));
             });
         };
+
+        // Auto-copy logic for Ciclo hours and lugar
+        if (activeTab === 'Ciclo') {
+            const form = document.getElementById('convocatoria-unified-form');
+            ['hl', 'hi', 'hs', 'lugar'].forEach(field => {
+                const source = form.querySelector(`[name="${field}"]`);
+                if (source) {
+                    source.addEventListener('input', () => {
+                        const val = source.value;
+                        ['2', '3'].forEach(suffix => {
+                            const target = form.querySelector(`[name="${field}${suffix}"]`);
+                            if (target) target.value = val;
+                        });
+                    });
+                }
+            });
+        }
 
         updatePlayers();
 
@@ -3585,13 +3635,23 @@ await db.update('sesiones', { ...data, id: session.id });
                 data.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
                 ['hl', 'hi', 'hs', 'id'].forEach(f => delete data[f]);
 
+                const currentUserRes = await supabaseClient.auth.getUser();
+                const currentUser = currentUserRes.data.user;
+
                 if (isEdit) {
                     const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', conv.id);
                     if (error) throw error;
+                    await db.saveLocal('convocatorias', { ...data, id: conv.id });
                     window.customAlert('¡Actualizado!', 'Los cambios se han guardado.', 'success');
                 } else {
-                    const { error } = await supabaseClient.from('convocatorias').insert(data);
+                    const { data: savedArray, error } = await supabaseClient.from('convocatorias').insert([data]).select();
                     if (error) throw error;
+                    
+                    if (savedArray && savedArray[0]) {
+                        await db.saveLocal('convocatorias', savedArray[0]);
+                    } else {
+                        await db.add('convocatorias', data);
+                    }
                     window.customAlert('¡Creado!', 'La convocatoria ha sido guardada.', 'success');
                 }
 
@@ -3600,7 +3660,8 @@ await db.update('sesiones', { ...data, id: session.id });
                     window.switchView(window.currentView);
                 }
             } catch (err) {
-                window.customAlert('Error', err.message, 'error');
+                console.error("Save error detail:", err);
+                window.customAlert('Error al guardar', err.message || 'Error desconocido', 'error');
             }
         };
     };
@@ -3712,8 +3773,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             window.viewConvocatoria(id);
             
             // Refresh table
-            const currentView = document.querySelector('[data-view].active')?.getAttribute('id');
-            const container = document.getElementById('main-content');
+            const currentView = document.querySelector('[data-view].active')?.getAttribute('data-view');
+            const container = document.getElementById('content-container');
             if (container && (currentView === 'convocatorias' || currentView === 'torneos')) {
                  if (currentView === 'convocatorias') window.renderConvocatorias(container);
                  else window.renderTorneos(container);
@@ -3778,6 +3839,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.openConvocatoriaForm(null, activeType);
     };
 
+    window.showNewTorneoModal = () => {
+        window.openConvocatoriaForm(null, 'Torneo');
+    };
+
+
 
 
     window.showNewEventoModal = async () => {
@@ -3793,7 +3859,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <form id="new-evento-form" class="space-y-6">
                     <div class="space-y-2">
                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título del Evento</label>
-                        <input name="titulo" type="text" required placeholder="Ej: Reunión de Coordinación" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                        <input name="nombre" type="text" required placeholder="Ej: Reunión de Coordinación" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase">
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div class="space-y-2">
@@ -3805,9 +3871,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <input name="hora" type="time" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
                         </div>
                     </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Etiqueta / Categoría</label>
+                            <select name="categoria" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none appearance-none">
+                                <option value="Reunión">Reunión</option>
+                                <option value="Partido">Partido</option>
+                                <option value="Scouting">Scouting</option>
+                                <option value="Mandar convocatorias">Mandar convocatorias</option>
+                                <option value="Preparar equipos torneos">Preparar equipos torneos</option>
+                                <option value="Preparar jugadores ciclos/sesiones">Preparar jugadores ciclos/sesiones</option>
+                                <option value="Lavar ropa">Lavar ropa</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar</label>
+                            <input name="lugar" type="text" placeholder="Ej: Zubieta" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                        </div>
+                    </div>
                     <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Descripción</label>
-                        <textarea name="descripcion" rows="3" placeholder="Detalles adicionales..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all"></textarea>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Notas</label>
+                        <textarea name="notas" rows="3" placeholder="Detalles adicionales..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all"></textarea>
                     </div>
                     <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
                         <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
@@ -3826,10 +3911,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const currentUser = userRes.data?.user;
             
             try {
+                if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
+                if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
+
                 await db.add('eventos', { ...data, createdBy: currentUser?.id });
-                window.customAlert('Éxito', 'Evento añadido a la agenda', 'success');
+                window.customAlert('¡Guardado!', 'El compromiso se ha añadido a tu agenda.', 'success');
                 closeModal();
-                if (currentView === 'agenda') window.renderAgenda(document.getElementById('content-container'));
+                
+                const container = document.getElementById('content-container');
+                if (currentView === 'eventos') window.renderEventos(container);
+                if (currentView === 'calendario') renderCalendario(container);
             } catch (err) {
                 window.customAlert('Error', 'No se pudo guardar el evento', 'error');
             }
@@ -5605,12 +5696,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderConvocatorias = async function(container) {
-        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').not('tipo', 'in', '("Torneo", "TORNEO")').order('fecha', { ascending: false }).order('hora', { ascending: false });
-        if (error) {
-            container.innerHTML = `<p class="p-10 text-red-500 font-bold uppercase tracking-tight">Error de Sincronización: ${error.message}</p>`;
-            return;
-        }
-
+        const allConvs = await db.getAll('convocatorias');
+        const convs = allConvs.filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
+            .sort((a,b) => {
+                if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
+                return (b.hora || '').localeCompare(a.hora || '');
+            });
+        
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
@@ -5800,12 +5892,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     }
 
     window.renderTorneos = async function(container) {
-        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').in('tipo', ['Torneo', 'TORNEO']).order('fecha', { ascending: false }).order('hora', { ascending: false });
-        if (error) {
-            container.innerHTML = `<p class="p-10 text-red-500 font-bold uppercase tracking-tight">Error de Sincronización: ${error.message}</p>`;
-            return;
-        }
-
+        const allConvs = await db.getAll('convocatorias');
+        const convs = allConvs.filter(c => ['Torneo', 'TORNEO'].includes(c.tipo))
+            .sort((a,b) => {
+                if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
+                return (b.hora || '').localeCompare(a.hora || '');
+            });
+        
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
@@ -7172,11 +7265,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const currentTeamId = window.currentJugadoresTeamId || 'all';
         const searchTerm = window.jugadoresSearchTerm || '';
+        const currentAno = window.currentJugadoresAno || 'all';
+        const currentSexo = window.currentJugadoresSexo || 'all';
+
+        // Obtener años únicos para el filtro
+        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => b - a);
 
         const filtered = players.filter(p => {
             const matchesTeam = currentTeamId === 'all' || p.equipoid?.toString() === currentTeamId.toString();
             const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
-            return matchesTeam && matchesSearch;
+            const matchesAno = currentAno === 'all' || p.anionacimiento?.toString() === currentAno.toString();
+            const matchesSexo = currentSexo === 'all' || (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0,1));
+            return matchesTeam && matchesSearch && matchesAno && matchesSexo;
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         container.innerHTML = `
@@ -7193,16 +7293,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         `).join('')}
                     </div>
                     
-                    <div class="flex items-center gap-4 w-full lg:w-auto">
-                        <div class="relative flex-1 lg:w-80 group">
+                    <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                        <div class="relative flex-1 lg:w-64 group">
                             <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
                             <input type="text" 
                                 id="jugadores-search-input"
-                                placeholder="Buscar por nombre..." 
+                                placeholder="Nombre..." 
                                 value="${searchTerm}"
                                 oninput="window.updateJugadoresSearch(this.value)"
                                 class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
                         </div>
+
+                        <select onchange="window.switchJugadoresAno(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[100px]">
+                            <option value="all" ${currentAno === 'all' ? 'selected' : ''}>Año: TODOS</option>
+                            ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
+                        </select>
+
+                        <select onchange="window.switchJugadoresSexo(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[120px]">
+                            <option value="all" ${currentSexo === 'all' ? 'selected' : ''}>Sexo: TODOS</option>
+                            <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
+                            <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
+                        </select>
                     </div>
                 </div>
 
@@ -7213,13 +7324,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <tr class="bg-slate-50/50 border-b border-slate-100">
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sexo</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${filtered.map(p => {
-                                    const team = teams.find(t => t.id?.toString() === p.equipoid?.toString());
                                     return `
                                         <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-4">
@@ -7238,9 +7349,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     ${Array.isArray(p.posicion) ? p.posicion.join(', ') : (p.posicion || '--')}
                                                 </span>
                                             </td>
-                                            <td class="px-6 py-4">
+                                            <td class="px-6 py-4 text-center">
                                                 <span class="text-[10px] font-bold text-slate-500">
                                                     ${p.anionacimiento || '----'}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 text-center">
+                                                <span class="text-[10px] font-black uppercase tracking-widest ${p.sexo?.startsWith('F') ? 'text-rose-500' : 'text-blue-500'}">
+                                                    ${p.sexo?.substring(0,1) || 'M'}
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 text-right">
@@ -7286,6 +7402,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.updateJugadoresSearch = (val) => {
         window.jugadoresSearchTerm = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.switchJugadoresAno = (val) => {
+        window.currentJugadoresAno = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.switchJugadoresSexo = (val) => {
+        window.currentJugadoresSexo = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
@@ -7912,6 +8038,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     </div>
                                                     <div>
                                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${club.nombre}</p>
+                                                        ${club.lugar ? `
+                                                            <div class="flex items-center gap-1.5 mt-1">
+                                                                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${club.lugar}</p>
+                                                                ${club.ubicacion ? `<a href="${club.ubicacion}" target="_blank" class="text-blue-500 hover:text-blue-700"><i data-lucide="map-pin" class="w-3 h-3"></i></a>` : ''}
+                                                            </div>
+                                                        ` : ''}
                                                     </div>
                                                 </div>
                                             </td>
@@ -7970,6 +8102,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Club</label>
                                 <input name="nombre" type="text" required placeholder="Nombre oficial de la entidad" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="space-y-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar / Sede</label>
+                                    <input name="lugar" type="text" placeholder="Ej: Zubieta" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Enlace Google Maps</label>
+                                    <input name="ubicacion" type="url" placeholder="https://goo.gl/maps/..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -8037,6 +8179,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="space-y-2">
                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Club</label>
                         <input name="nombre" type="text" value="${club.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar / Sede</label>
+                            <input name="lugar" type="text" value="${club.lugar || ''}" placeholder="Ej: Zubieta" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Enlace Google Maps</label>
+                            <input name="ubicacion" type="url" value="${club.ubicacion || ''}" placeholder="https://..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
                     </div>
                     <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
                         <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]">Cancelar</button>
@@ -8115,7 +8267,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                         <div>
                             <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${clubName}</h3>
-                            <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Ficha Técnica del Club</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">${club.lugar || 'Sede no definida'}</p>
+                                ${club.ubicacion ? `<a href="${club.ubicacion}" target="_blank" class="text-blue-500"><i data-lucide="map-pin" class="w-3 h-3"></i></a>` : ''}
+                            </div>
                         </div>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -8804,192 +8959,538 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderConvocatoriasPDF = async function(container) {
-        const players = await db.getAll('jugadores');
-        const sortedPlayers = [...players].sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        try {
+            const players = await db.getAll('jugadores');
+            const convocatorias = await db.getAll('convocatorias');
+            const teams = await db.getAll('equipos');
+            const teamsMap = Object.fromEntries(teams.map(t => [t.id, (t.nombre || 'EQUIPO').split(' ||| ')[0]]));
 
-        container.innerHTML = `
-            <div class="max-w-5xl mx-auto space-y-8 pb-20">
-                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden relative">
-                    <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-                    <div class="flex items-center gap-4 mb-8">
-                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-                            <i data-lucide="file-text" class="w-6 h-6"></i>
+            let currentType = 'Sesión';
+
+            const renderForm = (type) => {
+                const sortedConvs = [...convocatorias]
+                    .filter(c => c.tipo === type)
+                    .sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+                container.innerHTML = `
+                    <div class="max-w-5xl mx-auto space-y-8 pb-20">
+                        <div class="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden relative">
+                            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 animate-gradient-x"></div>
+                            
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
+                                <div class="flex items-center gap-5">
+                                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center shadow-inner">
+                                        <i data-lucide="file-text" class="w-8 h-8"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Convocatoria PDF</h3>
+                                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Generador de documentos oficiales</p>
+                                    </div>
+                                </div>
+                                <button onclick="window.switchView('dashboard')" class="p-4 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 hover:text-slate-600 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
+                            </div>
+
+                            <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] mb-10 w-fit">
+                                ${['Ciclo', 'Sesión', 'Torneo'].map(t => `
+                                    <button onclick="window.renderConvocatoriasPDFWithType('${t}')" class="px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentType === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                                        ${t}S
+                                    </button>
+                                `).join('')}
+                            </div>
+
+                            <form id="convocatoria-pdf-form" class="space-y-10">
+                                <input type="hidden" name="type" value="${type}">
+                                
+                                <div class="space-y-6 p-8 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2">
+                                        <i data-lucide="link" class="w-3.5 h-3.5"></i> Selección y Jugador
+                                    </p>
+                                    
+                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div class="relative">
+                                            <select id="filter-team-conv" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
+                                                <option value="">TODOS LOS EQUIPOS</option>
+                                                ${teams.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(t => `<option value="${t.id}">${(t.nombre || 'EQUIPO').split(' ||| ')[0]}</option>`).join('')}
+                                            </select>
+                                            <i data-lucide="users" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
+                                        </div>
+                                        <div class="relative">
+                                            <input type="date" id="filter-date-conv" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                            <i data-lucide="calendar" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
+                                        </div>
+                                        <div class="relative lg:col-span-2">
+                                            <select id="link-conv-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
+                                                <option value="">-- Vincular con ${type} --</option>
+                                                ${sortedConvs.map(c => `
+                                                    <option value="${c.id}" data-equipoid="${c.equipoid}" data-fecha="${c.fecha}" data-nombre="${(c.nombre || '').replace(/"/g, '&quot;')}" data-lugar="${(c.lugar || '').replace(/"/g, '&quot;')}" data-players='${JSON.stringify(c.playerids || [])}'>
+                                                        [${c.fecha}] ${(c.nombre || 'Sin nombre').toUpperCase()} (${teamsMap[c.equipoid] || 'Múltiples'})
+                                                    </option>
+                                                `).join('')}
+                                            </select>
+                                            <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
+                                        </div>
+                                    </div>
+
+                                    <div class="relative group">
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Jugador a convocar</label>
+                                        <select name="playerid" id="pdf-player-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer" required>
+                                            <option value="">Selecciona un jugador...</option>
+                                            ${players.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+                                        </select>
+                                        <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div class="col-span-2 space-y-3">
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título del PDF (Cabecera)</label>
+                                        <input name="evento" id="pdf-titulo" placeholder="Ej: CATEGORIA INFANTIL-ALEVIN FEMENINO" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl text-lg font-black outline-none focus:ring-4 ring-blue-50/50 transition-all uppercase" required>
+                                    </div>
+
+                                    ${type === 'Ciclo' ? `
+                                        ${[1, 2, 3].map(i => `
+                                            <div class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-5 bg-blue-50/30 rounded-3xl border border-blue-50">
+                                                <div class="space-y-2">
+                                                    <label class="text-[9px] font-black text-blue-600 uppercase tracking-widest">Sesión ${i} - Fecha</label>
+                                                    <input name="fecha_${i}" type="date" class="w-full p-3 bg-white border border-slate-100 rounded-xl font-bold outline-none text-sm">
+                                                </div>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <div><input name="hl_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
+                                                    <div><input name="hi_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
+                                                    <div><input name="hs_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    ` : `
+                                        <div class="space-y-3">
+                                            <input name="fecha" id="pdf-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <input name="hl" id="pdf-hl" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="hi" id="pdf-hi" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="hs" id="pdf-hs" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                        </div>
+                                    `}
+
+                                    <div class="space-y-3">
+                                        <input name="lugar" id="pdf-lugar" placeholder="LUGAR" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                                    </div>
+                                    <div class="space-y-3">
+                                        <input name="ubicacion" id="pdf-ubicacion" placeholder="MAPS" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    </div>
+                                    <div class="space-y-3 col-span-2">
+                                        <textarea name="extra" id="pdf-extra" rows="4" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-sm outline-none resize-none">Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
+
+EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de la EF Arnedo en Arnedo (La Rioja)</textarea>
+                                    </div>
+                                    <div class="space-y-3 col-span-2 md:col-span-1">
+                                        <textarea name="notas" id="pdf-notas" rows="6" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-[11px] outline-none resize-none">La sesión de tecnificación será de 1 hora y 15 minutos.
+
+La Real Sociedad facilitará la ropa deportiva para la sesión de tecnificación, tendrán que llevar MEDIAS.
+
+Solo podrán acceder a la instalación de entrenamiento los participantes en la tecnificación.</textarea>
+                                    </div>
+                                    <div class="space-y-3 col-span-2 md:col-span-1">
+                                        <textarea name="muy_importante" id="pdf-importante" rows="6" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-[11px] outline-none resize-none">Se deberán DUCHAR después de cada sesión de entrenamiento, por lo que necesitan material para la ducha.
+
+Los jugadores tendrán que llevar su PROPIA BOTELLA DE AGUA.
+
+Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo hagáis saber por ESCRITO.</textarea>
+                                    </div>
+                                </div>
+
+                                <div class="pt-10 border-t border-slate-100 flex flex-col md:flex-row gap-4">
+                                    <button type="submit" name="action" value="single" class="flex-1 py-6 bg-slate-900 text-white font-black rounded-[2rem] shadow-2xl hover:bg-black transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-3">
+                                        <i data-lucide="printer" class="w-6 h-6"></i>
+                                        Generar PDF Individual
+                                    </button>
+                                    <button type="submit" id="btn-generate-all" name="action" value="all" class="hidden flex-1 py-6 bg-blue-600 text-white font-black rounded-[2rem] shadow-2xl hover:bg-blue-700 transition-all uppercase tracking-[0.2em] flex items-center justify-center gap-3">
+                                        <i data-lucide="layers" class="w-6 h-6"></i>
+                                        Generar Todas (${type}S)
+                                    </button>
+                                </div>
+                            </form>
                         </div>
-                        <div>
-                            <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Generador de PDF Individual</h3>
-                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Rellena los detalles para la convocatoria personalizada</p>
+                        <div id="pdf-preview-status" class="hidden p-8 bg-blue-50 border border-blue-100 rounded-[3rem] flex items-center gap-5 animate-pulse">
+                            <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                                <div class="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                            </div>
+                            <div>
+                                <p class="text-sm font-black text-blue-600">Procesando PDF...</p>
+                            </div>
                         </div>
                     </div>
+                `;
 
-                    <form id="convocatoria-pdf-form" class="space-y-8">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="col-span-2 space-y-3">
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Seleccionar Jugador</label>
-                                <div class="relative group">
-                                    <i data-lucide="user" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
-                                    <select name="playerid" class="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-lg font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all appearance-none cursor-pointer" required>
-                                        <option value="">Selecciona un jugador...</option>
-                                        ${sortedPlayers.map(p => `<option value="${p.id}">${p.nombre || 'Sin nombre'}</option>`).join('')}
-                                    </select>
-                                    <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 pointer-events-none"></i>
-                                </div>
-                            </div>
+                if (window.lucide) lucide.createIcons();
 
-                            <div class="space-y-3">
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Evento / Título</label>
-                                <input name="evento" placeholder="Ej: CATEGORIA INFANTIL-ALEVIN FEMENINO" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                            </div>
+                const convSelect = container.querySelector('#link-conv-select');
+                const playerSelect = container.querySelector('#pdf-player-select');
+                const filterTeam = container.querySelector('#filter-team-conv');
+                const filterDate = container.querySelector('#filter-date-conv');
 
-                            <div class="space-y-3">
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar del Evento</label>
-                                <input name="lugar" placeholder="Ej: INSTALACIONES ZUBIETA" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                            </div>
+                filterTeam.onchange = filterDate.onchange = () => {
+                    const tid = filterTeam.value;
+                    const dval = filterDate.value;
+                    Array.from(convSelect.options).forEach(opt => {
+                        if (!opt.value) return;
+                        opt.style.display = ((!tid || opt.dataset.equipoid === tid) && (!dval || opt.dataset.fecha === dval)) ? '' : 'none';
+                    });
+                    convSelect.value = "";
+                };
 
-                            <div class="space-y-3">
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Enlace Ubicación (Maps)</label>
-                                <input name="ubicacion" placeholder="https://goo.gl/maps/..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                            </div>
+                    const mapsInput = container.querySelector('#pdf-ubicacion');
+                    const lugarInput = container.querySelector('#pdf-lugar');
+                    const btnAll = container.querySelector('#btn-generate-all');
 
-                            <div class="grid grid-cols-3 gap-3">
-                                <div class="space-y-2">
-                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
-                                    <input name="fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">H. Llegada</label>
-                                    <input name="hl" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">H. Inicio</label>
-                                    <input name="hi" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
-                                </div>
-                            </div>
+                    const updateMapsFromLugar = async () => {
+                        const val = lugarInput.value.trim().toUpperCase();
+                        if (!val) return;
+                        const clubes = await db.getAll('clubes');
+                        const match = clubes.find(c => 
+                            (c.lugar || '').toUpperCase() === val || 
+                            (c.nombre || '').toUpperCase().includes(val)
+                        );
+                        if (match && match.ubicacion) {
+                            mapsInput.value = match.ubicacion;
+                        }
+                    };
 
-                            <div class="space-y-3 col-span-2">
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Información Adicional (Párrafo Invitación)</label>
-                                <textarea name="extra" rows="3" placeholder="Nos gustaría ofrecer a la jugadora..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-medium text-sm outline-none focus:ring-4 ring-blue-50/50 transition-all resize-none"></textarea>
-                            </div>
-                        </div>
+                    lugarInput.oninput = updateMapsFromLugar;
 
-                        <div class="pt-6 border-t border-slate-50 flex gap-4">
-                            <button type="button" onclick="window.switchView('dashboard')" class="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all">
-                                Cancelar
-                            </button>
-                            <button type="submit" class="flex-[2] py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl shadow-slate-900/10 hover:bg-black transition-all uppercase tracking-widest flex items-center justify-center gap-2">
-                                <i data-lucide="download" class="w-5 h-5"></i>
-                                Generar PDF Oficial
-                            </button>
-                        </div>
-                    </form>
-                </div>
+                    convSelect.onchange = async (e) => {
+                        const opt = e.target.selectedOptions[0];
+                        if (!opt || !opt.value) {
+                            if (btnAll) btnAll.classList.add('hidden');
+                            return;
+                        }
+                        const pids = JSON.parse(opt.dataset.players || '[]');
+                        const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
+                        playerSelect.innerHTML = `<option value="">Selecciona un jugador...</option>` + 
+                            filtered.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 
-                <div id="pdf-preview-status" class="hidden p-6 bg-blue-50 border border-blue-100 rounded-3xl flex items-center gap-4">
-                    <div class="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                    <p class="text-xs font-black text-blue-600 uppercase tracking-widest">Generando documento oficial...</p>
-                </div>
-            </div>
-        `;
+                        if (filtered.length > 0 && btnAll) {
+                            btnAll.classList.remove('hidden');
+                            btnAll.innerText = `GENERAR TODAS LAS INDIVIDUALES (${filtered.length})`;
+                        } else if (btnAll) {
+                            btnAll.classList.add('hidden');
+                        }
 
-        if (window.lucide) lucide.createIcons();
+                        container.querySelector('#pdf-titulo').value = (opt.dataset.nombre || '').toUpperCase();
+                        const meta = window.parseLugarMetadata(opt.dataset.lugar);
+                        lugarInput.value = meta.base;
+                        
+                        // Auto-buscar el link de maps según el lugar
+                        await updateMapsFromLugar();
+                        
+                        if (type === 'Ciclo') {
+                        const sessions = [
+                            { f: opt.dataset.fecha, hl: meta.extra.hl, hi: meta.extra.hi, hs: meta.extra.hs },
+                            meta.extra.s2 || {},
+                            meta.extra.s3 || {}
+                        ];
+                        sessions.forEach((s, i) => {
+                            const idx = i + 1;
+                            const fFld = container.querySelector(`[name="fecha_${idx}"]`);
+                            if (fFld) fFld.value = s.f || s.fecha || '';
+                            const hlFld = container.querySelector(`[name="hl_${idx}"]`);
+                            if (hlFld) hlFld.value = s.hl || '';
+                            const hiFld = container.querySelector(`[name="hi_${idx}"]`);
+                            if (hiFld) hiFld.value = s.hi || '';
+                            const hsFld = container.querySelector(`[name="hs_${idx}"]`);
+                            if (hsFld) hsFld.value = s.hs || '';
+                        });
+                    } else {
+                        const fld = container.querySelector('#pdf-fecha');
+                        if (fld) fld.value = opt.dataset.fecha;
+                        const hlFld = container.querySelector('#pdf-hl');
+                        if (hlFld) hlFld.value = meta.extra.hl || '';
+                        const hiFld = container.querySelector('#pdf-hi');
+                        if (hiFld) hiFld.value = meta.extra.hi || '';
+                        const hsFld = container.querySelector('#pdf-hs');
+                        if (hsFld) hsFld.value = meta.extra.hs || '';
+                    }
+                };
 
-        document.getElementById('convocatoria-pdf-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            const player = players.find(p => p.id.toString() === data.playerid.toString());
-            if (!player) return;
-            document.getElementById('pdf-preview-status').classList.remove('hidden');
-            try {
-                await generateIndividualConvocatoriaPDF(player, data);
-                window.customAlert('¡PDF Generado!', 'La convocatoria se ha descargado correctamente.', 'success');
-            } catch (err) {
-                console.error(err);
-                window.customAlert('Error', 'No se pudo generar el PDF.', 'error');
-            } finally {
-                document.getElementById('pdf-preview-status').classList.add('hidden');
+                container.querySelector('#convocatoria-pdf-form').onsubmit = async (e) => {
+                    e.preventDefault();
+                    const action = e.submitter ? e.submitter.value : 'single';
+                    const data = Object.fromEntries(new FormData(e.target));
+                    const status = container.querySelector('#pdf-preview-status');
+                    const statusText = status.querySelector('p');
+
+                    try {
+                        if (action === 'single') {
+                            const player = players.find(p => p.id.toString() === (data.playerid || '').toString());
+                            if (!player) {
+                                window.customAlert('Atención', 'Selecciona un jugador primero.', 'warning');
+                                return;
+                            }
+                            status.classList.remove('hidden');
+                            await generateIndividualConvocatoriaPDF(player, data);
+                            window.customAlert('¡PDF Generado!', 'Descarga completada.', 'success');
+                        } else {
+                            const opt = convSelect.selectedOptions[0];
+                            if (!opt || !opt.value) {
+                                window.customAlert('Atención', 'Selecciona una convocatoria primero.', 'warning');
+                                return;
+                            }
+                            const pids = JSON.parse(opt.dataset.players || '[]');
+                            const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
+                            
+                            if (filtered.length === 0) {
+                                window.customAlert('Atención', 'No hay jugadores en esta convocatoria.', 'warning');
+                                return;
+                            }
+
+                            status.classList.remove('hidden');
+                            for (let i = 0; i < filtered.length; i++) {
+                                const p = filtered[i];
+                                statusText.innerText = `Generando ${i + 1} de ${filtered.length}: ${p.nombre}...`;
+                                try {
+                                    await generateIndividualConvocatoriaPDF(p, data);
+                                } catch (pdfErr) {
+                                    console.error(`Error generating PDF for ${p.nombre}:`, pdfErr);
+                                }
+                                // Pequeño delay para no saturar las descargas del navegador
+                                await new Promise(r => setTimeout(r, 800));
+                            }
+                            window.customAlert('¡Finalizado!', `Proceso de generación masiva terminado.`, 'success');
+                        }
+                    } catch (err) {
+                        console.error("Error general en generación de PDF:", err);
+                        const stackLine = err.stack ? err.stack.split('\n')[1] : 'no stack';
+                        window.customAlert('Error Técnico', `Error: ${err.message}\nUbicación: ${stackLine}`, 'error');
+                    } finally {
+                        status.classList.add('hidden');
+                        statusText.innerText = 'Procesando PDF...';
+                    }
+                };
+            };
+
+            window.renderConvocatoriasPDFWithType = (type) => {
+                currentType = type;
+                renderForm(type);
+            };
+
+            renderForm(currentType);
+
+        } catch (err) {
+            console.error("Error rendering PDF generator:", err);
+            if (container) {
+                container.innerHTML = `<div class="p-20 text-center italic text-slate-400">Error al cargar el generador: ${err.message}</div>`;
             }
-        };
+        }
     };
 
+
+
+
+
     async function generateIndividualConvocatoriaPDF(player, info) {
+        console.log("Iniciando generación de PDF para:", player?.nombre);
+        
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            console.error("Librería jsPDF no encontrada");
+            throw new Error("Librería de PDF no cargada correctamente.");
+        }
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         
+        if (typeof doc.autoTable !== 'function') {
+            console.error("Plugin autoTable no encontrado");
+            throw new Error("Plugin de tablas no cargado.");
+        }
+        
         const loadImage = (url) => new Promise((resolve) => {
+            if (!url) return resolve(null);
             const img = new Image();
-            img.crossOrigin = "Anonymous";
-            img.onload = () => resolve(img);
-            img.onerror = () => resolve(null);
+            const timer = setTimeout(() => resolve(null), 5000);
+
+            img.onload = () => {
+                clearTimeout(timer);
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) resolve(img);
+                else resolve(null);
+            };
+            img.onerror = () => {
+                const img2 = new Image();
+                img2.crossOrigin = "Anonymous";
+                img2.onload = () => {
+                    clearTimeout(timer);
+                    if (img2.naturalWidth > 0 && img2.naturalHeight > 0) resolve(img2);
+                    else resolve(null);
+                };
+                img2.onerror = () => { clearTimeout(timer); resolve(null); };
+                img2.src = url;
+            };
             img.src = url;
         });
 
-        const rsLogo = await loadImage('RS.png');
+        const normalize = (s) => (s || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const clubes = await db.getAll('clubes');
+
+        // RS Logo (Search for "Real Sociedad" club or fallback to RS.png)
+        const rsClub = clubes.find(c => normalize(c.nombre) === "REAL SOCIEDAD");
+        const rsLogo = await loadImage(rsClub?.escudo || 'RS.png');
+
+        // Player Club Logo
         let clubShield = null;
         if (player.equipoConvenido) {
-            const clubes = await db.getAll('clubes');
-            const club = clubes.find(c => c.nombre === player.equipoConvenido);
+            const pClubNorm = normalize(player.equipoConvenido);
+            const club = clubes.find(c => normalize(c.nombre) === pClubNorm);
             if (club && club.escudo) clubShield = await loadImage(club.escudo);
         }
 
+        // --- HEADER ---
         doc.setTextColor(0, 0, 0);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.text(`SESIÓN: ${info.evento || 'CONVOCATORIA'}`.toUpperCase(), 105, 30, { align: "center" });
+        doc.setFontSize(18);
+        doc.text(`SESIÓN: ${info.evento || 'CONVOCATORIA'}`.toUpperCase(), 105, 25, { align: "center" });
 
-        if (rsLogo) doc.addImage(rsLogo, 'PNG', 80, 50, 20, 20);
-        if (clubShield) doc.addImage(clubShield, 'PNG', 110, 50, 20, 20);
+        // --- LOGOS ---
+        const logoY = 32;
+        const safeAddImage = (img, x, y, w, h) => {
+            if (!img) return;
+            try {
+                doc.addImage(img, 'AUTO', x, y, w, h);
+            } catch (e) {
+                console.warn("Error al añadir imagen al PDF:", e);
+            }
+        };
 
-        doc.setFontSize(26);
-        doc.text(player.nombre.toUpperCase(), 105, 100, { align: "center" });
+        safeAddImage(rsLogo, 85, logoY, 15, 15);
+        safeAddImage(clubShield, 110, logoY, 15, 15);
 
+        // --- PLAYER NAME ---
+        doc.setFontSize(24);
+        const pName = (player.nombre || 'JUGADOR').toUpperCase();
+        doc.text(pName, 105, 65, { align: "center" });
+
+        // --- INVITATION TEXT ---
         doc.setFont("helvetica", "normal");
         doc.setFontSize(11);
-        const invitation = info.extra || "Nos gustaría ofrecer a la jugadora perteneciente a su Club la posibilidad de participar en un torneo al que ha sido invitada la Real Sociedad.";
+        const defaultInvitation = `Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
+
+EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de la EF Arnedo en Arnedo (La Rioja)`;
+        const invitation = info.extra && info.extra !== 'Invitación oficial...' ? info.extra : defaultInvitation;
         const splitInvitation = doc.splitTextToSize(invitation, 170);
-        doc.text(splitInvitation, 20, 120);
+        doc.text(splitInvitation, 20, 80);
 
-        doc.text(`El torneo se llevará a cabo en las instalaciones deportivas de "${info.lugar || 'ZUBIETA'}"`, 20, 145);
-
+        // --- TABLE ---
         const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
         const daysBasque = ['Igandea', 'Astelehena', 'Asteartea', 'Asteazkena', 'Osteguna', 'Ostirala', 'Larunbata'];
-        const dateObj = new Date(info.fecha);
-        const dayLabel = `${info.fecha}\n${days[dateObj.getDay()]} / ${daysBasque[dateObj.getDay()]}`;
 
-        const rows = [
-            [{ content: 'Día / Eguna', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, dayLabel],
-            [{ content: 'Lugar / Lekua', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, {
-                content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
-                link: { url: info.ubicacion || '#' },
-                styles: { textColor: [0, 0, 0], fontStyle: 'bold' }
-            }],
-            [{ content: 'Hora / Ordua', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, `${info.hl || '--:--'} (Llegada)\n${info.hi || '--:--'} (Comienzo)\nAcabar según clasificación`],
+        const getSafeDayLabel = (dateStr) => {
+            if (!dateStr) return '--';
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+                const dayIdx = d.getDay();
+                return `${dateStr}\n\n${days[dayIdx]} / ${daysBasque[dayIdx]}`;
+            } catch (e) { return dateStr; }
+        };
+
+        let body = [
+            ['Día / Eguna'],
+            ['Lugar / Lekua'],
+            ['Hora / Ordua']
         ];
+        
+        let head = [['']];
+        let colStyles = { 0: { cellWidth: 40, fontStyle: 'bold', fillColor: [230, 230, 230] } };
 
-        doc.autoTable({
-            startY: 160,
-            body: rows,
-            theme: 'grid',
-            styles: { fontSize: 11, cellPadding: 8, valign: 'middle', halign: 'left' },
-            columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 80 } },
-            margin: { left: 45 }
-        });
+        if (info.type === 'Ciclo') {
+            [1, 2, 3].forEach(i => {
+                const f = info[`fecha_${i}`];
+                if (f) {
+                    head[0].push(`SESIÓN ${i}`);
+                    body[0].push(getSafeDayLabel(f));
+                    
+                    body[1].push({
+                        content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
+                        data: { url: info.ubicacion || '#' },
+                        styles: { fontStyle: 'bold', textColor: [0, 50, 200] }
+                    });
 
-        const finalY = doc.lastAutoTable.finalY + 15;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(12);
-        doc.text("NOTAS:", 20, finalY);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(11);
-        doc.text("La Real Sociedad facilitará la ropa deportiva para el torneo.", 20, finalY + 10);
-        doc.text("La comida para las jugadoras y familia, correrá a cuenta de cada familia.", 20, finalY + 18);
-        doc.setFont("helvetica", "bold");
-        doc.text("MUY IMPORTANTE:", 20, finalY + 35);
-        doc.setFont("helvetica", "normal");
-        doc.text("Se deberán DUCHAR después de terminar el torneo, por lo que necesitan material para la ducha.", 20, finalY + 45);
-        doc.text("Las jugadoras tendrán que llevar su PROPIA BOTELLA DE AGUA.", 20, finalY + 53);
-        doc.text("Si la jugadora citada no puede asistir a la convocatoria os pedimos que nos lo hagáis saber por ESCRITO.", 20, finalY + 61);
+                    const hl = info[`hl_${i}`] || '--:--';
+                    const hi = info[`hi_${i}`] || '--:--';
+                    const hs = info[`hs_${i}`] || '';
+                    body[2].push(`${hl} (Llegada)\n\n${hi} (Comienzo)\n\n${hs ? `${hs} (Salida)` : ''}`);
+                }
+            });
+        } else {
+            head[0].push('DATOS / DATUAK');
+            body[0].push(getSafeDayLabel(info.fecha));
+            body[1].push({
+                content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
+                data: { url: info.ubicacion || '#' },
+                styles: { fontStyle: 'bold', textColor: [0, 50, 200] }
+            });
+            body[2].push(`${info.hl || '--:--'} (Llegada)\n\n${info.hi || '--:--'} (Comienzo)\n\n${info.hs ? `${info.hs} (Salida)` : ''}`);
+        }
 
-        doc.save(`Convocatoria_${player.nombre.replace(/\s+/g, '_')}.pdf`);
+        try {
+            doc.autoTable({
+                startY: 105,
+                head: head,
+                body: body,
+                theme: 'grid',
+                styles: { fontSize: 9, cellPadding: 6, lineColor: [180, 180, 180], textColor: [0, 0, 0], halign: 'center', valign: 'middle', overflow: 'linebreak' },
+                headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 10 },
+                columnStyles: colStyles,
+                margin: { left: 20, right: 20 },
+                didDrawCell: (data) => {
+                    // Si la celda tiene una URL en sus datos personalizados, añadimos el enlace manualmente
+                    if (data.cell.raw && data.cell.raw.data && data.cell.raw.data.url) {
+                        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: data.cell.raw.data.url });
+                    }
+                }
+            });
+        } catch (tableErr) {
+            console.error("Error drawing table:", tableErr);
+            throw new Error("Error técnico al generar la tabla del PDF.");
+        }
+
+        let finalY = (doc.lastAutoTable?.finalY || 150) + 15;
+
+        // --- SECTIONS (NOTAS / IMPORTANTE) ---
+        const drawSection = (title, content, y) => {
+            if (!content || content === 'Notas...' || content === 'Importante...') return y;
+            if (y > 270) doc.addPage();
+            
+            doc.setFillColor(255, 241, 118);
+            const titleWidth = doc.getTextWidth(title + " ") + 4;
+            doc.rect(20, y - 5, titleWidth, 7, 'F');
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(11);
+            doc.text(title, 22, y);
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            const splitContent = doc.splitTextToSize(content, 170);
+            doc.text(splitContent, 20, y + 10);
+            
+            return y + (splitContent.length * 6) + 18;
+        };
+
+        const defaultNotas = `La sesión de tecnificación será de 1 hora y 15 minutos.
+
+La Real Sociedad facilitará la ropa deportiva para la sesión de tecnificación, tendrán que llevar MEDIAS.
+
+Solo podrán acceder a la instalación de entrenamiento los participantes en la tecnificación.`;
+        const defaultImp = `Se deberán DUCHAR después de cada sesión de entrenamiento, por lo que necesitan material para la ducha.
+
+Los jugadores tendrán que llevar su PROPIA BOTELLA DE AGUA.
+
+Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo hagáis saber por ESCRITO.`;
+
+        finalY = drawSection("NOTAS:", info.notas || defaultNotas, finalY);
+        finalY = drawSection("MUY IMPORTANTE:", info.muy_importante || defaultImp, finalY);
+
+        doc.save(`Convocatoria_${pName.replace(/\s+/g, '_')}.pdf`);
+        console.log("PDF generado con éxito para:", pName);
     }
 
     initNotifications();

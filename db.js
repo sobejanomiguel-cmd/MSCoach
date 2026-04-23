@@ -128,7 +128,7 @@ class CoachDB {
                 const { data: remote, error } = await supabaseClient.from(storeName).insert([toInsert]).select();
                 
                 if (error) {
-                    console.error("Error en Supabase:", error);
+                    console.error(`Supabase insert error in ${storeName}:`, error);
                     // Si la tabla no existe, permitimos el guardado local pero avisamos
                     if (error.code === '42P01' || error.message.includes('cache')) {
                         console.warn(`Tabla '${storeName}' no encontrada en Supabase. Guardando solo en local.`);
@@ -142,6 +142,8 @@ class CoachDB {
                     const saved = remote[0];
                     await this.saveLocal(storeName, saved);
                     return saved;
+                } else {
+                    console.warn(`Supabase insert succeeded but returned no data for ${storeName}. RLS might be blocking the select.`);
                 }
             } catch (err) {
                 if (err.code === '42P01' || err.message.includes('cache')) {
