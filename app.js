@@ -5112,7 +5112,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
                         const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
                         const total = dataValues.length;
-                        const reportName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
+
+                                     const rawName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
+                                     let teamIds = [String(r.equipoid)];
+                                     if (r.nombre && r.nombre.includes(' ||| ')) {
+                                         try {
+                                             const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
+                                             if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
+                                         } catch(e) {}
+                                     }
+                                     
+                                     let reportName = rawName;
+                                     if (teamIds.length > 1) {
+                                         const names = teamIds.map(id => {
+                                             const t = teams.find(team => team.id == id);
+                                             return t ? t.nombre.split(' ||| ')[0] : null;
+                                         }).filter(Boolean);
+                                         
+                                         if (names.length > 1) {
+                                             const namesStr = names.join(' / ');
+                                             // Solo añadir si no parecen estar ya en el nombre (evitar duplicados como Asistencia_TeamA_TeamB (TeamA / TeamB))
+                                             const alreadyIncluded = names.every(n => rawName.toLowerCase().includes(n.toLowerCase()));
+                                             if (!alreadyIncluded) {
+                                                 reportName = `${rawName} (${namesStr})`;
+                                             }
+                                         }
+                                     }
+
                         
                         return `
                             <div onclick="window.viewAsistenciaReport(${r.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
@@ -5173,7 +5199,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
                                     const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
                                     const total = dataValues.length;
-                                    const reportName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
+
+                                     const rawName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
+                                     let teamIds = [String(r.equipoid)];
+                                     if (r.nombre && r.nombre.includes(' ||| ')) {
+                                         try {
+                                             const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
+                                             if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
+                                         } catch(e) {}
+                                     }
+                                     
+                                     let reportName = rawName;
+                                     if (teamIds.length > 1) {
+                                         const names = teamIds.map(id => {
+                                             const t = teams.find(team => team.id == id);
+                                             return t ? t.nombre.split(' ||| ')[0] : null;
+                                         }).filter(Boolean);
+                                         
+                                         if (names.length > 1) {
+                                             const namesStr = names.join(' / ');
+                                             // Solo añadir si no parecen estar ya en el nombre (evitar duplicados como Asistencia_TeamA_TeamB (TeamA / TeamB))
+                                             const alreadyIncluded = names.every(n => rawName.toLowerCase().includes(n.toLowerCase()));
+                                             if (!alreadyIncluded) {
+                                                 reportName = `${rawName} (${namesStr})`;
+                                             }
+                                         }
+                                     }
+
                                     
                                     return `
                                         <tr class="hover:bg-slate-50/50 transition-colors group">
@@ -5490,7 +5542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
                                 <div class="relative flex-1 lg:flex-none min-w-[200px]">
                                     <i data-lucide="tag" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                                    <input type="text" id="report-name" value="${existingReport ? (existingReport.nombre || '') : 'Asistencia ' + selectedDate}" placeholder="Nombre del Informe" class="pl-12 pr-4 py-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 w-full transition-all">
+                                    <input type="text" id="report-name" value="${existingReport ? (existingReport.nombre || '').split(' ||| ')[0] : 'Asistencia ' + selectedDate}" placeholder="Nombre del Informe" class="pl-12 pr-4 py-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 w-full transition-all">
                                 </div>
                                 <input id="date-sel" type="date" value="${selectedDate}" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all">
                                 
@@ -5627,7 +5679,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 const extra = { eids: selectedTeamIds };
-                const baseName = (nameInput ? nameInput.value : 'Asistencia').toUpperCase().trim();
+                const baseName = (nameInput ? nameInput.value : 'Asistencia').split(' ||| ')[0].toUpperCase().trim();
                 const fullName = `${baseName} ||| ${JSON.stringify(extra)}`;
 
                 const report = { 
