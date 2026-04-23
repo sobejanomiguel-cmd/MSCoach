@@ -1,5 +1,5 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 8; // Incrementado por cambios de esquema
+const DB_VERSION = 9; // Incrementado por cambios de esquema
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
@@ -26,7 +26,7 @@ class CoachDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias'];
+                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias', 'clubes'];
                 stores.forEach(store => {
                     if (!db.objectStoreNames.contains(store)) {
                         db.createObjectStore(store, { keyPath: 'id', autoIncrement: true });
@@ -73,6 +73,7 @@ class CoachDB {
 
 
     async getAll(storeName) {
+        if (!this.db) await this.init();
         // Ejecutamos la sincronización en segundo plano sin esperar a que termine para no bloquear la UI
         const syncPromise = (async () => {
             if (supabaseClient) {
@@ -81,6 +82,8 @@ class CoachDB {
                     if (!error && data) {
                         await this.syncLocal(storeName, data);
                         return data;
+                    } else if (error && (error.code === '42P01' || error.message.includes('cache'))) {
+                        console.warn(`Sync skipped: table '${storeName}' not found in Supabase.`);
                     }
                 } catch (err) {
                     console.warn(`Background sync failed for ${storeName}`);
@@ -118,6 +121,7 @@ class CoachDB {
     }
 
     async add(storeName, data) {
+        if (!this.db) await this.init();
         if (supabaseClient) {
             try {
                 const { id, ...toInsert } = data;
@@ -125,8 +129,13 @@ class CoachDB {
                 
                 if (error) {
                     console.error("Error en Supabase:", error);
-                    window.customAlert('Error de Sincronización', `Supabase ha rechazado los datos: ${error.message}. Revisa si el RLS está desactivado.`);
-                    throw error;
+                    // Si la tabla no existe, permitimos el guardado local pero avisamos
+                    if (error.code === '42P01' || error.message.includes('cache')) {
+                        console.warn(`Tabla '${storeName}' no encontrada en Supabase. Guardando solo en local.`);
+                    } else {
+                        window.customAlert('Error de Sincronización', `Supabase ha rechazado los datos: ${error.message}. Revisa si el RLS está desactivado.`);
+                        throw error;
+                    }
                 }
 
                 if (remote && remote.length > 0) {
@@ -135,9 +144,12 @@ class CoachDB {
                     return saved;
                 }
             } catch (err) {
-                console.error("Cloud save failed:", err);
-                // No guardamos en local si falló la nube para evitar inconsistencias graves
-                throw err;
+                if (err.code === '42P01' || err.message.includes('cache')) {
+                    // Fallback to local only
+                } else {
+                    console.error("Cloud save failed:", err);
+                    throw err;
+                }
             }
         }
         return this.saveLocal(storeName, data);
@@ -157,6 +169,7 @@ class CoachDB {
     }
 
     async update(storeName, data) {
+        if (!this.db) await this.init();
         if (supabaseClient && data.id) {
             const { id, ...toUpdate } = data;
             const { error } = await supabaseClient
@@ -166,7 +179,9 @@ class CoachDB {
 
             if (error) {
                 console.error(`Supabase update error (${storeName}):`, error);
-                throw error;
+                if (error.code !== '42P01' && !error.message.includes('cache')) {
+                    throw error;
+                }
             }
         }
         
@@ -177,6 +192,7 @@ class CoachDB {
     }
 
     async delete(storeName, id) {
+        if (!this.db) await this.init();
         if (supabaseClient) {
             try {
                 const { error } = await supabaseClient
@@ -186,11 +202,15 @@ class CoachDB {
                 
                 if (error) {
                     console.error(`Supabase delete error (${storeName}):`, error);
-                    throw error;
+                    if (error.code !== '42P01' && !error.message.includes('cache')) {
+                        throw error;
+                    }
                 }
             } catch (err) {
-                console.error("Cloud delete failed:", err);
-                throw err;
+                if (err.code !== '42P01' && !err.message.includes('cache')) {
+                    console.error("Cloud delete failed:", err);
+                    throw err;
+                }
             }
         }
         return new Promise((resolve) => {
@@ -239,6 +259,7 @@ class CoachDB {
     }
 
     async deleteAll(storeName) {
+        if (!this.db) await this.init();
         if (supabaseClient) {
             try {
                 const { error } = await supabaseClient.from(storeName).delete().neq('id', 0);

@@ -48,6 +48,40 @@ window.deleteTorneoDoc = async (id, docIndex) => {
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 
 window.currentVisibilityMode = 'personal'; 
+
+window.ensureClubesInitialized = async () => {
+    try {
+        const existing = await db.getAll('clubes');
+        if (existing.length === 0) {
+            console.log("Initializing partner clubs...");
+            for (const name of CLUBES_CONVENIDOS) {
+                await db.add('clubes', { nombre: name, escudo: null });
+            }
+        }
+
+        // Migración masiva de fotos de jugadores (EN SEGUNDO PLANO PARA NO CONGELAR LA APP)
+        setTimeout(async () => {
+            try {
+                const players = await db.getAll('jugadores');
+                let updatedCount = 0;
+                for (const p of players) {
+                    if (!p.foto || p.foto.includes('placeholder')) {
+                        p.foto = 'Foto Jugador General.png';
+                        await db.update('jugadores', p);
+                        updatedCount++;
+                    }
+                }
+                if (updatedCount > 0) console.log(`Migración de fotos completada: ${updatedCount} jugadores actualizados.`);
+            } catch (err) {
+                console.warn("Background migration warning:", err);
+            }
+        }, 1000);
+        
+    } catch (err) {
+        console.error("Error initializing data:", err);
+    }
+};
+
 window.toggleVisibility = (mode) => {
     // Security check: only ELITE users can see global
     if (mode === 'global' && db.userRole !== 'ELITE') {
@@ -279,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (user) {
                 await db.syncRole();
+                await window.ensureClubesInitialized();
                 authScreen.classList.add('hidden');
                 appEl.classList.remove('hidden');
                 applyRoleRestrictions();
@@ -525,11 +560,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         'tareas': { title: 'Directorio de Tareas', subtitle: 'Biblioteca de ejercicios de entrenamiento.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'sesiones': { title: 'Sesiones de Entrenamiento', subtitle: 'Planificación y calendario.', addButtonLabel: 'Nueva Sesión', addButtonEnabled: true },
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
-        'clubes': { title: 'Clubes Convenidos', subtitle: 'Gestión y vinculación de equipos por club.', addButtonEnabled: false },
+        'clubes': { title: 'Clubes Convenidos', subtitle: 'Gestión y vinculación de equipos por club.', addButtonLabel: 'Nuevo Club', addButtonEnabled: true },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Asistencia', addButtonEnabled: true },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
+        'convocatorias-pdf': { title: 'CONVOCATORIAS PDF', subtitle: 'Generación de convocatorias individuales.', addButtonEnabled: false },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
         'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
     };
@@ -594,6 +630,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             const btnText = addBtn.querySelector('.btn-text');
             if (btnText) btnText.textContent = meta.addButtonLabel;
             if (addBtnMobile) addBtnMobile.classList.remove('hidden');
+            
+            // Centralized Add Button Logic
+            const handleAddClick = () => {
+                if (viewId === 'eventos') window.showNewEventoModal();
+                else if (viewId === 'tareas') window.showNewTareaModal();
+                else if (viewId === 'sesiones') window.showNewSesionModal();
+                else if (viewId === 'equipos') window.showNewTeamModal();
+                else if (viewId === 'jugadores') window.showNewPlayerModal();
+                else if (viewId === 'asistencia') window.showNewAsistenciaModal();
+                else if (viewId === 'convocatorias') window.showNewConvocatoriaModal();
+                else if (viewId === 'torneos') window.showNewTorneoModal();
+                else if (viewId === 'usuarios') window.showNewUserModal();
+                else if (viewId === 'clubes') window.showNewClubModal();
+            };
+
+            addBtn.onclick = handleAddClick;
+            if (addBtnMobile) addBtnMobile.onclick = handleAddClick;
         } else {
             addBtn.classList.add('hidden');
             if (addBtnMobile) addBtnMobile.classList.add('hidden');
@@ -935,14 +988,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'eventos': await window.renderEventos(wrapper); break;
             case 'tareas': await window.renderTareas(wrapper); break;
             case 'sesiones': await window.renderSesiones(wrapper); break;
-            case 'equipos': await renderEquipos(wrapper); break;
+            case 'equipos': await window.renderEquipos(wrapper); break;
             case 'jugadores': await window.renderJugadores(wrapper); break;
-            case 'asistencia': await renderAsistencia(wrapper); break;
-            case 'convocatorias': await renderConvocatorias(wrapper); break;
-            case 'torneos': await renderTorneos(wrapper); break;
-            case 'usuarios': await renderUsuarios(wrapper); break;
-            case 'clubes': await renderClubes(wrapper); break;
-            case 'perfil': await renderPerfil(wrapper); break;
+            case 'asistencia': await window.renderAsistencia(wrapper); break;
+            case 'convocatorias': await window.renderConvocatorias(wrapper); break;
+            case 'convocatorias-pdf': await window.renderConvocatoriasPDF(wrapper); break;
+            case 'torneos': await window.renderTorneos(wrapper); break;
+            case 'usuarios': await window.renderUsuarios(wrapper); break;
+            case 'clubes': await window.renderClubes(wrapper); break;
+            case 'perfil': await window.renderPerfil(wrapper); break;
         }
         
         contentContainer.innerHTML = '';
@@ -3246,7 +3300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             delete data.sharedWith;
 
             if (isEdit) {
-                await db.update('sesiones', { ...data, id: session.id });
+await db.update('sesiones', { ...data, id: session.id });
             } else {
                 await db.add('sesiones', { ...data, createdBy: currentUser.id });
             }
@@ -3257,185 +3311,191 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     };
 
-    window.editConvocatoria = async (id) => {
+    window.openConvocatoriaForm = async (convData = null, defaultType = 'Sesión') => {
         const userRes = await supabaseClient.auth.getUser();
-        const currentUser = userRes.data?.user;
-        const { data: conv, error: convErr } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
-        if (convErr) return;
-
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
-        const { data: users } = await supabaseClient.from('profiles').select('*');
-        const activeTab = conv.tipo;
+
+        const isEdit = convData !== null;
+        const activeTab = isEdit ? convData.tipo : defaultType;
         
+        const conv = convData || {
+            id: null,
+            tipo: activeTab,
+            nombre: '',
+            fecha: new Date().toISOString().split('T')[0],
+            hora: '19:00',
+            lugar: ' ||| {}',
+            playerids: [],
+            equipoid: null
+        };
+
+        const { base: baseLugar, extra: meta } = window.parseLugarMetadata(conv.lugar);
+
         modalContainer.innerHTML = `
-            <div class="p-8">
-                <h3 class="text-2xl font-bold text-slate-800 mb-6">Editar <span class="text-blue-600">${activeTab}</span></h3>
-                <form id="edit-convocatoria-form" class="space-y-6">
-                    <input type="hidden" name="id" value="${conv.id}">
+            <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${isEdit ? 'Editar' : 'Nueva'} <span class="text-blue-600">${activeTab}</span></h3>
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Gestión de convocatoria y planificación</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <form id="convocatoria-unified-form" class="space-y-6">
+                    <input type="hidden" name="id" value="${conv.id || ''}">
                     <input type="hidden" name="tipo" value="${activeTab}">
-                    <div class="grid grid-cols-2 gap-4">
+                    
+                    <div class="grid grid-cols-2 gap-6">
                         <div class="col-span-2">
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
-                             <input name="nombre" value="${conv.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all" placeholder="Ej: Entrenamiento Lunes" required>
+                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Nombre del Ciclo / Evento</label>
+                             <input name="nombre" value="${conv.nombre || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-lg font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase" placeholder="Ej: Ciclo Tecnificación Mayo" required>
                         </div>
                         
                         ${activeTab === 'Ciclo' ? `
-                            <div class="col-span-2 space-y-6">
-                                <!-- SESIÓN 1 -->
-                                <div class="p-6 bg-blue-50/30 rounded-[2rem] border border-blue-100/50 space-y-4">
-                                    <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
-                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 1 (Principal)
-                                    </p>
-                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                        <div class="md:col-span-1">
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
-                                            <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
-                                            <input name="hl" value="${window.parseLugarMetadata(conv.lugar).extra.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
-                                            <input name="hi" value="${window.parseLugarMetadata(conv.lugar).extra.hi || conv.hora || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
-                                            <input name="hs" value="${window.parseLugarMetadata(conv.lugar).extra.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
+                            <!-- Bloque Sesión 1 -->
+                            <div class="col-span-2 p-6 bg-blue-50/30 rounded-[2rem] border border-blue-100/50 space-y-4">
+                                <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 1 (Principal)
+                                </p>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                        <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
                                     </div>
                                     <div>
-                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 1</label>
-                                        <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 1">
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                        <input name="hl" value="${meta.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                        <input name="hi" value="${meta.hi || conv.hora || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                        <input name="hs" value="${meta.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
                                     </div>
                                 </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 1</label>
+                                    <input name="lugar" value="${baseLugar || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs uppercase" placeholder="Ej: Zubieta">
+                                </div>
+                            </div>
 
-                                <!-- SESIÓN 2 -->
-                                <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 2
-                                    </p>
-                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                        <div class="md:col-span-1">
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
-                                            <input name="fecha2" value="${conv.fecha2 || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
-                                            <input name="hl2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
-                                            <input name="hi2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
-                                            <input name="hs2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
+                            <!-- Bloque Sesión 2 -->
+                            <div class="col-span-2 p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Sesión 2</p>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                        <input name="fecha2" value="${meta.s2?.f || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
                                     </div>
                                     <div>
-                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 2</label>
-                                        <input name="lugar2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 2">
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                        <input name="hl2" value="${meta.s2?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                        <input name="hi2" value="${meta.s2?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                        <input name="hs2" value="${meta.s2?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
                                     </div>
                                 </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 2</label>
+                                    <input name="lugar2" value="${meta.s2?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs uppercase" placeholder="Opcional">
+                                </div>
+                            </div>
 
-                                <!-- SESIÓN 3 -->
-                                <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 3
-                                    </p>
-                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                                        <div class="md:col-span-1">
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
-                                            <input name="fecha3" value="${conv.fecha3 || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
-                                            <input name="hl3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
-                                            <input name="hi3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
-                                        <div>
-                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
-                                            <input name="hs3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
-                                        </div>
+                            <!-- Bloque Sesión 3 -->
+                            <div class="col-span-2 p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Sesión 3</p>
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                        <input name="fecha3" value="${meta.s3?.f || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
                                     </div>
                                     <div>
-                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 3</label>
-                                        <input name="lugar3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 3">
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                        <input name="hl3" value="${meta.s3?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
                                     </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                        <input name="hi3" value="${meta.s3?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                        <input name="hs3" value="${meta.s3?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 3</label>
+                                    <input name="lugar3" value="${meta.s3?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs uppercase" placeholder="Opcional">
                                 </div>
                             </div>
                         ` : `
                             <div>
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
-                                 <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-3 border rounded-xl outline-none" required>
+                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha</label>
+                                 <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
                             </div>
-                            <div class="col-span-2 grid grid-cols-3 gap-3">
-                                <div>
-                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
-                                     <input name="hl" value="${window.parseLugarMetadata(conv.lugar).extra.hl || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
-                                </div>
-                                <div>
-                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
-                                     <input name="hi" value="${window.parseLugarMetadata(conv.lugar).extra.hi || conv.hora || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
-                                </div>
-                                <div>
-                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
-                                     <input name="hs" value="${window.parseLugarMetadata(conv.lugar).extra.hs || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
-                                </div>
+                            <div class="grid grid-cols-3 gap-2 col-span-2">
+                                 <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">H. Llegada</label>
+                                     <input name="hl" value="${meta.hl || ''}" type="time" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none text-xs">
+                                 </div>
+                                 <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">H. Inicio</label>
+                                     <input name="hi" value="${meta.hi || conv.hora || ''}" type="time" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none text-xs" required>
+                                 </div>
+                                 <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">H. Salida</label>
+                                     <input name="hs" value="${meta.hs || ''}" type="time" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none text-xs">
+                                 </div>
                             </div>
-                            <div>
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                                 <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
+                            <div class="col-span-2">
+                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Lugar / Campo</label>
+                                 <input name="lugar" value="${baseLugar || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase" placeholder="Ej: Zubieta - Campo 4">
                             </div>
                         `}
                     </div>
 
-
-                    <div id="edit-player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
+                    <div id="unified-player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex items-center justify-between">
-                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest text-blue-600">Reclutamiento de Jugadores</label>
-                            <button type="button" id="edit-conv-select-all" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Seleccionar Todos</button>
+                            <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Convocatoria de Jugadores</label>
+                            <button type="button" id="unified-conv-select-all" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Seleccionar Todos</button>
                         </div>
                         
-                        <!-- Multi-Team Selector -->
                         <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Equipos</label>
-                            <div id="edit-conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                                ${(() => {
-                                    const { extra: meta } = window.parseLugarMetadata(conv.lugar);
+                            <div id="unified-conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                                ${teams.map(t => {
                                     let precheckedTeams = meta.eids ? meta.eids.map(String) : [];
-                                    if (precheckedTeams.length === 0 && conv.equipoid) {
-                                        precheckedTeams = [String(conv.equipoid)];
-                                    }
-                                    
-                                    return teams.map(t => `
+                                    if (precheckedTeams.length === 0 && conv.equipoid) precheckedTeams = [String(conv.equipoid)];
+                                    return `
                                         <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all shadow-sm">
-                                            <input type="checkbox" value="${t.id}" ${precheckedTeams.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 edit-conv-team-check">
-                                            <span class="text-[9px] font-bold text-slate-700 truncate uppercase">${t.nombre}</span>
+                                            <input type="checkbox" value="${t.id}" ${precheckedTeams.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 unified-conv-team-check">
+                                            <span class="text-[9px] font-bold text-slate-700 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
                                         </label>
-                                    `).join('');
-                                })()}
+                                    `;
+                                }).join('')}
                             </div>
                         </div>
 
                         <div class="relative">
                             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                            <input type="text" id="edit-conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            <input type="text" id="unified-conv-player-search" placeholder="Buscar por nombre..." class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase">
                         </div>
 
-                        <div id="edit-filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
-                            <!-- Los jugadores se cargarán aquí -->
-                        </div>
+                        <div id="unified-filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar"></div>
                     </div>
 
-                    <div class="flex gap-4 mt-6">
+                    <div class="flex gap-4 mt-8">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">Cancelar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Guardar Cambios</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">
+                            ${isEdit ? 'Guardar Cambios' : 'Crear Convocatoria'}
+                        </button>
                     </div>
                 </form>
             </div>
@@ -3443,56 +3503,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
 
-        const searchInput = document.getElementById('edit-conv-player-search');
-        const selectAllBtn = document.getElementById('edit-conv-select-all');
-        const playerList = document.getElementById('edit-filtered-players-list');
-        const teamChecks = document.querySelectorAll('.edit-conv-team-check');
+        const searchInput = document.getElementById('unified-conv-player-search');
+        const playerList = document.getElementById('unified-filtered-players-list');
+        const teamChecks = document.querySelectorAll('.unified-conv-team-check');
         const selectedPlayerIds = new Set((conv.playerids || []).map(String));
 
         const updatePlayers = () => {
             const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
             const searchText = (searchInput.value || '').toLowerCase();
-            
             let filtered = players;
-            if (checkedTeamIds.length > 0) {
-                filtered = filtered.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
-            }
-            if (searchText) {
-                filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
-            }
+            if (checkedTeamIds.length > 0) filtered = filtered.filter(p => checkedTeamIds.includes(String(p.equipoid)));
+            if (searchText) filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
+            
+            playerList.innerHTML = filtered.length > 0 ? filtered.map(p => `
+                <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
+                        <span class="text-sm font-bold text-slate-700 uppercase">${p.nombre}</span>
+                    </div>
+                    <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion_siglas || '--'}</span>
+                </label>
+            `).join('') : '<p class="text-center py-6 text-slate-400 text-xs font-black uppercase">No se encontraron jugadores</p>';
 
-            renderFilteredList(filtered);
-        };
-
-        const renderFilteredList = (list) => {
-            if (list.length > 0) {
-                playerList.innerHTML = list.map(p => `
-                    <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group edit-conv-player-label">
-                        <div class="flex items-center gap-3">
-                            <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
-                            <span class="text-sm font-bold text-slate-700 edit-conv-player-name uppercase">${p.nombre}</span>
-                        </div>
-                        <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'} (${p.anionacimiento || '--'})</span>
-                    </label>
-                `).join('');
-
-                playerList.querySelectorAll('.player-check').forEach(chk => {
-                    chk.onchange = (e) => {
-                        if (e.target.checked) selectedPlayerIds.add(String(e.target.value));
-                        else selectedPlayerIds.delete(String(e.target.value));
-                    };
-                });
-            } else {
-                playerList.innerHTML = `<p class="text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona algún equipo para ver jugadores.</p>`;
-            }
+            playerList.querySelectorAll('.player-check').forEach(chk => {
+                chk.onchange = (e) => {
+                    if (e.target.checked) selectedPlayerIds.add(String(chk.value));
+                    else selectedPlayerIds.delete(String(chk.value));
+                };
+            });
         };
 
         teamChecks.forEach(c => c.onchange = updatePlayers);
         searchInput.oninput = updatePlayers;
-        
-        updatePlayers();
-        
-        selectAllBtn.onclick = () => {
+        document.getElementById('unified-conv-select-all').onclick = () => {
             const checks = playerList.querySelectorAll('.player-check');
             const allChecked = Array.from(checks).every(c => c.checked);
             checks.forEach(c => {
@@ -3502,90 +3545,72 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         };
 
-        document.getElementById('edit-convocatoria-form').onsubmit = async (e) => {
+        updatePlayers();
+
+        document.getElementById('convocatoria-unified-form').onsubmit = async (e) => {
             e.preventDefault();
             try {
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
-                
                 data.playerids = Array.from(selectedPlayerIds);
                 const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-                data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (conv.equipoid || null);
-
-                // RECONSTRUCT LUGAR WITH EXTRA
-                let baseLugar = (data.lugar || '').toUpperCase().trim();
-                if (baseLugar.includes(' ||| ')) baseLugar = baseLugar.split(' ||| ')[0];
-
-                data.nombre = (data.nombre || '').toUpperCase().trim();
-
-                const { extra: currentExtra } = window.parseLugarMetadata(conv.lugar);
-                let extra = { ...currentExtra };
                 
-                extra.eids = checkedTeamIds;
-                extra.hl = data.hl || data.hora_llegada;
-                extra.hi = data.hi || data.hora_inicio;
-                extra.hs = data.hs || data.hora_salida;
-                
-                data.hora = extra.hi || data.hora;
-                ['hora_llegada', 'hora_inicio', 'hora_salida', 'hl', 'hi', 'hs'].forEach(f => delete data[f]);
+                let extra = { 
+                    eids: checkedTeamIds, 
+                    hl: data.hl, 
+                    hi: data.hi, 
+                    hs: data.hs 
+                };
 
-                // Handle sub-session data for Ciclos
                 if (activeTab === 'Ciclo') {
-                    extra.s2 = { 
-                        f: data.fecha2, 
-                        hl: data.hl2, 
-                        hi: data.hi2, 
-                        hs: data.hs2, 
-                        l: (data.lugar2 || '').toUpperCase().trim() 
+                    extra.s2 = {
+                        f: data.fecha2,
+                        hl: data.hl2,
+                        hi: data.hi2,
+                        hs: data.hs2,
+                        l: (data.lugar2 || '').toUpperCase().trim()
                     };
-                    extra.s3 = { 
-                        f: data.fecha3, 
-                        hl: data.hl3, 
-                        hi: data.hi3, 
-                        hs: data.hs3, 
-                        l: (data.lugar3 || '').toUpperCase().trim() 
+                    extra.s3 = {
+                        f: data.fecha3,
+                        hl: data.hl3,
+                        hi: data.hi3,
+                        hs: data.hs3,
+                        l: (data.lugar3 || '').toUpperCase().trim()
                     };
-                    ['fecha2', 'fecha3', 'hl2', 'hi2', 'hs2', 'hl3', 'hi3', 'hs3', 'lugar2', 'lugar3'].forEach(f => delete data[f]);
-                } else {
-                    if (data.lugar2) extra.s2 = { ...extra.s2, l: data.lugar2.toUpperCase().trim() };
-                    if (data.lugar3) extra.s3 = { ...extra.s3, l: data.lugar3.toUpperCase().trim() };
+                    ['fecha2', 'hl2', 'hi2', 'hs2', 'lugar2', 'fecha3', 'hl3', 'hi3', 'hs3', 'lugar3'].forEach(f => delete data[f]);
                 }
 
-                data.lugar = `${baseLugar} ||| ${JSON.stringify(extra)}`;
+                data.hora = extra.hi;
+                data.equipoid = checkedTeamIds[0] || null;
+                data.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
+                ['hl', 'hi', 'hs', 'id'].forEach(f => delete data[f]);
 
-                const idToUpdate = data.id;
-                delete data.id;
-                
-                const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', idToUpdate);
-                if (error) throw error;
+                if (isEdit) {
+                    const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', conv.id);
+                    if (error) throw error;
+                    window.customAlert('¡Actualizado!', 'Los cambios se han guardado.', 'success');
+                } else {
+                    const { error } = await supabaseClient.from('convocatorias').insert(data);
+                    if (error) throw error;
+                    window.customAlert('¡Creado!', 'La convocatoria ha sido guardada.', 'success');
+                }
 
-                // SYNC ASISTENCIA
-                try {
-                    const allAsist = await db.getAll('asistencia');
-                    const syncTeamIds = Array.isArray(extra.eids) ? extra.eids.map(String) : [String(data.equipoid)];
-                    const reports = allAsist.filter(a => a.fecha === data.fecha && syncTeamIds.includes(String(a.equipoid)));
-                    for (const r of reports) {
-                        let changed = false;
-                        const newPids = data.playerids.map(String);
-                        const updatedPls = { ...r.players };
-                        for (const pid in updatedPls) {
-                            if (!newPids.includes(String(pid))) {
-                                delete updatedPls[pid];
-                                changed = true;
-                            }
-                        }
-                        if (changed) await db.update('asistencia', { ...r, players: updatedPls });
-                    }
-                } catch (e) { console.warn("Asistencia sync failed:", e); }
-                
-                window.customAlert('¡Actualizado!', 'Los cambios se han guardado correctamente.', 'success');
                 closeModal();
-                window.switchView(activeTab === 'Torneo' ? 'torneos' : 'convocatorias');
+                if (window.currentView === 'convocatorias' || window.currentView === 'torneos') {
+                    window.switchView(window.currentView);
+                }
             } catch (err) {
-                alert("Error: " + err.message);
+                window.customAlert('Error', err.message, 'error');
             }
         };
     };
+
+    window.editConvocatoria = async (id) => {
+        const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
+        if (error || !conv) return;
+        await window.openConvocatoriaForm(conv);
+    };
+
 
     window.deleteConvocatoria = async (id) => {
         window.customConfirm('¿Eliminar Convocatoria?', '¿Estás seguro de que quieres borrar este listado permanentemente?', async () => {
@@ -3696,6 +3721,265 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         } catch (err) {
             alert("Error al guardar: " + err.message);
         }
+    };
+    window.renderPlayerSelectionForConvocatoria = async (containerId, teamIds) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        
+        const allPlayers = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        
+        // Ensure teamIds is an array of strings
+        const selectedTeamIds = Array.isArray(teamIds) ? teamIds.map(String) : [String(teamIds)];
+        
+        const filteredPlayers = allPlayers.filter(p => selectedTeamIds.includes(String(p.equipoid)));
+        
+        if (filteredPlayers.length === 0) {
+            container.innerHTML = `
+                <div class="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">No hay jugadores vinculados a los equipos seleccionados</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Group by team for better UX
+        const grouped = {};
+        filteredPlayers.forEach(p => {
+            const teamName = teams.find(t => String(t.id) === String(p.equipoid))?.nombre || 'General';
+            if (!grouped[teamName]) grouped[teamName] = [];
+            grouped[teamName].push(p);
+        });
+
+        container.innerHTML = `
+            <div class="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                ${Object.entries(grouped).map(([teamName, players]) => `
+                    <div class="space-y-2">
+                        <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest px-1">${teamName}</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            ${players.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(p => `
+                                <label class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-300 transition-all cursor-pointer group">
+                                    <input type="checkbox" name="playerids" value="${p.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
+                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.posicion || '--'}</p>
+                                    </div>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    };
+
+    window.showNewConvocatoriaModal = (type) => {
+        const activeType = type || currentConvocatoriaTypeTab;
+        window.openConvocatoriaForm(null, activeType);
+    };
+
+
+
+    window.showNewEventoModal = async () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Evento</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Añadir a la agenda personal</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="new-evento-form" class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título del Evento</label>
+                        <input name="titulo" type="text" required placeholder="Ej: Reunión de Coordinación" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                            <input name="fecha" type="date" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Hora</label>
+                            <input name="hora" type="time" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Descripción</label>
+                        <textarea name="descripcion" rows="3" placeholder="Detalles adicionales..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all"></textarea>
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Evento</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('new-evento-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+            
+            try {
+                await db.add('eventos', { ...data, createdBy: currentUser?.id });
+                window.customAlert('Éxito', 'Evento añadido a la agenda', 'success');
+                closeModal();
+                if (currentView === 'agenda') window.renderAgenda(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo guardar el evento', 'error');
+            }
+        };
+    };
+
+    window.showNewSesionModal = async () => {
+        await window.renderSessionModal();
+    };
+
+    window.showNewTareaModal = async () => {
+        if (currentView === 'tareas') {
+            await window.showNewExerciseModal();
+        } else {
+            await window.showNewManagementTaskModal();
+        }
+    };
+
+    window.showNewManagementTaskModal = async () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nueva Tarea</h3>
+                        <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest mt-1">Recordatorio de gestión</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="new-mgmt-task-form" class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título de la Tarea</label>
+                        <input name="titulo" type="text" required placeholder="Ej: Llamar a representante" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-amber-50 transition-all">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Límite</label>
+                            <input name="fecha" type="date" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Prioridad</label>
+                            <select name="prioridad" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                <option value="Baja">Baja</option>
+                                <option value="Media" selected>Media</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar Tarea</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('new-mgmt-task-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+
+            try {
+                await db.add('tareas', { ...data, estado: 'pendiente', createdBy: currentUser?.id });
+                window.customAlert('Éxito', 'Tarea guardada', 'success');
+                closeModal();
+                if (currentView === 'agenda' || currentView === 'dashboard') window.renderView(currentView);
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo guardar la tarea', 'error');
+            }
+        };
+    };
+
+    window.showNewExerciseModal = async () => {
+        modalContainer.innerHTML = `
+            <div class="p-8 max-w-4xl mx-auto">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Ejercicio</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Biblioteca de Entrenamiento</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="new-exercise-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-6">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Ejercicio</label>
+                                <input name="name" type="text" required placeholder="Ej: Rondo 4x4 + 3" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="space-y-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo</label>
+                                    <select name="type" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                        ${TASK_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Etapa</label>
+                                    <select name="categoria" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                        ${TASK_CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Objetivo Principal</label>
+                                <select name="objetivo" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    ${TASK_OBJECTIVES.map(o => `<option value="${o}">${o}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Espacio</label>
+                                <select name="espacio" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    ${TASK_SPACES.map(s => `<option value="${s}">${s}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Descripción / Reglas</label>
+                                <textarea name="description" rows="10" placeholder="Describe la dinámica del ejercicio..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Guardar en Biblioteca</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('new-exercise-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+
+            try {
+                await db.add('tareas', { ...data, createdBy: currentUser?.id });
+                window.customAlert('Éxito', 'Ejercicio añadido a la biblioteca', 'success');
+                closeModal();
+                if (currentView === 'tareas') window.renderTareas(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo guardar el ejercicio', 'error');
+            }
+        };
     };
 
     window.viewConvocatoria = async (id, activeTab = 'pizarra') => {
@@ -5303,6 +5587,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     let convocatoriaSearchTerm = '';
     let currentConvocatoriaTeamId = 'all';
+    let currentConvocatoriaTypeTab = 'Ciclo';
 
     window.updateConvocatoriaSearch = (val) => {
         convocatoriaSearchTerm = val;
@@ -5311,6 +5596,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.switchConvocatoriaTeamTab = (tid) => {
         currentConvocatoriaTeamId = tid;
+        window.renderView('convocatorias');
+    };
+
+    window.switchConvocatoriaTypeTab = (type) => {
+        currentConvocatoriaTypeTab = type;
         window.renderView('convocatorias');
     };
 
@@ -5326,6 +5616,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const filtered = convs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
+            
+            // Filter by TYPE tab
+            const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
+
+            // Filter by Team tab
             const matchesTeam = currentConvocatoriaTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
                               (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
@@ -5333,7 +5628,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const matchesSearch = !convocatoriaSearchTerm || 
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
-            return matchesTeam && matchesSearch;
+            
+            return matchesType && matchesTeam && matchesSearch;
         });
 
         const renderConvCard = (c) => {
@@ -5425,26 +5721,42 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         );
 
         container.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="window.switchConvocatoriaTeamTab('all')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                        TODOS LOS EQUIPOS
+            <div class="space-y-6 mb-8">
+                <!-- Type Tabs -->
+                <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
+                    <button onclick="window.switchConvocatoriaTypeTab('Ciclo')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Ciclo' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                        Ciclos
                     </button>
-                    ${teamsWithConvs.map(t => `
-                        <button onclick="window.switchConvocatoriaTeamTab('${t.id}')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            ${t.nombre}
-                        </button>
-                    `).join('')}
+                    <button onclick="window.switchConvocatoriaTypeTab('Sesión')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Sesión' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                        Sesiones
+                    </button>
+                    <button onclick="window.switchConvocatoriaTypeTab('Zubieta')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Zubieta' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                        Zubieta
+                    </button>
                 </div>
 
-                <div class="relative w-full md:w-80">
-                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                    <input type="text" 
-                        id="convocatoria-search-input"
-                        placeholder="Buscar convocatoria..." 
-                        value="${convocatoriaSearchTerm}"
-                        oninput="window.updateConvocatoriaSearch(this.value)"
-                        class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                <!-- Filters & Search -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="window.switchConvocatoriaTeamTab('all')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                            TODOS LOS EQUIPOS
+                        </button>
+                        ${teamsWithConvs.map(t => `
+                            <button onclick="window.switchConvocatoriaTeamTab('${t.id}')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                                ${t.nombre}
+                            </button>
+                        `).join('')}
+                    </div>
+
+                    <div class="relative w-full md:w-80">
+                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input type="text" 
+                            id="convocatoria-search-input"
+                            placeholder="Buscar convocatoria..." 
+                            value="${convocatoriaSearchTerm}"
+                            oninput="window.updateConvocatoriaSearch(this.value)"
+                            class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                    </div>
                 </div>
             </div>
 
@@ -6853,98 +7165,1624 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    async function renderClubes(container) {
-        const teams = await db.getAll('equipos');
+    window.renderJugadores = async function(container) {
         const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const sortedTeams = window.getSortedTeams(teams);
+
+        const currentTeamId = window.currentJugadoresTeamId || 'all';
+        const searchTerm = window.jugadoresSearchTerm || '';
+
+        const filtered = players.filter(p => {
+            const matchesTeam = currentTeamId === 'all' || p.equipoid?.toString() === currentTeamId.toString();
+            const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
+            return matchesTeam && matchesSearch;
+        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
-                ${CLUBES_CONVENIDOS.map(club => {
-                    const linkedTeams = teams.filter(t => t.equipoConvenido === club);
-                    const linkedPlayers = players.filter(p => p.equipoConvenido === club);
+            <div class="space-y-6 animate-in fade-in duration-500">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="window.switchJugadoresTeam('all')" class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
+                            Todos
+                        </button>
+                        ${sortedTeams.map(t => `
+                            <button onclick="window.switchJugadoresTeam('${t.id}')" class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
+                                ${t.nombre.split(' ||| ')[0]}
+                            </button>
+                        `).join('')}
+                    </div>
                     
-                    return `
-                        <div onclick="window.viewClubTeams('${club}')" class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all cursor-pointer group relative overflow-hidden">
-                            <div class="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <i data-lucide="building-2" class="w-24 h-24 text-slate-900"></i>
-                            </div>
-                            <div class="relative z-10">
-                                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                    <i data-lucide="building-2" class="w-6 h-6"></i>
-                                </div>
-                                <h4 class="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">${club}</h4>
-                                <div class="flex gap-4 mt-6 pt-6 border-t border-slate-50">
-                                    <div class="flex flex-col">
-                                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Equipos</span>
-                                        <span class="text-lg font-black text-slate-700">${linkedTeams.length}</span>
-                                    </div>
-                                    <div class="flex flex-col ml-6">
-                                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Jugadores</span>
-                                        <span class="text-lg font-black text-blue-600">${linkedPlayers.length}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mt-8">
-                                <button class="w-full py-3 bg-slate-50 text-slate-600 font-bold rounded-xl text-[10px] uppercase tracking-widest group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                    Gestionar Club
-                                </button>
-                            </div>
+                    <div class="flex items-center gap-4 w-full lg:w-auto">
+                        <div class="relative flex-1 lg:w-80 group">
+                            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
+                            <input type="text" 
+                                id="jugadores-search-input"
+                                placeholder="Buscar por nombre..." 
+                                value="${searchTerm}"
+                                oninput="window.updateJugadoresSearch(this.value)"
+                                class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
                         </div>
-                    `;
-                }).join('')}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/50 border-b border-slate-100">
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.map(p => {
+                                    const team = teams.find(t => t.id?.toString() === p.equipoid?.toString());
+                                    return `
+                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+                                            <td class="px-8 py-4">
+                                                <div class="flex items-center gap-4">
+                                                    <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all">
+                                                        <img src="${p.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${p.nombre}</p>
+                                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em]">
+                                                    ${Array.isArray(p.posicion) ? p.posicion.join(', ') : (p.posicion || '--')}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4">
+                                                <span class="text-[10px] font-bold text-slate-500">
+                                                    ${p.anionacimiento || '----'}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <button onclick="window.viewPlayerProfile('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Ficha">
+                                                        <i data-lucide="user" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.editPlayer('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('') || `
+                                    <tr>
+                                        <td colspan="5" class="py-20 text-center">
+                                            <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
+                                            <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No se han encontrado jugadores</p>
+                                        </td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         `;
-        if (window.lucide) lucide.createIcons();
-    }
 
-    window.viewClubTeams = async (clubName) => {
+        if (window.lucide) lucide.createIcons();
+
+        const searchInput = document.getElementById('jugadores-search-input');
+        if (searchInput && searchTerm) {
+            searchInput.focus();
+            searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
+        }
+    };
+
+    window.switchJugadoresTeam = (teamId) => {
+        window.currentJugadoresTeamId = teamId;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.updateJugadoresSearch = (val) => {
+        window.jugadoresSearchTerm = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.showNewPlayerModal = async () => {
         const teams = await db.getAll('equipos');
+        const clubs = await db.getAll('clubes');
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
                     <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${clubName}</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Gestión de Equipos Vinculados</p>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Jugador</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Añadir ficha al sistema global</p>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
-                
-                <div class="space-y-6">
-                    <div class="flex justify-between items-center mb-2 px-2">
-                         <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Equipos del Club</label>
-                         <button onclick="window.showNewTeamModal('${clubName}')" class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20">
-                            <i data-lucide="plus" class="w-3 h-3"></i>
-                            Añadir Nuevo Equipo
-                         </button>
-                    </div>
-                    
-                    <div class="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
-                            ${teams.map(t => {
-                                const isLinked = t.equipoConvenido === clubName;
-                                const isOtherLinked = t.equipoConvenido && t.equipoConvenido !== clubName;
-                                
-                                return `
-                                    <label class="flex items-center gap-4 p-4 bg-white rounded-2xl border ${isLinked ? 'border-blue-400 ring-4 ring-blue-50' : 'border-slate-100'} cursor-pointer hover:border-blue-200 transition-all ${isOtherLinked ? 'opacity-50' : ''}">
-                                        <input type="checkbox" onchange="window.toggleTeamClubLink('${t.id}', '${clubName}', this.checked)" ${isLinked ? 'checked' : ''} ${isOtherLinked ? 'disabled' : ''} class="w-5 h-5 rounded-md text-blue-600 border-2 border-slate-200 focus:ring-4 ring-blue-100">
-                                        <div class="flex-1 min-w-0">
-                                            <p class="text-[11px] font-black text-slate-800 uppercase truncate">${t.nombre.split(' ||| ')[0]}</p>
-                                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tight">${isOtherLinked ? `Vinculado a: ${t.equipoConvenido}` : (t.categoria || 'Sin Categoría')}</p>
-                                        </div>
-                                    </label>
-                                `;
-                            }).join('') || '<p class="col-span-full p-12 text-center text-[10px] font-black text-slate-300 uppercase italic">No hay equipos registrados en el sistema</p>'}
+
+                <form id="new-player-form" class="space-y-6">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-48 flex flex-col items-center gap-4">
+                            <div class="w-40 h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] flex items-center justify-center relative overflow-hidden group cursor-pointer">
+                                <img id="player-photo-preview" src="" class="hidden w-full h-full object-cover">
+                                <div id="photo-placeholder" class="text-center">
+                                    <i data-lucide="camera" class="w-8 h-8 text-slate-300 mx-auto mb-2"></i>
+                                    <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Subir Foto</p>
+                                </div>
+                                <input type="file" id="player-photo-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+                            </div>
                         </div>
+
+                        <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2 md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo</label>
+                                <input name="nombre" type="text" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo</label>
+                                <select name="equipoid" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="">Jugador Libre</option>
+                                    ${teams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-3 md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Posiciones</label>
+                                <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                                    ${PLAYER_POSITIONS.map(pos => `
+                                        <label class="cursor-pointer group">
+                                            <input type="checkbox" name="posicion" value="${pos}" class="hidden peer">
+                                            <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
+                                                ${pos}
+                                            </span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año Nacimiento</label>
+                                <input name="anionacimiento" type="number" placeholder="2010" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
+                                <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="">Ninguno</option>
+                                    ${clubs.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Inicial</label>
+                                <select name="nivel" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="1">1 - Iniciación</option>
+                                    <option value="2">2 - Medio</option>
+                                    <option value="3" selected>3 - Avanzado</option>
+                                    <option value="4">4 - Elite</option>
+                                    <option value="5">5 - Top</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Guardar Jugador</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        const photoInput = document.getElementById('player-photo-input');
+        const photoPreview = document.getElementById('player-photo-preview');
+        const placeholder = document.getElementById('photo-placeholder');
+
+        photoInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (re) => {
+                    photoPreview.src = re.target.result;
+                    photoPreview.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        document.getElementById('new-player-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.posicion = formData.getAll('posicion'); // Save as array
+            
+            try {
+                if (photoInput.files[0]) {
+                    data.foto = await db.uploadImage(photoInput.files[0]);
+                }
+                await db.add('jugadores', data);
+                window.customAlert('¡Éxito!', 'Jugador creado correctamente.', 'success');
+                closeModal();
+                window.renderJugadores(document.getElementById('content-container'));
+            } catch (err) {
+                console.error(err);
+                window.customAlert('Error', 'No se pudo crear el jugador.', 'error');
+            }
+        };
+    };
+
+    window.viewPlayerProfile = async (playerId) => {
+        const player = await db.get('jugadores', playerId);
+        if (!player) return;
+
+        const teams = await db.getAll('equipos');
+        const attendance = await db.getAll('asistencia');
+        window.allAttendanceData = attendance; // Cache for the inner function
+        
+        const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
+
+        modalContainer.innerHTML = `
+            <div class="relative overflow-hidden">
+                <div class="h-32 bg-gradient-to-r from-blue-600 to-indigo-700 relative">
+                    <button onclick="closeModal()" class="absolute top-6 right-6 p-2 bg-white/10 text-white hover:bg-white/20 rounded-full transition-all backdrop-blur-md">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                
+                <div class="px-8 pb-8 -mt-12 relative z-10">
+                    <div class="flex flex-col md:flex-row gap-8 items-start">
+                        <div class="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl">
+                            <img src="${player.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='https://via.placeholder.com/150'">
+                        </div>
+                        <div class="flex-1 pt-14">
+                            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div>
+                                    <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${player.nombre}</h3>
+                                    <div class="flex flex-wrap items-center gap-3 mt-2">
+                                        <div class="flex gap-1">
+                                            ${(Array.isArray(player.posicion) ? player.posicion : [player.posicion || 'SIN POSICIÓN']).map(pos => `
+                                                <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[9px] font-black uppercase tracking-widest">${pos}</span>
+                                            `).join('')}
+                                        </div>
+                                        <span class="w-1 h-1 bg-slate-200 rounded-full"></span>
+                                        <span class="text-slate-400 text-[10px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'JUGADOR LIBRE'}</span>
+                                        ${player.equipoConvenido ? `
+                                            <span class="w-1 h-1 bg-slate-200 rounded-full"></span>
+                                            <span class="text-blue-600 text-[10px] font-black uppercase tracking-widest">${player.equipoConvenido}</span>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="window.editPlayer('${playerId}')" class="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
+                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                        Editar Perfil
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+                        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Información Personal</p>
+                            <div class="space-y-4">
+                                <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
+                                    <span class="text-[10px] font-bold text-slate-500">Año de Nacimiento</span>
+                                    <span class="text-[11px] font-black text-slate-800">${player.anionacimiento || '----'}</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
+                                    <span class="text-[10px] font-bold text-slate-500">Sexo</span>
+                                    <span class="text-[11px] font-black text-slate-800 uppercase">${player.sexo || 'Masculino'}</span>
+                                </div>
+                                <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
+                                    <span class="text-[10px] font-bold text-slate-500">Lateralidad</span>
+                                    <span class="text-[11px] font-black text-slate-800 uppercase">${player.pie || 'Diestro'}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Evaluación Técnica</p>
+                            <div class="flex items-end gap-1 mb-4">
+                                <span class="text-4xl font-black text-slate-800">${player.nivel || '3'}</span>
+                                <span class="text-xs font-black text-slate-400 mb-1.5">/ 5</span>
+                            </div>
+                            <div class="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div class="h-full bg-blue-600 rounded-full" style="width: ${(player.nivel || 3) * 20}%"></div>
+                            </div>
+                            <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual en sesiones y torneos.</p>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                            <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                                <i data-lucide="check-circle" class="w-6 h-6"></i>
+                            </div>
+                            <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">Estado de Ficha</h4>
+                            <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">Activo y Verificado</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                        <div class="flex items-center justify-between mb-6">
+                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                                <i data-lucide="calendar-check" class="w-5 h-5 text-emerald-500"></i>
+                                Historial de Asistencia
+                            </h4>
+                        </div>
+                        
+                        <div class="overflow-x-auto -mx-8 px-8">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50/50 border-b border-slate-100">
+                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Fecha / Sesión</th>
+                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Estado</th>
+                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Observaciones / Motivo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${(() => {
+                                        const attendance = (window.allAttendanceData || []).filter(a => a.players && a.players[playerId]);
+                                        if (attendance.length === 0) return '<tr><td colspan="3" class="py-8 text-center text-[10px] text-slate-300 uppercase font-black italic">No hay registros de asistencia</td></tr>';
+                                        
+                                        return attendance.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(a => {
+                                            const status = a.players[playerId];
+                                            const reason = (typeof status === 'object') ? status.reason : '';
+                                            const statusValue = (typeof status === 'object') ? status.status : status;
+
+                                            let statusBadge = '';
+                                            if (statusValue === 'asiste') statusBadge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
+                                            else if (statusValue === 'falta') statusBadge = '<span class="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-[8px] font-black uppercase">Ausente</span>';
+                                            else if (statusValue === 'lesion') statusBadge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
+                                            else statusBadge = `<span class="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
+
+                                            return `
+                                                <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                                    <td class="py-4 px-4">
+                                                        <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Sesión'}</p>
+                                                        <p class="text-[8px] font-black text-slate-400 uppercase">${a.fecha}</p>
+                                                    </td>
+                                                    <td class="py-4 px-4">${statusBadge}</td>
+                                                    <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : 'Sin motivo especificado')}</td>
+                                                </tr>
+                                            `;
+                                        }).join('');
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.editPlayer = async (playerId) => {
+        const player = await db.get('jugadores', playerId);
+        const teams = await db.getAll('equipos');
+        const clubs = await db.getAll('clubes');
+        
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Jugador</h3>
+                        <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest mt-1">Modificando ficha de ${player.nombre}</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <form id="edit-player-form" class="space-y-6">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="w-full md:w-48 flex flex-col items-center gap-4">
+                            <div class="w-40 h-40 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] flex items-center justify-center relative overflow-hidden group cursor-pointer">
+                                <img id="player-photo-preview" src="${player.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                <div class="absolute inset-0 bg-black/40 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <i data-lucide="camera" class="w-6 h-6 mb-1"></i>
+                                    <span class="text-[8px] font-black uppercase">Cambiar</span>
+                                </div>
+                                <input type="file" id="player-photo-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+                            </div>
+                        </div>
+
+                        <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="space-y-2 md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo</label>
+                                <input name="nombre" type="text" value="${player.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo</label>
+                                <select name="equipoid" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="">Jugador Libre</option>
+                                    ${teams.map(t => `<option value="${t.id}" ${player.equipoid?.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-3 md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Posiciones</label>
+                                <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                                    ${PLAYER_POSITIONS.map(pos => {
+                                        const isSelected = Array.isArray(player.posicion) ? player.posicion.includes(pos) : player.posicion === pos;
+                                        return `
+                                            <label class="cursor-pointer group">
+                                                <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" ${isSelected ? 'checked' : ''}>
+                                                <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
+                                                    ${pos}
+                                                </span>
+                                            </label>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año Nacimiento</label>
+                                <input name="anionacimiento" type="number" value="${player.anionacimiento || ''}" placeholder="2010" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
+                                <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="">Ninguno</option>
+                                    ${clubs.map(c => `<option value="${c.nombre}" ${player.equipoConvenido === c.nombre ? 'selected' : ''}>${c.nombre}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Actual</label>
+                                <select name="nivel" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="1" ${player.nivel == 1 ? 'selected' : ''}>1 - Iniciación</option>
+                                    <option value="2" ${player.nivel == 2 ? 'selected' : ''}>2 - Medio</option>
+                                    <option value="3" ${player.nivel == 3 ? 'selected' : ''}>3 - Avanzado</option>
+                                    <option value="4" ${player.nivel == 4 ? 'selected' : ''}>4 - Elite</option>
+                                    <option value="5" ${player.nivel == 5 ? 'selected' : ''}>5 - Top</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-between gap-3">
+                        <button type="button" onclick="window.deletePlayer('${playerId}')" class="px-8 py-4 bg-red-50 text-red-500 font-black rounded-2xl uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all text-[10px]">Eliminar Jugador</button>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all text-[10px]">Cancelar</button>
+                            <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Guardar Cambios</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        const photoInput = document.getElementById('player-photo-input');
+        const photoPreview = document.getElementById('player-photo-preview');
+
+        photoInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (re) => { photoPreview.src = re.target.result; };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        document.getElementById('edit-player-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.id = playerId;
+            data.posicion = formData.getAll('posicion'); // Save as array
+
+            try {
+                if (photoInput.files[0]) {
+                    data.foto = await db.uploadImage(photoInput.files[0]);
+                }
+                await db.update('jugadores', data);
+                window.customAlert('¡Actualizado!', 'Datos guardados correctamente.', 'success');
+                closeModal();
+                window.renderJugadores(document.getElementById('content-container'));
+            } catch (err) {
+                console.error(err);
+                window.customAlert('Error', 'No se pudieron guardar los cambios.', 'error');
+            }
+        };
+    };
+
+    window.deletePlayer = async (playerId) => {
+        if (confirm('¿Estás seguro de que quieres eliminar este jugador? Esta acción no se puede deshacer.')) {
+            try {
+                await db.delete('jugadores', playerId);
+                window.customAlert('Eliminado', 'El jugador ha sido borrado del sistema.', 'success');
+                closeModal();
+                window.renderJugadores(document.getElementById('content-container'));
+            } catch (err) {
+                console.error(err);
+                window.customAlert('Error', 'No se pudo eliminar el jugador.', 'error');
+            }
+        }
+    };
+
+    window.renderEquipos = async function(container) {
+        const teams = await db.getAll('equipos');
+        const players = await db.getAll('jugadores');
+        const sortedTeams = window.getSortedTeams(teams);
+
+        container.innerHTML = `
+            <div class="space-y-8 animate-in fade-in duration-500">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Equipos</h3>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Gestión de categorías y plantillas</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/50 border-b border-slate-100">
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoría</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Plantilla</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sortedTeams.map(t => {
+                                    const teamPlayers = players.filter(p => p.equipoid?.toString() === t.id.toString());
+                                    const teamName = (t.nombre || '').split(' ||| ')[0];
+                                    return `
+                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+                                            <td class="px-8 py-5">
+                                                <div class="flex items-center gap-4">
+                                                    <div class="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden p-2 group-hover:border-blue-200 transition-all">
+                                                        ${t.escudo ? `<img src="${t.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="shield" class="w-5 h-5 text-blue-600"></i>`}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${teamName}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-5">
+                                                <span class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">
+                                                    ${t.categoria || 'BASE'}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-5 text-center">
+                                                <div class="flex flex-col items-center">
+                                                    <span class="text-sm font-black text-slate-700">${teamPlayers.length}</span>
+                                                    <span class="text-[8px] font-black text-slate-300 uppercase tracking-widest">Jugadores</span>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-5 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <button onclick="window.switchJugadoresTeam('${t.id}'); window.switchView('jugadores')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Plantilla">
+                                                        <i data-lucide="users" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.editTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.deleteTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all" title="Eliminar">
+                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.showNewTeamModal = () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Equipo</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Crear nueva categoría o plantilla</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="new-team-form" class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Equipo</label>
+                        <input name="nombre" type="text" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
+                        <input name="categoria" type="text" placeholder="Ej: ALEVÍN A" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Crear Equipo</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        modalOverlay.classList.add('active');
+        document.getElementById('new-team-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            try {
+                await db.add('equipos', data);
+                window.customAlert('Éxito', 'Equipo creado correctamente', 'success');
+                closeModal();
+                window.renderEquipos(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        };
+    };
+
+    window.editTeam = async (teamId) => {
+        const team = await db.get('equipos', teamId);
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Equipo</h3>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="edit-team-form" class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre</label>
+                        <input name="nombre" type="text" value="${team.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
+                        <input name="categoria" type="text" value="${team.categoria || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase text-[10px]">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        modalOverlay.classList.add('active');
+        document.getElementById('edit-team-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            data.id = teamId;
+            try {
+                await db.update('equipos', data);
+                window.customAlert('Actualizado', 'Equipo actualizado correctamente', 'success');
+                closeModal();
+                window.renderEquipos(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        };
+    };
+
+    window.deleteTeam = async (teamId) => {
+        if (confirm('¿Eliminar este equipo?')) {
+            try {
+                await db.delete('equipos', teamId);
+                window.customAlert('Eliminado', 'Equipo borrado', 'success');
+                window.renderEquipos(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        }
+    };
+
+    window.renderClubes = async function(container) {
+        const clubes = await db.getAll('clubes');
+        
+        container.innerHTML = `
+            <div class="space-y-8 animate-in fade-in duration-500">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Clubes Convenidos</h3>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Red de colaboración y gestión de canteras</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/50 border-b border-slate-100">
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${clubes.length === 0 ? `
+                                    <tr>
+                                        <td colspan="2" class="py-20 text-center">
+                                            <i data-lucide="building-2" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
+                                            <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay clubes registrados</p>
+                                        </td>
+                                    </tr>
+                                ` : clubes.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => {
+                                    return `
+                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+                                            <td class="px-8 py-5">
+                                                <div class="flex items-center gap-4">
+                                                    <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden p-2 group-hover:border-blue-200 transition-all">
+                                                        ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i>`}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${club.nombre}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-5 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <button onclick="window.viewClubTeams('${club.nombre}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Ficha">
+                                                        <i data-lucide="layout" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.editClub('${club.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.deleteClub('${club.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all" title="Eliminar">
+                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.showNewClubModal = () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Club Convenido</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Registrar entidad colaboradora</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="new-club-form" class="space-y-6">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <!-- Logo Upload -->
+                        <div class="flex flex-col items-center gap-4">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Escudo / Logo</label>
+                            <div class="relative group">
+                                <div id="club-logo-preview" class="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-300">
+                                    <i data-lucide="image" class="w-8 h-8 text-slate-300"></i>
+                                </div>
+                                <input type="file" id="club-logo-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="window.handleClubLogoPreview(this)">
+                                <input type="hidden" name="escudo" id="club-logo-url">
+                            </div>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Click para subir foto</p>
+                        </div>
+
+                        <!-- Info -->
+                        <div class="flex-1 space-y-6">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Club</label>
+                                <input name="nombre" type="text" required placeholder="Nombre oficial de la entidad" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" id="btn-save-club" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Registrar Club</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        window.handleClubLogoPreview = async (input) => {
+            if (input.files && input.files[0]) {
+                const preview = document.getElementById('club-logo-preview');
+                const btn = document.getElementById('btn-save-club');
+                const originalText = btn.innerText;
+                
+                btn.disabled = true;
+                btn.innerText = 'SUBIENDO...';
+                preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
+
+                try {
+                    const publicUrl = await db.uploadImage(input.files[0]);
+                    if (publicUrl) {
+                        preview.innerHTML = `<img src="${publicUrl}" class="w-full h-full object-contain">`;
+                        document.getElementById('club-logo-url').value = publicUrl;
+                    }
+                } catch (err) {
+                    console.error("Logo upload error:", err);
+                    preview.innerHTML = '<i data-lucide="alert-circle" class="w-8 h-8 text-red-500"></i>';
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
+            }
+        };
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('new-club-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            try {
+                await db.add('clubes', data);
+                window.customAlert('¡Éxito!', 'Club registrado correctamente.', 'success');
+                closeModal();
+                window.renderClubes(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo registrar el club.', 'error');
+            }
+        };
+    };
+
+    window.editClub = async (clubId) => {
+        const club = await db.get('clubes', clubId);
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Club</h3>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <form id="edit-club-form" class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Club</label>
+                        <input name="nombre" type="text" value="${club.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase text-[10px]">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        modalOverlay.classList.add('active');
+        document.getElementById('edit-club-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            data.id = clubId;
+            try {
+                await db.update('clubes', data);
+                window.customAlert('Actualizado', 'Club actualizado correctamente', 'success');
+                closeModal();
+                window.renderClubes(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        };
+    };
+
+    window.deleteClub = async (clubId) => {
+        if (confirm('¿Eliminar este club convenido?')) {
+            try {
+                await db.delete('clubes', clubId);
+                window.customAlert('Eliminado', 'Club borrado', 'success');
+                window.renderClubes(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        }
+    };
+
+    window.viewClubTeams = async (clubName) => {
+        const clubs = await db.getAll('clubes');
+        const club = clubs.find(c => c.nombre === clubName);
+        const allPlayers = await db.getAll('jugadores');
+        const sesiones = await db.getAll('sesiones');
+        const convocatorias = await db.getAll('convocatorias');
+        
+        // Calculate Stats
+        const clubPlayers = allPlayers.filter(p => p.equipoConvenido === clubName);
+        const clubPlayerIds = new Set(clubPlayers.map(p => p.id.toString()));
+        
+        let sesionCount = 0;
+        sesiones.forEach(s => {
+            if (s.playerids) {
+                s.playerids.forEach(pid => {
+                    if (clubPlayerIds.has(pid.toString())) sesionCount++;
+                });
+            }
+        });
+
+        let torneoCount = 0;
+        convocatorias.forEach(c => {
+            if ((c.tipo || '').toUpperCase() === 'TORNEO' && c.playerids) {
+                c.playerids.forEach(pid => {
+                    if (clubPlayerIds.has(pid.toString())) torneoCount++;
+                });
+            }
+        });
+
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-start mb-8">
+                    <div class="flex items-center gap-4">
+                        <div class="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-sm border border-slate-100 overflow-hidden p-3 relative group">
+                            ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-8 h-8 text-blue-600"></i>`}
+                            <label class="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                <i data-lucide="camera" class="w-5 h-5"></i>
+                                <input type="file" class="hidden" accept="image/*" onchange="window.updateClubShield('${clubName}', this.files[0])">
+                            </label>
+                        </div>
+                        <div>
+                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${clubName}</h3>
+                            <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Ficha Técnica del Club</p>
+                        </div>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-8">
+                    <div class="bg-blue-50 p-6 rounded-[2rem] border border-blue-100">
+                        <p class="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Participaciones en Sesiones</p>
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-black text-blue-600">${sesionCount}</span>
+                            <span class="text-[10px] font-bold text-blue-400 uppercase">Convocatorias</span>
+                        </div>
+                    </div>
+                    <div class="bg-emerald-50 p-6 rounded-[2rem] border border-emerald-100">
+                        <p class="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1">Participaciones en Torneos</p>
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-black text-emerald-600">${torneoCount}</span>
+                            <span class="text-[10px] font-bold text-emerald-400 uppercase">Convocatorias</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar space-y-12">
+                        ${(() => {
+                            if (clubPlayers.length === 0) return `
+                                <div class="py-20 text-center">
+                                    <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
+                                    <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay jugadores registrados para este club</p>
+                                </div>
+                            `;
+
+                            // Group by birth year
+                            const grouped = {};
+                            clubPlayers.forEach(p => {
+                                const year = p.anionacimiento || 'Sin Año';
+                                if (!grouped[year]) grouped[year] = [];
+                                grouped[year].push(p);
+                            });
+
+                            return Object.keys(grouped).sort((a,b) => b.localeCompare(a)).map(year => {
+                                const players = grouped[year].sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
+                                return `
+                                    <div class="space-y-4">
+                                        <div class="flex items-center gap-4 px-4">
+                                            <h4 class="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">GENERACIÓN ${year}</h4>
+                                            <div class="flex-1 h-px bg-slate-100"></div>
+                                            <span class="text-[9px] font-black text-blue-600 uppercase tracking-widest">${players.length} JUGADORES</span>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            ${players.map(p => `
+                                                <div onclick="window.viewPlayerProfile('${p.id}')" class="flex items-center gap-3 p-4 bg-white rounded-3xl border border-slate-100 hover:border-blue-300 hover:shadow-lg transition-all cursor-pointer group">
+                                                    <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0">
+                                                        <img src="${p.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                                    </div>
+                                                    <div class="flex-1 min-w-0">
+                                                        <p class="text-[10px] font-bold text-slate-700 truncate group-hover:text-blue-600 transition-colors">${p.nombre}</p>
+                                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${Array.isArray(p.posicion) ? p.posicion.join(', ') : (p.posicion || '--')}</p>
+                                                    </div>
+                                                    <i data-lucide="arrow-right" class="w-3 h-3 text-slate-300 group-hover:text-blue-400 group-hover:translate-x-1 transition-all"></i>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('');
+                        })()}
                     </div>
                     
                     <div class="pt-6 border-t border-slate-100 flex justify-end">
-                        <button onclick="closeModal()" class="px-10 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all uppercase tracking-widest text-[10px]">Cerrar Panel</button>
+                        <button onclick="closeModal()" class="px-10 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all uppercase tracking-widest text-[10px]">Cerrar Ficha</button>
                     </div>
                 </div>
             </div>
         `;
         if (window.lucide) lucide.createIcons();
         modalOverlay.classList.add('active');
+    };
+
+    window.filterAsistencia = (teamId) => {
+        window.asistenciaFilters.activeTeamId = teamId;
+        window.renderAsistencia(document.getElementById('content-container'));
+    };
+
+    window.renderAsistencia = async function(container) {
+        const teams = await db.getAll('equipos');
+        const attendance = await db.getAll('asistencia');
+        const sortedTeams = window.getSortedTeams(teams);
+        
+        const activeTeamId = window.asistenciaFilters.activeTeamId || 'TODOS';
+        
+        const filteredAttendance = attendance.filter(a => {
+            if (activeTeamId === 'TODOS') return true;
+            return a.equipoid?.toString() === activeTeamId.toString();
+        }).sort((a,b) => b.fecha.localeCompare(a.fecha));
+
+        container.innerHTML = `
+            <div class="space-y-6 animate-in fade-in duration-500">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Control de Asistencia</h3>
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Seguimiento de presencia y puntualidad</p>
+                    </div>
+                </div>
+
+                <!-- Team Tabs -->
+                <div class="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar no-scrollbar">
+                    <button onclick="window.filterAsistencia('TODOS')" 
+                        class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTeamId === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
+                        Todas las Plantillas
+                    </button>
+                    ${sortedTeams.map(t => `
+                        <button onclick="window.filterAsistencia('${t.id}')" 
+                            class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
+                            ${t.nombre.split(' ||| ')[0]}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <!-- Table View -->
+                <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="bg-slate-50/50 border-b border-slate-100">
+                                    <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                                    <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo</th>
+                                    <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión / Evento</th>
+                                    <th class="text-center px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asistencia</th>
+                                    <th class="text-right px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-50">
+                                ${filteredAttendance.length > 0 ? filteredAttendance.map(a => {
+                                    const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
+                                    const pls = a.players || a.data || {};
+                                    const total = Object.keys(pls).length;
+                                    const present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                                    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+
+                                    return `
+                                        <tr class="hover:bg-slate-50/50 transition-colors group">
+                                            <td class="px-8 py-5">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                                        ${a.fecha.split('-')[2]}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-black text-slate-800 uppercase">${new Date(a.fecha).toLocaleDateString('es', { month: 'short', year: 'numeric' })}</p>
+                                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${a.fecha}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-8 py-5 text-xs font-black text-slate-600 uppercase">
+                                                ${team ? team.nombre.split(' ||| ')[0] : 'General'}
+                                            </td>
+                                            <td class="px-8 py-5 text-xs font-black text-slate-800 uppercase">
+                                                ${a.nombre || 'Entrenamiento'}
+                                            </td>
+                                            <td class="px-8 py-5">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span class="text-[10px] font-black ${percent > 80 ? 'text-emerald-600' : (percent > 50 ? 'text-amber-600' : 'text-rose-600')}">${percent}%</span>
+                                                    <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                                        <div class="h-full ${percent > 80 ? 'bg-emerald-500' : (percent > 50 ? 'bg-amber-500' : 'bg-rose-500')}" style="width: ${percent}%"></div>
+                                                    </div>
+                                                    <span class="text-[8px] font-bold text-slate-400">${present}/${total}</span>
+                                                </div>
+                                            </td>
+                                            <td class="px-8 py-5 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <button onclick="window.viewAsistenciaDetail('${a.id}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.deleteAsistencia('${a.id}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('') : `
+                                    <tr>
+                                        <td colspan="5" class="px-8 py-20 text-center">
+                                            <div class="flex flex-col items-center gap-4 opacity-30">
+                                                <i data-lucide="calendar-x" class="w-12 h-12"></i>
+                                                <p class="text-[10px] font-black uppercase tracking-widest">No hay registros de asistencia</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.showNewAsistenciaModal = async () => {
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Pasar Asistencia</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Seleccionar Tipo de Evento</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <button onclick="window.showAsistenciaStep1('Sesión')" class="flex flex-col items-center gap-4 p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100 hover:bg-emerald-100 transition-all group">
+                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                            <i data-lucide="calendar" class="w-8 h-8"></i>
+                        </div>
+                        <span class="text-xs font-black text-emerald-600 uppercase tracking-widest">Asistencia Sesión</span>
+                    </button>
+
+                    <button onclick="window.showAsistenciaStep1('Ciclo')" class="flex flex-col items-center gap-4 p-8 bg-blue-50 rounded-[2.5rem] border border-blue-100 hover:bg-blue-100 transition-all group">
+                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
+                            <i data-lucide="layers" class="w-8 h-8"></i>
+                        </div>
+                        <span class="text-xs font-black text-blue-600 uppercase tracking-widest">Asistencia Ciclo</span>
+                    </button>
+
+                    <button onclick="window.showAsistenciaStep1('Zubieta')" class="flex flex-col items-center gap-4 p-8 bg-amber-50 rounded-[2.5rem] border border-amber-100 hover:bg-amber-100 transition-all group">
+                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-amber-600 group-hover:text-white transition-all">
+                            <i data-lucide="trophy" class="w-8 h-8"></i>
+                        </div>
+                        <span class="text-xs font-black text-amber-600 uppercase tracking-widest">Asistencia Zubieta</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.showAsistenciaStep1 = async (type) => {
+        const teams = await db.getAll('equipos');
+        const sortedTeams = window.getSortedTeams(teams);
+
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nueva Asistencia</h3>
+                        <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-1">Paso 1: Selección de Equipo (${type})</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <form id="pre-asistencia-form" class="space-y-6">
+                    <input type="hidden" name="tipo" value="${type}">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo / Plantilla</label>
+                            <select name="equipoid" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-emerald-50 transition-all">
+                                <option value="">Seleccionar Equipo...</option>
+                                ${sortedTeams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                            <input name="fecha" type="date" required value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre / Título (Opcional)</label>
+                        <input name="nombre" type="text" placeholder="Ej: ${type} Técnico Lunes" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-between gap-3">
+                        <button type="button" onclick="window.showNewAsistenciaModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Atrás</button>
+                        <button type="submit" class="px-12 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px]">Siguiente: Pasar Lista</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('pre-asistencia-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const preData = Object.fromEntries(new FormData(e.target));
+            await window.showAsistenciaRosterModal(preData);
+        };
+    };
+
+    window.showAsistenciaRosterModal = async (preData) => {
+        const players = await db.getAll('jugadores');
+        const allConvs = await db.getAll('convocatorias');
+        const allSesiones = await db.getAll('sesiones');
+        
+        // Find players called via Convocatorias
+        const matchingConvs = allConvs.filter(c => 
+            String(c.equipoid) === String(preData.equipoid) && 
+            c.fecha === preData.fecha
+        );
+        
+        // Find players called via Sesiones
+        const matchingSesiones = allSesiones.filter(s => 
+            String(s.equipoid) === String(preData.equipoid) && 
+            s.fecha === preData.fecha
+        );
+
+        // Collect all expected player IDs
+        const expectedPlayerIds = new Set();
+        matchingConvs.forEach(c => (c.playerids || []).forEach(id => expectedPlayerIds.add(String(id))));
+        matchingSesiones.forEach(s => (s.playerids || []).forEach(id => expectedPlayerIds.add(String(id))));
+
+        let teamPlayers = players.filter(p => p.equipoid?.toString() === preData.equipoid.toString());
+        let filteredPlayers = expectedPlayerIds.size > 0 
+            ? teamPlayers.filter(p => expectedPlayerIds.has(String(p.id)))
+            : teamPlayers;
+
+        if (teamPlayers.length === 0) {
+            window.customAlert('Atención', 'No hay jugadores vinculados a este equipo.', 'warning');
+            return;
+        }
+
+        const renderTable = (list) => {
+            const tbody = document.getElementById('asistencia-roster-tbody');
+            if (!tbody) return;
+            
+            tbody.innerHTML = list.map(p => `
+                <tr class="group hover:bg-slate-50 transition-all">
+                    <td class="py-4 px-2">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
+                                ${p.posicion_siglas || 'PJ'}
+                            </div>
+                            <div>
+                                <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
+                                ${expectedPlayerIds.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-4">
+                        <div class="flex justify-center gap-1 bg-slate-100/50 p-1 rounded-xl">
+                            <label class="flex-1">
+                                <input type="radio" name="p_${p.id}" value="asiste" checked class="hidden peer">
+                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-emerald-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">SI</div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="p_${p.id}" value="no_asiste" class="hidden peer">
+                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">NO</div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="p_${p.id}" value="justificado" class="hidden peer">
+                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-amber-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">JUS</div>
+                            </label>
+                            <label class="flex-1">
+                                <input type="radio" name="p_${p.id}" value="lesionado" class="hidden peer">
+                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-slate-800 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">LES</div>
+                            </label>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        };
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center mb-6 shrink-0">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Pasar Lista</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${preData.nombre || 'Control Diario'} - ${preData.fecha}</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="mb-6 flex items-center justify-between gap-4 p-4 bg-slate-50 rounded-[2rem] border border-slate-100 animate-in slide-in-from-top duration-300">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm">
+                            <i data-lucide="users" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mostrando</p>
+                            <p id="roster-status-text" class="text-xs font-black text-slate-800 uppercase italic">
+                                ${expectedPlayerIds.size > 0 ? `Solo convocados (${filteredPlayers.length})` : `Toda la plantilla (${teamPlayers.length})`}
+                            </p>
+                        </div>
+                    </div>
+                    ${expectedPlayerIds.size > 0 ? `
+                        <button id="toggle-full-roster" class="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest shadow-sm">
+                            Ver Plantilla Completa
+                        </button>
+                    ` : ''}
+                </div>
+
+                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                    <table class="w-full">
+                        <thead class="sticky top-0 bg-white z-10">
+                            <tr class="border-b border-slate-100">
+                                <th class="text-left py-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="asistencia-roster-tbody" class="divide-y divide-slate-50">
+                            <!-- Players rendered here -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 flex justify-between items-center gap-3 shrink-0">
+                    <button onclick="window.showAsistenciaStep1('${preData.tipo || 'Sesión'}')" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Atrás</button>
+                    <button id="save-asistencia-btn" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Guardar Registro</button>
+                </div>
+            </div>
+        `;
+
+        renderTable(filteredPlayers);
+        if (window.lucide) lucide.createIcons();
+
+        const toggleBtn = document.getElementById('toggle-full-roster');
+        if (toggleBtn) {
+            let showingFull = false;
+            toggleBtn.onclick = () => {
+                showingFull = !showingFull;
+                if (showingFull) {
+                    renderTable(teamPlayers);
+                    toggleBtn.textContent = 'Ver Solo Convocados';
+                    document.getElementById('roster-status-text').textContent = `Toda la plantilla (${teamPlayers.length})`;
+                } else {
+                    renderTable(filteredPlayers);
+                    toggleBtn.textContent = 'Ver Plantilla Completa';
+                    document.getElementById('roster-status-text').textContent = `Solo convocados (${filteredPlayers.length})`;
+                }
+            };
+        }
+
+        document.getElementById('save-asistencia-btn').onclick = async () => {
+            const playersStatus = {};
+            const tbody = document.getElementById('asistencia-roster-tbody');
+            const checkedRadios = tbody.querySelectorAll('input[type="radio"]:checked');
+            
+            checkedRadios.forEach(radio => {
+                const pid = radio.name.replace('p_', '');
+                playersStatus[pid] = radio.value;
+            });
+
+            if (Object.keys(playersStatus).length === 0) {
+                window.customAlert('Error', 'No hay jugadores en la lista.', 'error');
+                return;
+            }
+
+            const payload = {
+                ...preData,
+                players: playersStatus
+            };
+
+            try {
+                await db.add('asistencia', payload);
+                window.customAlert('¡Éxito!', 'Control de asistencia guardado.', 'success');
+                closeModal();
+                if (currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo guardar la asistencia.', 'error');
+            }
+        };
+    };
+
+    window.viewAsistenciaDetail = async (id) => {
+        const a = await db.getById('asistencia', id);
+        if (!a) return;
+        
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
+        const players = await db.getAll('jugadores');
+        const teamPlayers = players.filter(p => p.equipoid?.toString() === a.equipoid?.toString());
+        
+        const pls = a.players || a.data || {};
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-start mb-8 shrink-0">
+                    <div>
+                        <div class="flex items-center gap-3 mb-1">
+                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'General'}</span>
+                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${a.fecha}</span>
+                        </div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre || 'Control de Asistencia'}</h3>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.editAsistencia('${a.id}')" class="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all"><i data-lucide="edit-3" class="w-5 h-5"></i></button>
+                        <button onclick="window.deleteAsistencia('${a.id}')" class="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
+                        <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-4 gap-4 mb-8 shrink-0">
+                    ${['asiste', 'no_asiste', 'justificado', 'lesionado'].map(status => {
+                        const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
+                        const label = status === 'asiste' ? 'PRESENTES' : (status === 'no_asiste' ? 'AUSENTES' : (status === 'justificado' ? 'JUSTIFIC.' : 'LESION.'));
+                        const color = status === 'asiste' ? 'emerald' : (status === 'no_asiste' ? 'rose' : (status === 'justificado' ? 'amber' : 'slate'));
+                        
+                        return `
+                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                                <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">${label}</p>
+                                <p class="text-xl font-black text-${color}-600">${count}</p>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                    <table class="w-full text-xs">
+                        <thead class="sticky top-0 bg-white z-10 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left py-3 font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                <th class="text-right py-3 font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${teamPlayers.map(p => {
+                                const status = pls[p.id]?.status || pls[p.id] || 'N/A';
+                                let statusLabel = 'Presente';
+                                let colorClass = 'bg-emerald-100 text-emerald-700';
+                                
+                                if (status === 'no_asiste') { statusLabel = 'Ausente'; colorClass = 'bg-rose-100 text-rose-700'; }
+                                else if (status === 'justificado') { statusLabel = 'Justificado'; colorClass = 'bg-amber-100 text-amber-700'; }
+                                else if (status === 'lesionado') { statusLabel = 'Lesionado'; colorClass = 'bg-slate-200 text-slate-700'; }
+                                else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
+
+                                return `
+                                    <tr class="group hover:bg-slate-50 transition-all">
+                                        <td class="py-3 font-bold text-slate-700 uppercase group-hover:pl-2 transition-all">${p.nombre} ${p.apellidos || ''}</td>
+                                        <td class="py-3 text-right">
+                                            <span class="px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${colorClass}">${statusLabel}</span>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.editAsistencia = async (id) => {
+        const a = await db.getById('asistencia', id);
+        if (!a) return;
+
+        const players = await db.getAll('jugadores');
+        const teamPlayers = players.filter(p => p.equipoid?.toString() === a.equipoid?.toString());
+        const pls = a.players || a.data || {};
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center mb-8 shrink-0">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre || 'Sesión'} - ${a.fecha}</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                    <table class="w-full">
+                        <thead class="sticky top-0 bg-white z-10">
+                            <tr class="border-b border-slate-100">
+                                <th class="text-left py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
+                                <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${teamPlayers.map(p => {
+                                const status = pls[p.id]?.status || pls[p.id] || 'asiste';
+                                return `
+                                    <tr>
+                                        <td class="py-4">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
+                                                    ${p.posicion_siglas || 'PJ'}
+                                                </div>
+                                                <span class="text-xs font-black text-slate-700 uppercase">${p.nombre} ${p.apellidos || ''}</span>
+                                            </div>
+                                        </td>
+                                        <td class="py-4">
+                                            <div class="flex justify-center gap-1 bg-slate-50 p-1 rounded-xl">
+                                                <label class="flex-1">
+                                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} class="hidden peer">
+                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-emerald-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">SI</div>
+                                                </label>
+                                                <label class="flex-1">
+                                                    <input type="radio" name="p_${p.id}" value="no_asiste" ${status === 'no_asiste' ? 'checked' : ''} class="hidden peer">
+                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">NO</div>
+                                                </label>
+                                                <label class="flex-1">
+                                                    <input type="radio" name="p_${p.id}" value="justificado" ${status === 'justificado' ? 'checked' : ''} class="hidden peer">
+                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-amber-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">JUS</div>
+                                                </label>
+                                                <label class="flex-1">
+                                                    <input type="radio" name="p_${p.id}" value="lesionado" ${status === 'lesionado' ? 'checked' : ''} class="hidden peer">
+                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-slate-800 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">LES</div>
+                                                </label>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 flex justify-end gap-3 shrink-0">
+                    <button onclick="window.viewAsistenciaDetail('${a.id}')" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                    <button id="update-asistencia-btn" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Actualizar Registro</button>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+
+        document.getElementById('update-asistencia-btn').onclick = async () => {
+            const playersStatus = {};
+            teamPlayers.forEach(p => {
+                const checked = modalContainer.querySelector(`input[name="p_${p.id}"]:checked`);
+                playersStatus[p.id] = checked ? checked.value : 'asiste';
+            });
+
+            try {
+                await db.update('asistencia', { ...a, players: playersStatus });
+                window.customAlert('¡Actualizado!', 'Registro de asistencia actualizado.', 'success');
+                window.viewAsistenciaDetail(id);
+                window.renderAsistencia(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo actualizar la asistencia.', 'error');
+            }
+        };
+    };
+
+    window.deleteAsistencia = async (id) => {
+        if (confirm('¿Seguro que deseas eliminar este registro de asistencia?')) {
+            try {
+                await db.delete('asistencia', id);
+                window.customAlert('¡Eliminado!', 'El registro de asistencia ha sido borrado.', 'success');
+                closeModal();
+                window.renderAsistencia(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', 'No se pudo eliminar el registro.', 'error');
+            }
+        }
+    };
+
+    window.updateClubShield = async (clubName, file) => {
+        if (!file) return;
+        try {
+            const clubs = await db.getAll('clubes');
+            const club = clubs.find(c => c.nombre === clubName);
+            if (!club) return;
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                club.escudo = e.target.result;
+                await db.update('clubes', club);
+                window.customAlert('Éxito', 'Escudo de club actualizado.', 'success');
+                window.viewClubTeams(clubName);
+                if (currentView === 'clubes') window.renderClubes(document.getElementById('content-container'));
+            };
+            reader.readAsDataURL(file);
+        } catch (err) {
+            console.error(err);
+            window.customAlert('Error', 'No se pudo subir el escudo.', 'error');
+        }
     };
 
     window.toggleTeamClubLink = async (teamId, clubName, isChecked) => {
@@ -6953,12 +8791,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             if (team) {
                 team.equipoConvenido = isChecked ? clubName : null;
                 await db.update('equipos', team);
-                // Refresh modal content without closing
                 window.viewClubTeams(clubName);
-                // Refresh background view if visible
                 if (currentView === 'clubes') {
                     const container = document.getElementById('content-container');
-                    if (container) renderClubes(container);
+                    if (container) window.renderClubes(container);
                 }
             }
         } catch (err) {
@@ -6967,140 +8803,195 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.showNewTeamModal = async (preselectedClub) => {
-        // Change view to equipos briefly or just trigger the modal logic
-        const originalView = currentView;
-        currentView = 'equipos';
-        
-        // This is a bit hacky because the addBtn listener uses currentView
-        // We trigger the click
+    window.renderConvocatoriasPDF = async function(container) {
         const players = await db.getAll('jugadores');
-        
-        // Use the same HTML as the main "Nuevo Equipo" modal but with the club pre-selected
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <h3 class="text-2xl font-bold mb-6 text-slate-800 uppercase tracking-tight">Nuevo Equipo para <span class="text-blue-600">${preselectedClub}</span></h3>
-                <form id="modal-form" class="space-y-6">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Equipo</label>
-                            <input name="nombre" placeholder="Ej: Benjamín A" class="w-full p-4 border rounded-2xl font-bold outline-none focus:ring-2 ring-blue-100" required>
+        const sortedPlayers = [...players].sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        container.innerHTML = `
+            <div class="max-w-5xl mx-auto space-y-8 pb-20">
+                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden relative">
+                    <div class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
+                    <div class="flex items-center gap-4 mb-8">
+                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
+                            <i data-lucide="file-text" class="w-6 h-6"></i>
                         </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
-                            <select name="equipoConvenido" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100">
-                                ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${c === preselectedClub ? 'selected' : ''}>${c}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
-                            <div id="new-team-year-container" class="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
-                                ${[2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020].map(y => `
-                                    <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all">
-                                        <input type="checkbox" name="categoria" value="${y}" class="year-checkbox w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                        <span class="text-[10px] font-black text-slate-600">${y}</span>
-                                    </label>
-                                `).join('')}
-                            </div>
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
-                            <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
-                                <input type="file" id="team-crest-input" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 transition-all">
-                            </div>
-                        </div>
-                        <div class="col-span-2">
-                            <div class="flex justify-between items-center mb-4">
-                                <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">Vincular Jugadores</label>
-                                <button type="button" id="new-select-all-btn" class="text-[9px] font-black text-blue-600 uppercase hover:text-blue-700 transition-colors">Seleccionar Todos</button>
-                            </div>
-                            <div id="new-linked-players-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                <!-- Players will be filtered here -->
-                            </div>
+                        <div>
+                            <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Generador de PDF Individual</h3>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Rellena los detalles para la convocatoria personalizada</p>
                         </div>
                     </div>
-                    <div class="flex gap-4 mt-6">
-                        <button type="button" onclick="window.viewClubTeams('${preselectedClub}')" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Volver al Club</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Crear Equipo</button>
-                    </div>
-                </form>
+
+                    <form id="convocatoria-pdf-form" class="space-y-8">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="col-span-2 space-y-3">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Seleccionar Jugador</label>
+                                <div class="relative group">
+                                    <i data-lucide="user" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
+                                    <select name="playerid" class="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl text-lg font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all appearance-none cursor-pointer" required>
+                                        <option value="">Selecciona un jugador...</option>
+                                        ${sortedPlayers.map(p => `<option value="${p.id}">${p.nombre || 'Sin nombre'}</option>`).join('')}
+                                    </select>
+                                    <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 pointer-events-none"></i>
+                                </div>
+                            </div>
+
+                            <div class="space-y-3">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Evento / Título</label>
+                                <input name="evento" placeholder="Ej: CATEGORIA INFANTIL-ALEVIN FEMENINO" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                            </div>
+
+                            <div class="space-y-3">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar del Evento</label>
+                                <input name="lugar" placeholder="Ej: INSTALACIONES ZUBIETA" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                            </div>
+
+                            <div class="space-y-3">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Enlace Ubicación (Maps)</label>
+                                <input name="ubicacion" placeholder="https://goo.gl/maps/..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                            </div>
+
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="space-y-2">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                                    <input name="fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">H. Llegada</label>
+                                    <input name="hl" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">H. Inicio</label>
+                                    <input name="hi" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                </div>
+                            </div>
+
+                            <div class="space-y-3 col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Información Adicional (Párrafo Invitación)</label>
+                                <textarea name="extra" rows="3" placeholder="Nos gustaría ofrecer a la jugadora..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-medium text-sm outline-none focus:ring-4 ring-blue-50/50 transition-all resize-none"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="pt-6 border-t border-slate-50 flex gap-4">
+                            <button type="button" onclick="window.switchView('dashboard')" class="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest hover:bg-slate-200 transition-all">
+                                Cancelar
+                            </button>
+                            <button type="submit" class="flex-[2] py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl shadow-slate-900/10 hover:bg-black transition-all uppercase tracking-widest flex items-center justify-center gap-2">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                                Generar PDF Oficial
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="pdf-preview-status" class="hidden p-6 bg-blue-50 border border-blue-100 rounded-3xl flex items-center gap-4">
+                    <div class="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                    <p class="text-xs font-black text-blue-600 uppercase tracking-widest">Generando documento oficial...</p>
+                </div>
             </div>
         `;
-        
-        // Restore currentView after modal setup
-        currentView = originalView;
-
-        // Setup the same behavior as the standard "Add Team" modal
-        setTimeout(() => {
-            const listDiv = document.getElementById('new-linked-players-list');
-            const selectAllBtn = document.getElementById('new-select-all-btn');
-            const update = () => {
-                const selectedYears = [...document.querySelectorAll('.year-checkbox:checked')].map(cb => cb.value);
-                const filtered = players.filter(p => selectedYears.length === 0 || selectedYears.includes(p.anionacimiento?.toString()));
-                listDiv.innerHTML = filtered.map(p => `
-                    <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200 transition-all">
-                        <input type="checkbox" name="linkedPlayerIds" value="${p.id}" class="w-4 h-4 rounded text-blue-600">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
-                            <p class="text-[8px] font-black text-slate-400 uppercase">${p.anionacimiento || '----'}</p>
-                        </div>
-                    </label>
-                `).join('') || `<p class="col-span-full p-8 text-center text-xs text-slate-400 italic font-medium">No hay jugadores para estos años.</p>`;
-                if (window.lucide) lucide.createIcons();
-            };
-            document.querySelectorAll('.year-checkbox').forEach(cb => cb.addEventListener('change', update));
-            update();
-            if (selectAllBtn) {
-                selectAllBtn.onclick = () => {
-                    const checkboxes = listDiv.querySelectorAll('input[type="checkbox"]');
-                    checkboxes.forEach(cb => cb.checked = true);
-                };
-            }
-            
-            // Re-attach submit handler specifically for this temporary view swap
-            const form = document.getElementById('modal-form');
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const formData = new FormData(form);
-                const data = Object.fromEntries(formData.entries());
-                if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
-                
-                const selectedYears = formData.getAll('categoria');
-                data.nombre = `${data.nombre} ||| ${selectedYears.join(', ')}`;
-                data.categoria = parseInt(selectedYears[0]) || null;
-                data.equipoConvenido = formData.get('equipoConvenido') || null;
-
-                const imgInput = document.getElementById('team-crest-input');
-                if (imgInput && imgInput.files[0]) {
-                    data.escudo = await new Promise(resolve => {
-                        const reader = new FileReader();
-                        reader.onload = (re) => resolve(re.target.result);
-                        reader.readAsDataURL(imgInput.files[0]);
-                    });
-                }
-
-                const savedTeam = await db.add('equipos', data);
-                const linkedPlayerIds = formData.getAll('linkedPlayerIds');
-                for (const pid of linkedPlayerIds) {
-                    const p = await db.get('jugadores', pid);
-                    if (p) {
-                        p.equipoid = savedTeam.id;
-                        await db.update('jugadores', p);
-                    }
-                }
-                
-                window.customAlert('¡Éxito!', 'Nuevo equipo creado y vinculado al club.', 'success');
-                window.viewClubTeams(preselectedClub);
-                if (currentView === 'clubes') renderClubes(document.getElementById('content-container'));
-            });
-            
-        }, 0);
 
         if (window.lucide) lucide.createIcons();
-        modalOverlay.classList.add('active');
+
+        document.getElementById('convocatoria-pdf-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const player = players.find(p => p.id.toString() === data.playerid.toString());
+            if (!player) return;
+            document.getElementById('pdf-preview-status').classList.remove('hidden');
+            try {
+                await generateIndividualConvocatoriaPDF(player, data);
+                window.customAlert('¡PDF Generado!', 'La convocatoria se ha descargado correctamente.', 'success');
+            } catch (err) {
+                console.error(err);
+                window.customAlert('Error', 'No se pudo generar el PDF.', 'error');
+            } finally {
+                document.getElementById('pdf-preview-status').classList.add('hidden');
+            }
+        };
     };
+
+    async function generateIndividualConvocatoriaPDF(player, info) {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        const loadImage = (url) => new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = url;
+        });
+
+        const rsLogo = await loadImage('RS.png');
+        let clubShield = null;
+        if (player.equipoConvenido) {
+            const clubes = await db.getAll('clubes');
+            const club = clubes.find(c => c.nombre === player.equipoConvenido);
+            if (club && club.escudo) clubShield = await loadImage(club.escudo);
+        }
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.text(`SESIÓN: ${info.evento || 'CONVOCATORIA'}`.toUpperCase(), 105, 30, { align: "center" });
+
+        if (rsLogo) doc.addImage(rsLogo, 'PNG', 80, 50, 20, 20);
+        if (clubShield) doc.addImage(clubShield, 'PNG', 110, 50, 20, 20);
+
+        doc.setFontSize(26);
+        doc.text(player.nombre.toUpperCase(), 105, 100, { align: "center" });
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const invitation = info.extra || "Nos gustaría ofrecer a la jugadora perteneciente a su Club la posibilidad de participar en un torneo al que ha sido invitada la Real Sociedad.";
+        const splitInvitation = doc.splitTextToSize(invitation, 170);
+        doc.text(splitInvitation, 20, 120);
+
+        doc.text(`El torneo se llevará a cabo en las instalaciones deportivas de "${info.lugar || 'ZUBIETA'}"`, 20, 145);
+
+        const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const daysBasque = ['Igandea', 'Astelehena', 'Asteartea', 'Asteazkena', 'Osteguna', 'Ostirala', 'Larunbata'];
+        const dateObj = new Date(info.fecha);
+        const dayLabel = `${info.fecha}\n${days[dateObj.getDay()]} / ${daysBasque[dateObj.getDay()]}`;
+
+        const rows = [
+            [{ content: 'Día / Eguna', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, dayLabel],
+            [{ content: 'Lugar / Lekua', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, {
+                content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
+                link: { url: info.ubicacion || '#' },
+                styles: { textColor: [0, 0, 0], fontStyle: 'bold' }
+            }],
+            [{ content: 'Hora / Ordua', styles: { fontStyle: 'bold', fillColor: [230, 230, 230] } }, `${info.hl || '--:--'} (Llegada)\n${info.hi || '--:--'} (Comienzo)\nAcabar según clasificación`],
+        ];
+
+        doc.autoTable({
+            startY: 160,
+            body: rows,
+            theme: 'grid',
+            styles: { fontSize: 11, cellPadding: 8, valign: 'middle', halign: 'left' },
+            columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 80 } },
+            margin: { left: 45 }
+        });
+
+        const finalY = doc.lastAutoTable.finalY + 15;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("NOTAS:", 20, finalY);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        doc.text("La Real Sociedad facilitará la ropa deportiva para el torneo.", 20, finalY + 10);
+        doc.text("La comida para las jugadoras y familia, correrá a cuenta de cada familia.", 20, finalY + 18);
+        doc.setFont("helvetica", "bold");
+        doc.text("MUY IMPORTANTE:", 20, finalY + 35);
+        doc.setFont("helvetica", "normal");
+        doc.text("Se deberán DUCHAR después de terminar el torneo, por lo que necesitan material para la ducha.", 20, finalY + 45);
+        doc.text("Las jugadoras tendrán que llevar su PROPIA BOTELLA DE AGUA.", 20, finalY + 53);
+        doc.text("Si la jugadora citada no puede asistir a la convocatoria os pedimos que nos lo hagáis saber por ESCRITO.", 20, finalY + 61);
+
+        doc.save(`Convocatoria_${player.nombre.replace(/\s+/g, '_')}.pdf`);
+    }
 
     initNotifications();
 
 });
-
