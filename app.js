@@ -3552,7 +3552,7 @@ await db.update('sesiones', { ...data, id: session.id });
                             <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</span>
                         </div>
                     </div>
-                    <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${p.posicion_siglas || '--'}</span>
+                    <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || '--'}</span>
                 </label>
             `).join('') : '<p class="text-center py-6 text-slate-400 text-xs font-black uppercase">No se encontraron jugadores</p>';
 
@@ -8685,7 +8685,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <td class="py-4 px-2">
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                ${p.posicion_siglas || 'PJ'}
+                                ${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ'}
                             </div>
                             <div>
                                 <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
@@ -8889,7 +8889,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre?.split(' ||| ')[0] || 'Control de Asistencia'}</h3>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="window.generateAsistenciaPDF('${a.id}')" class="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all" title="Descargar PDF"><i data-lucide="download" class="w-5 h-5"></i></button>
+                        <button onclick="window.generateAsistenciaPDF('${a.id}', false)" class="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
                         <button onclick="window.editAsistencia('${a.id}')" class="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all"><i data-lucide="edit-3" class="w-5 h-5"></i></button>
                         <button onclick="window.deleteAsistencia('${a.id}')" class="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
                         <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -9040,7 +9040,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <td class="py-4">
                                             <div class="flex items-center gap-3">
                                                 <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                                    ${p.posicion_siglas || 'PJ'}
+                                                    ${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ'}
                                                 </div>
                                                 <span class="text-xs font-black text-slate-700 uppercase">${p.nombre} ${p.apellidos || ''}</span>
                                             </div>
@@ -9703,7 +9703,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         console.log("PDF generado con éxito para:", pName);
     }
 
-    window.generateAsistenciaPDF = async (id) => {
+    window.generateAsistenciaPDF = async (id, download = true) => {
         const a = await db.get('asistencia', Number(id) || id);
         if (!a) return window.customAlert('Error', 'No se encontró la asistencia.', 'error');
 
@@ -9743,25 +9743,27 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             };
             return [
                 (p.nombre + ' ' + (p.apellidos || '')).toUpperCase(),
-                p.posicion_siglas || 'PJ',
+                ((Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ').toUpperCase(),
+                (p.equipoConvenido || 'Sin Club').toUpperCase(),
                 statusLabelMap[statusRaw] || statusRaw
             ];
         });
 
         doc.autoTable({
             startY: 40,
-            head: [['JUGADOR', 'POS', 'ESTADO']],
+            head: [['JUGADOR', 'POS', 'CLUB', 'ESTADO']],
             body: tableData,
-            headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+            headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
             alternateRowStyles: { fillColor: [248, 250, 252] },
-            styles: { fontSize: 9, cellPadding: 4 },
+            styles: { fontSize: 8, cellPadding: 4 },
             columnStyles: {
-                0: { fontStyle: 'bold' },
-                1: { halign: 'center' },
-                2: { fontStyle: 'bold' }
+                0: { fontStyle: 'bold', cellWidth: 70 },
+                1: { halign: 'center', cellWidth: 20 },
+                2: { halign: 'center', cellWidth: 65 },
+                3: { fontStyle: 'bold', halign: 'center', cellWidth: 35 }
             },
             didParseCell: function(data) {
-                if (data.section === 'body' && data.column.index === 2) {
+                if (data.section === 'body' && data.column.index === 3) {
                     const status = data.cell.raw;
                     if (status === 'Presente') data.cell.styles.textColor = [16, 185, 129];
                     else if (status === 'Sin Motivo' || status === 'Falta') data.cell.styles.textColor = [225, 29, 72];
@@ -9769,7 +9771,42 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             }
         });
 
-        doc.save(`ASISTENCIA_${a.fecha}_${team?.nombre || 'EQUIPO'}.pdf`);
+        const filename = `ASISTENCIA_${a.fecha}_${team?.nombre || 'EQUIPO'}`;
+        if (download) {
+            doc.save(`${filename}.pdf`);
+        } else {
+            const blobUrl = doc.output('bloburl');
+            window.showPdfPreviewModal(blobUrl, filename, id);
+        }
+    };
+
+    window.showPdfPreviewModal = (url, filename, originalId) => {
+        const mContainer = document.getElementById('modal-container');
+        if (!mContainer) return;
+        
+        mContainer.innerHTML = `
+            <div class="h-[90vh] flex flex-col bg-white rounded-3xl overflow-hidden shadow-2xl">
+                <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <div>
+                        <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Previsualización</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${filename}.pdf</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="window.viewAsistenciaDetail('${originalId}')" class="flex items-center gap-2 px-6 py-3 bg-slate-200 text-slate-600 font-black rounded-2xl hover:bg-slate-300 transition-all uppercase tracking-widest text-[10px]">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i> Volver
+                        </button>
+                        <a href="${url}" download="${filename}.pdf" class="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">
+                            <i data-lucide="download" class="w-4 h-4"></i> Descargar PDF
+                        </a>
+                        <button onclick="closeModal()" class="p-3 bg-white rounded-full text-slate-400 hover:bg-slate-200 transition-all shadow-sm border border-slate-100"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
+                <div class="flex-1 bg-slate-800 p-4">
+                    <iframe src="${url}#toolbar=0" class="w-full h-full border-none rounded-xl bg-white shadow-2xl"></iframe>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
     };
 
     initNotifications();
