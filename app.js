@@ -443,6 +443,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         'tareas': { title: 'Directorio de Tareas', subtitle: 'Biblioteca de ejercicios de entrenamiento.', addButtonLabel: 'Nueva Tarea', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'sesiones': { title: 'Sesiones de Entrenamiento', subtitle: 'Planificación y calendario.', addButtonLabel: 'Nueva Sesión', addButtonEnabled: true },
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
+        'clubes': { title: 'Clubes Convenidos', subtitle: 'Gestión y vinculación de equipos por club.', addButtonEnabled: false },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Asistencia', addButtonEnabled: true },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
@@ -858,6 +859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'convocatorias': await renderConvocatorias(wrapper); break;
             case 'torneos': await renderTorneos(wrapper); break;
             case 'usuarios': await renderUsuarios(wrapper); break;
+            case 'clubes': await renderClubes(wrapper); break;
             case 'perfil': await renderPerfil(wrapper); break;
         }
         
@@ -3626,6 +3628,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                              </div>
                         </div>
                         <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido (Vinculación)</label>
+                            <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white outline-none focus:ring-2 ring-blue-50">
+                                <option value="">Ninguno</option>
+                                ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${team.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-span-2">
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
                             <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
                                 <div id="edit-crest-preview">
@@ -3695,7 +3704,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ...team,
                     id: parseInt(formData.get('id')),
                     nombre: `${formData.get('nombre').toString().trim().toUpperCase()} ||| ${catStr}`,
-                    categoria: parseInt(selectedYears[0]) || null
+                    categoria: parseInt(selectedYears[0]) || null,
+                    equipoConvenido: formData.get('equipoConvenido') || null
                 };
                 
                 const imgInput = document.getElementById('edit-team-crest-input');
@@ -3772,135 +3782,170 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             wrapper.innerHTML = `
                 <!-- Header -->
-                <div class="flex justify-between items-center mb-10 px-4 pt-8">
-                    <div class="flex items-center gap-6">
-                        <button onclick="window.switchView('equipos')" class="p-3 bg-white rounded-2xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all border border-slate-100"><i data-lucide="arrow-left" class="text-slate-600"></i></button>
+                <div class="flex justify-between items-center mb-10 px-4 pt-12">
+                    <div class="flex items-center gap-8">
+                        <button onclick="window.switchView('equipos')" class="w-14 h-14 bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl hover:text-blue-600 transition-all border border-slate-100 flex items-center justify-center">
+                            <i data-lucide="arrow-left" class="w-6 h-6 text-slate-400"></i>
+                        </button>
                         <div>
-                            <h2 class="text-4xl font-black text-slate-900 tracking-tight uppercase">${team.nombre}</h2>
-                            <p class="text-xs font-black text-blue-600 uppercase tracking-[0.2em] mt-1">${team.categoria || 'Sin Categoría'} • ${teamPlayers.length} Jugadores</p>
+                            <h2 class="text-5xl font-black text-blue-950 tracking-tighter uppercase mb-1">${team.nombre}</h2>
+                            <div class="flex items-center gap-4">
+                                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">${team.categoria || 'Sin Categoría'}</span>
+                                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <i data-lucide="users" class="w-4 h-4"></i>
+                                    ${teamPlayers.length} Futbolistas en Plantilla
+                                </span>
+                            </div>
                         </div>
                     </div>
-                    <div class="flex gap-3">
-                         <button onclick="window.addPlayerToTeam('${equipoid}')" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:scale-105 transition-all text-[11px] uppercase tracking-widest">Añadir Jugador</button>
+                    <div class="flex gap-4">
+                         <button onclick="window.addPlayerToTeam('${equipoid}')" class="px-8 py-5 bg-blue-600 text-white font-black rounded-[2rem] shadow-2xl shadow-blue-500/30 hover:bg-blue-700 transition-all text-[11px] uppercase tracking-widest flex items-center gap-3">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Nuevo Jugador
+                         </button>
                     </div>
                 </div>
 
                 <!-- Summary Row: 3 Columns -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 px-4 mb-8">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 px-4 mb-12">
                     
                     <!-- Col 1: Tasks -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
-                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <i data-lucide="target" class="w-4 h-4 text-emerald-500"></i>
-                            Tareas Trabajadas
-                        </h4>
-                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
-                            ${teamTasks.slice(0, 10).map(t => `
-                                <div onclick="window.viewTask(${t.id})" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-emerald-100 transition-all group cursor-pointer">
-                                    <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center font-black text-[9px] uppercase group-hover:bg-emerald-600 group-hover:text-white transition-all">${t.type?.substring(0,3) || 'TAR'}</div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.name}</h4>
-                                        <p class="text-[8px] font-black text-emerald-600 uppercase tracking-tighter mt-1">${t.type || 'General'}</p>
+                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
+                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-emerald-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
+                        <div class="relative z-10">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
+                                <span class="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+                                    <i data-lucide="target" class="w-4 h-4"></i>
+                                </span>
+                                Objetivos Trabajados
+                            </h4>
+                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
+                                ${teamTasks.slice(0, 10).map(t => `
+                                    <div onclick="window.viewTask(${t.id})" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-emerald-100 transition-all group/item cursor-pointer shadow-sm">
+                                        <div class="w-10 h-10 bg-white text-emerald-600 rounded-xl flex items-center justify-center font-black text-[9px] uppercase border border-slate-100 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-all shadow-sm">${t.type?.substring(0,3) || 'TAR'}</div>
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.name}</h4>
+                                            <p class="text-[8px] font-black text-emerald-600 uppercase tracking-tighter mt-1">${t.type || 'General'}</p>
+                                        </div>
                                     </div>
-                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-emerald-400 transition-all"></i>
-                                </div>
-                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin tareas registradas</p>'}
+                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin tareas registradas</p>'}
+                            </div>
                         </div>
                     </div>
 
                     <!-- Col 2: Sessions -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
-                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <i data-lucide="calendar" class="w-4 h-4 text-indigo-500"></i>
-                            Historial de Sesiones
-                        </h4>
-                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
-                            ${teamSessions.slice(0, 10).map(s => `
-                                <div onclick="window.viewSessionFicha('${s.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-indigo-100 transition-all group cursor-pointer">
-                                    <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center font-black text-indigo-600 shadow-sm border border-slate-100 group-hover:bg-indigo-600 group-hover:text-white transition-all">${s.fecha.split('-')[2]}</div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
-                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${s.fecha}</p>
+                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
+                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
+                        <div class="relative z-10">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
+                                <span class="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                                    <i data-lucide="calendar" class="w-4 h-4"></i>
+                                </span>
+                                Plan de Sesiones
+                            </h4>
+                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
+                                ${teamSessions.slice(0, 10).map(s => `
+                                    <div onclick="window.viewSessionFicha('${s.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-blue-100 transition-all group/item cursor-pointer shadow-sm">
+                                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover/item:bg-blue-600 group-hover/item:text-white transition-all">${s.fecha.split('-')[2]}</div>
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
+                                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${s.fecha}</p>
+                                        </div>
                                     </div>
-                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-indigo-400 transition-all"></i>
-                                </div>
-                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin sesiones registradas</p>'}
+                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin sesiones registradas</p>'}
+                            </div>
                         </div>
                     </div>
 
                     <!-- Col 3: Tournaments -->
-                    <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
-                        <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                            <i data-lucide="award" class="w-4 h-4 text-amber-500"></i>
-                            Historial de Torneos
-                        </h4>
-                        <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">
-                            ${teamTournaments.slice(0, 10).map(t => `
-                                <div onclick="window.viewTorneoRendimiento('${t.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-amber-100 transition-all group cursor-pointer">
-                                    <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center shadow-sm group-hover:bg-amber-600 group-hover:text-white transition-all">
-                                        <i data-lucide="trophy" class="w-5 h-5"></i>
+                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
+                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-amber-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
+                        <div class="relative z-10">
+                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
+                                <span class="w-8 h-8 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
+                                    <i data-lucide="award" class="w-4 h-4"></i>
+                                </span>
+                                Rendimiento Torneos
+                            </h4>
+                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
+                                ${teamTournaments.slice(0, 10).map(t => `
+                                    <div onclick="window.viewTorneoRendimiento('${t.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-amber-100 transition-all group/item cursor-pointer shadow-sm">
+                                        <div class="w-10 h-10 bg-white text-amber-600 rounded-xl flex items-center justify-center shadow-sm border border-slate-100 group-hover/item:bg-amber-600 group-hover/item:text-white transition-all">
+                                            <i data-lucide="trophy" class="w-5 h-5"></i>
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.nombre}</h4>
+                                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${t.fecha}</p>
+                                        </div>
                                     </div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.nombre}</h4>
-                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${t.fecha}</p>
-                                    </div>
-                                    <i data-lucide="external-link" class="w-4 h-4 text-slate-200 group-hover:text-amber-400 transition-all"></i>
-                                </div>
-                            `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin torneos registrados</p>'}
+                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin torneos registrados</p>'}
+                            </div>
                         </div>
                     </div>
 
                 </div>
 
                 <!-- Squad List: Full Width -->
-                <div class="px-4 mb-12">
-                    <div class="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
-                        <div class="flex justify-between items-center mb-8">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <i data-lucide="users" class="w-4 h-4 text-blue-500"></i>
-                                Plantilla / Jugadores
-                            </h4>
-                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamPlayers.length} Futbolistas</span>
+                <div class="px-4 mb-16">
+                    <div class="bg-white p-12 rounded-[4rem] border border-slate-100 shadow-sm relative overflow-hidden">
+                        <div class="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+                            <i data-lucide="users" class="w-64 h-64 text-blue-900"></i>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            ${teamPlayers.map(p => `
-                                <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer">
-                                    <div class="w-11 h-11 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all text-xs">${p.dorsal || '--'}</div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
-                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
+                        <div class="relative z-10">
+                            <div class="flex justify-between items-center mb-10 pb-6 border-b border-slate-50">
+                                <h4 class="text-xs font-black text-blue-900 uppercase tracking-widest flex items-center gap-3">
+                                    <span class="w-2 h-8 bg-blue-600 rounded-full"></span>
+                                    Ficha de Plantilla Actual
+                                </h4>
+                                <span class="px-5 py-2 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-100">${teamPlayers.length} Futbolistas Convocables</span>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                ${teamPlayers.map(p => `
+                                    <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.8rem] hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer shadow-sm">
+                                        <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all text-xs">${p.dorsal || '--'}</div>
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
+                                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
+                                        </div>
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all translate-x-0 group-hover:translate-x-1"></i>
                                     </div>
-                                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all"></i>
-                                </div>
-                            `).join('') || '<p class="col-span-full text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin jugadores registrados</p>'}
+                                `).join('') || '<p class="col-span-full text-center py-24 text-slate-300 font-bold uppercase text-[10px] tracking-widest">Sin jugadores registrados en este equipo</p>'}
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- Tactical Area: Like in reports -->
                 <div class="px-4">
-                    <div class="bg-slate-900 p-10 rounded-[4rem] shadow-2xl relative overflow-hidden">
-                        <i data-lucide="map" class="absolute -bottom-10 -right-10 w-64 h-64 text-white/5"></i>
-                        <div class="flex justify-between items-center mb-10 relative z-10">
+                    <div class="bg-blue-950 p-12 rounded-[4.5rem] shadow-2xl relative overflow-hidden border-[12px] border-white/5">
+                        <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/50 via-transparent to-transparent opacity-50"></div>
+                        <div class="flex justify-between items-center mb-12 relative z-10">
                             <div>
-                                <h4 class="text-xs font-black text-blue-400 uppercase tracking-[0.2em]">Mapa Táctico de Plantilla</h4>
-                                <p class="text-[10px] text-white/40 font-bold mt-1">Visualización de todos los jugadores según posición técnica</p>
+                                <h4 class="text-xs font-black text-blue-400 uppercase tracking-[0.3em]">Scouting & Posicionamiento</h4>
+                                <p class="text-xl text-white font-black mt-2 tracking-tight">MAPA TÁCTICO DE JUGADORES</p>
                             </div>
-                            <div class="flex items-center gap-3">
-                                <select onchange="window.updateTeamPitch(this.value, '${equipoid}')" class="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
-                                    ${Object.entries(FORMATIONS).map(([fid, f]) => `
-                                        <option value="${fid}" ${fid === currentFormationId ? 'selected' : ''}>${f.name}</option>
-                                    `).join('')}
-                                </select>
-                                <button onclick="window.openFullScreenPitch('team', '${equipoid}', '${currentFormationId}')" class="bg-white/5 border border-white/10 px-6 py-3 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                            <div class="flex items-center gap-4">
+                                <div class="relative">
+                                    <select onchange="window.updateTeamPitch(this.value, '${equipoid}')" class="pl-6 pr-12 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-[1.5rem] text-[11px] font-black uppercase text-white outline-none shadow-xl cursor-pointer hover:bg-white/20 transition-all appearance-none">
+                                        ${Object.entries(FORMATIONS).map(([fid, f]) => `
+                                            <option value="${fid}" ${fid === currentFormationId ? 'selected' : ''} class="text-slate-900">${f.name}</option>
+                                        `).join('')}
+                                    </select>
+                                    <i data-lucide="chevron-down" class="w-4 h-4 text-white/40 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                                </div>
+                                <button onclick="window.openFullScreenPitch('team', '${equipoid}', '${currentFormationId}')" class="bg-blue-600 px-8 py-4 rounded-[1.5rem] text-[10px] font-black text-white uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-600/20">
                                     <i data-lucide="maximize" class="w-4 h-4"></i>
-                                    Versión Panorámica
+                                    Panorámica
                                 </button>
                             </div>
                         </div>
                         
-                        <div id="team-pitch-container" class="relative z-10 w-full flex items-center justify-center">
-                            <div class="w-full max-w-[1000px]">
-                                ${renderTacticalPitchHtml(teamPlayers, currentFormationId, 'horizontal')}
+                        <!-- Pitch Container Fixed -->
+                        <div class="relative z-10 max-w-6xl mx-auto">
+                            <div class="bg-white/5 p-4 rounded-[3.5rem] backdrop-blur-sm border border-white/10">
+                                <div id="team-pitch-container" class="w-full shadow-2xl rounded-[3rem] overflow-hidden">
+                                    ${renderTacticalPitchHtml(teamPlayers, currentFormationId, window.innerWidth < 768 ? 'vertical' : 'horizontal')}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -5670,6 +5715,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <input name="nombre" placeholder="Ej: Benjamín A" class="w-full p-4 border rounded-2xl font-bold outline-none focus:ring-2 ring-blue-100" required>
                             </div>
                             <div class="col-span-2">
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
+                                <select name="equipoConvenido" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100">
+                                    <option value="">Ninguno</option>
+                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}">${c}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="col-span-2">
                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
                                 <div id="new-team-year-container" class="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
                                     ${[2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020].map(y => `
@@ -5994,6 +6046,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     
                     data.nombre = `${data.nombre.trim().toUpperCase()} ||| ${catStr}`;
                     data.categoria = parseInt(selectedCat[0]) || null;
+                    data.equipoConvenido = formData.get('equipoConvenido') || null;
                     
                     const savedTeam = await db.add('equipos', data);
                     
@@ -8897,6 +8950,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                         <tr class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
                                                             <td class="p-4">
                                                                 <p class="text-[11px] font-black text-slate-800 uppercase truncate">${p.nombre}</p>
+                                                                <p class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</p>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
@@ -9107,7 +9161,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <input type="checkbox" value="${p.id}" ${bulkSelection.has(String(p.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 torneo-add-check">
                                 <div class="flex-1 min-w-0">
                                     <p class="text-[10px] font-bold text-slate-700 truncate group-hover/p:text-blue-600 transition-colors uppercase">${p.nombre}</p>
-                                    <p class="text-[8px] text-slate-400 font-bold uppercase">${p.posicion || '--'}</p>
+                                    <div class="flex items-center gap-2">
+                                        <p class="text-[8px] text-slate-400 font-bold uppercase">${p.posicion || '--'}</p>
+                                        <span class="text-[8px] text-blue-500 font-black uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
+                                    </div>
                                 </div>
                             </label>
                         `).join('')}
@@ -9906,6 +9963,253 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         } catch (err) {
             console.error("Error sending email:", err);
         }
+    };
+
+    async function renderClubes(container) {
+        const teams = await db.getAll('equipos');
+        const players = await db.getAll('jugadores');
+
+        container.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
+                ${CLUBES_CONVENIDOS.map(club => {
+                    const linkedTeams = teams.filter(t => t.equipoConvenido === club);
+                    const linkedPlayers = players.filter(p => p.equipoConvenido === club);
+                    
+                    return `
+                        <div onclick="window.viewClubTeams('${club}')" class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all cursor-pointer group relative overflow-hidden">
+                            <div class="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <i data-lucide="building-2" class="w-24 h-24 text-slate-900"></i>
+                            </div>
+                            <div class="relative z-10">
+                                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                    <i data-lucide="building-2" class="w-6 h-6"></i>
+                                </div>
+                                <h4 class="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">${club}</h4>
+                                <div class="flex gap-4 mt-6 pt-6 border-t border-slate-50">
+                                    <div class="flex flex-col">
+                                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Equipos</span>
+                                        <span class="text-lg font-black text-slate-700">${linkedTeams.length}</span>
+                                    </div>
+                                    <div class="flex flex-col ml-6">
+                                        <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Jugadores</span>
+                                        <span class="text-lg font-black text-blue-600">${linkedPlayers.length}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-8">
+                                <button class="w-full py-3 bg-slate-50 text-slate-600 font-bold rounded-xl text-[10px] uppercase tracking-widest group-hover:bg-blue-600 group-hover:text-white transition-all">
+                                    Gestionar Club
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    }
+
+    window.viewClubTeams = async (clubName) => {
+        const teams = await db.getAll('equipos');
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${clubName}</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Gestión de Equipos Vinculados</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                <div class="space-y-6">
+                    <div class="flex justify-between items-center mb-2 px-2">
+                         <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Equipos del Club</label>
+                         <button onclick="window.showNewTeamModal('${clubName}')" class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20">
+                            <i data-lucide="plus" class="w-3 h-3"></i>
+                            Añadir Nuevo Equipo
+                         </button>
+                    </div>
+                    
+                    <div class="p-6 bg-slate-50 rounded-[2.5rem] border border-slate-100">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+                            ${teams.map(t => {
+                                const isLinked = t.equipoConvenido === clubName;
+                                const isOtherLinked = t.equipoConvenido && t.equipoConvenido !== clubName;
+                                
+                                return `
+                                    <label class="flex items-center gap-4 p-4 bg-white rounded-2xl border ${isLinked ? 'border-blue-400 ring-4 ring-blue-50' : 'border-slate-100'} cursor-pointer hover:border-blue-200 transition-all ${isOtherLinked ? 'opacity-50' : ''}">
+                                        <input type="checkbox" onchange="window.toggleTeamClubLink('${t.id}', '${clubName}', this.checked)" ${isLinked ? 'checked' : ''} ${isOtherLinked ? 'disabled' : ''} class="w-5 h-5 rounded-md text-blue-600 border-2 border-slate-200 focus:ring-4 ring-blue-100">
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-[11px] font-black text-slate-800 uppercase truncate">${t.nombre.split(' ||| ')[0]}</p>
+                                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tight">${isOtherLinked ? `Vinculado a: ${t.equipoConvenido}` : (t.categoria || 'Sin Categoría')}</p>
+                                        </div>
+                                    </label>
+                                `;
+                            }).join('') || '<p class="col-span-full p-12 text-center text-[10px] font-black text-slate-300 uppercase italic">No hay equipos registrados en el sistema</p>'}
+                        </div>
+                    </div>
+                    
+                    <div class="pt-6 border-t border-slate-100 flex justify-end">
+                        <button onclick="closeModal()" class="px-10 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all uppercase tracking-widest text-[10px]">Cerrar Panel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.toggleTeamClubLink = async (teamId, clubName, isChecked) => {
+        try {
+            const team = await db.get('equipos', teamId);
+            if (team) {
+                team.equipoConvenido = isChecked ? clubName : null;
+                await db.update('equipos', team);
+                // Refresh modal content without closing
+                window.viewClubTeams(clubName);
+                // Refresh background view if visible
+                if (currentView === 'clubes') {
+                    const container = document.getElementById('content-container');
+                    if (container) renderClubes(container);
+                }
+            }
+        } catch (err) {
+            console.error("Error toggling team-club link:", err);
+            window.customAlert('Error', 'No se pudo actualizar la vinculación.', 'error');
+        }
+    };
+
+    window.showNewTeamModal = async (preselectedClub) => {
+        // Change view to equipos briefly or just trigger the modal logic
+        const originalView = currentView;
+        currentView = 'equipos';
+        
+        // This is a bit hacky because the addBtn listener uses currentView
+        // We trigger the click
+        const players = await db.getAll('jugadores');
+        
+        // Use the same HTML as the main "Nuevo Equipo" modal but with the club pre-selected
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <h3 class="text-2xl font-bold mb-6 text-slate-800 uppercase tracking-tight">Nuevo Equipo para <span class="text-blue-600">${preselectedClub}</span></h3>
+                <form id="modal-form" class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Equipo</label>
+                            <input name="nombre" placeholder="Ej: Benjamín A" class="w-full p-4 border rounded-2xl font-bold outline-none focus:ring-2 ring-blue-100" required>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
+                            <select name="equipoConvenido" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100">
+                                ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${c === preselectedClub ? 'selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
+                            <div id="new-team-year-container" class="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
+                                ${[2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020].map(y => `
+                                    <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all">
+                                        <input type="checkbox" name="categoria" value="${y}" class="year-checkbox w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <span class="text-[10px] font-black text-slate-600">${y}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
+                            <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
+                                <input type="file" id="team-crest-input" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 transition-all">
+                            </div>
+                        </div>
+                        <div class="col-span-2">
+                            <div class="flex justify-between items-center mb-4">
+                                <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">Vincular Jugadores</label>
+                                <button type="button" id="new-select-all-btn" class="text-[9px] font-black text-blue-600 uppercase hover:text-blue-700 transition-colors">Seleccionar Todos</button>
+                            </div>
+                            <div id="new-linked-players-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                <!-- Players will be filtered here -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-4 mt-6">
+                        <button type="button" onclick="window.viewClubTeams('${preselectedClub}')" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Volver al Club</button>
+                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Crear Equipo</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        
+        // Restore currentView after modal setup
+        currentView = originalView;
+
+        // Setup the same behavior as the standard "Add Team" modal
+        setTimeout(() => {
+            const listDiv = document.getElementById('new-linked-players-list');
+            const selectAllBtn = document.getElementById('new-select-all-btn');
+            const update = () => {
+                const selectedYears = [...document.querySelectorAll('.year-checkbox:checked')].map(cb => cb.value);
+                const filtered = players.filter(p => selectedYears.length === 0 || selectedYears.includes(p.anionacimiento?.toString()));
+                listDiv.innerHTML = filtered.map(p => `
+                    <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200 transition-all">
+                        <input type="checkbox" name="linkedPlayerIds" value="${p.id}" class="w-4 h-4 rounded text-blue-600">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
+                            <p class="text-[8px] font-black text-slate-400 uppercase">${p.anionacimiento || '----'}</p>
+                        </div>
+                    </label>
+                `).join('') || `<p class="col-span-full p-8 text-center text-xs text-slate-400 italic font-medium">No hay jugadores para estos años.</p>`;
+                if (window.lucide) lucide.createIcons();
+            };
+            document.querySelectorAll('.year-checkbox').forEach(cb => cb.addEventListener('change', update));
+            update();
+            if (selectAllBtn) {
+                selectAllBtn.onclick = () => {
+                    const checkboxes = listDiv.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(cb => cb.checked = true);
+                };
+            }
+            
+            // Re-attach submit handler specifically for this temporary view swap
+            const form = document.getElementById('modal-form');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData.entries());
+                if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
+                
+                const selectedYears = formData.getAll('categoria');
+                data.nombre = `${data.nombre} ||| ${selectedYears.join(', ')}`;
+                data.categoria = parseInt(selectedYears[0]) || null;
+                data.equipoConvenido = formData.get('equipoConvenido') || null;
+
+                const imgInput = document.getElementById('team-crest-input');
+                if (imgInput && imgInput.files[0]) {
+                    data.escudo = await new Promise(resolve => {
+                        const reader = new FileReader();
+                        reader.onload = (re) => resolve(re.target.result);
+                        reader.readAsDataURL(imgInput.files[0]);
+                    });
+                }
+
+                const savedTeam = await db.add('equipos', data);
+                const linkedPlayerIds = formData.getAll('linkedPlayerIds');
+                for (const pid of linkedPlayerIds) {
+                    const p = await db.get('jugadores', pid);
+                    if (p) {
+                        p.equipoid = savedTeam.id;
+                        await db.update('jugadores', p);
+                    }
+                }
+                
+                window.customAlert('¡Éxito!', 'Nuevo equipo creado y vinculado al club.', 'success');
+                window.viewClubTeams(preselectedClub);
+                if (currentView === 'clubes') renderClubes(document.getElementById('content-container'));
+            });
+            
+        }, 0);
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
     };
 
     initNotifications();
