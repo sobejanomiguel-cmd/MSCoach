@@ -204,28 +204,38 @@ class CoachDB {
         });
     }
 
-    async uploadImage(file) {
+    async uploadFile(file, bucket = 'tareas', path = 'documents') {
         if (!supabaseClient) return null;
         try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-            const filePath = `tasks/${fileName}`;
+            const fileExt = file.name.includes('.') ? file.name.split('.').pop() : '';
+            const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}${fileExt ? '.' + fileExt : ''}`;
+            const filePath = `${path}/${fileName}`;
 
             const { data, error } = await supabaseClient.storage
-                .from('tareas')
-                .upload(filePath, file);
+                .from(bucket)
+                .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
 
-            if (error) throw error;
+            if (error) {
+                console.error("Supabase Storage Error:", error);
+                throw error;
+            }
 
             const { data: { publicUrl } } = supabaseClient.storage
-                .from('tareas')
+                .from(bucket)
                 .getPublicUrl(filePath);
 
             return publicUrl;
         } catch (err) {
-            console.error("Error subiendo imagen a Storage:", err);
-            return null;
+            console.error("Error subiendo archivo a Storage:", err);
+            throw err; // Re-throw to handle it in the UI
         }
+    }
+
+    async uploadImage(file) {
+        return this.uploadFile(file, 'tareas', 'tasks');
     }
 
     async deleteAll(storeName) {

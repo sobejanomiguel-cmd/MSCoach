@@ -1,4 +1,50 @@
-const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
+window.deleteTorneoDoc = async (id, docIndex) => {
+        if (!confirm('¿Seguro que quieres eliminar este documento?')) return;
+        try {
+            const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+            const metadata = window.getConvMetadata(conv);
+            const docs = metadata.documentos || [];
+            docs.splice(docIndex, 1);
+            
+            await window.saveConvMetadata(id, 'documentos', docs);
+            window.viewTorneoRendimiento(id);
+        } catch (err) {
+            console.error("Delete error:", err);
+            window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
+        }
+    };window.handleTorneoDocUpload = async (id, files) => {
+        if (!files || files.length === 0) return;
+        const btn = document.querySelector(`button[onclick*="torneo-doc-upload"]`);
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="w-4 h-4 animate-spin text-blue-600">...</i>';
+        
+        try {
+            const uploadPromises = Array.from(files).map(async (file) => {
+                const publicUrl = await db.uploadFile(file, 'tareas', 'tasks');
+                return publicUrl ? { name: file.name, url: publicUrl } : null;
+            });
+            
+            const results = (await Promise.all(uploadPromises)).filter(r => r !== null);
+            
+            if (results.length > 0) {
+                const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+                const metadata = window.getConvMetadata(conv);
+                const docs = metadata.documentos || [];
+                const updatedDocs = [...docs, ...results];
+                
+                await window.saveConvMetadata(id, 'documentos', updatedDocs);
+                
+                window.viewTorneoRendimiento(id);
+                window.customAlert('Éxito', `${results.length} archivo(s) subido(s) correctamente`, 'success');
+            }
+        } catch (err) {
+            console.error("Upload error details:", err);
+            const errorMsg = err.message || err.error_description || 'Error de permisos o conexión';
+            window.customAlert('Error al subir', `No se pudieron subir los archivos. Detalle: ${errorMsg}`, 'error');
+        } finally {
+            btn.innerHTML = originalHtml;
+        }
+    };const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 
 window.currentVisibilityMode = 'personal'; 
@@ -54,7 +100,33 @@ window.getSortedTeams = (teams) => {
     });
 };
 
-window.cleanLugar = (l) => {
+
+    window.getConvMetadata = (conv) => {
+        if (!conv || !conv.lugar || !conv.lugar.includes(' ||| ')) return {};
+        try {
+            return JSON.parse(conv.lugar.split(' ||| ')[1]) || {};
+        } catch (e) {
+            return {};
+        }
+    };
+
+    window.saveConvMetadata = async (id, key, value) => {
+        const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+        if (!conv) return;
+        
+        const baseLugar = conv.lugar ? conv.lugar.split(' ||| ')[0] : '';
+        let metadata = {};
+        if (conv.lugar && conv.lugar.includes(' ||| ')) {
+            try { metadata = JSON.parse(conv.lugar.split(' ||| ')[1]); } catch(e) {}
+        }
+        
+        metadata[key] = value;
+        const newLugar = `${baseLugar} ||| ${JSON.stringify(metadata)}`;
+        
+        await db.update('convocatorias', { id: Number(id), lugar: newLugar });
+    };
+
+    window.cleanLugar = (l) => {
     if (!l) return '';
     if (typeof l !== 'string') return l;
     return l.split(' ||| ')[0];
@@ -7850,7 +7922,136 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.exportConvocatoria = async (id) => {
+    window.previewDocument = (url, name = 'Documento') => {
+        const previewOverlay = document.getElementById('preview-overlay');
+        const previewContainer = document.getElementById('preview-container');
+        const previewContent = document.getElementById('preview-content');
+        
+        const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(url);
+        const isPdf = /\.pdf$/i.test(url) || url.startsWith('blob:') || url.startsWith('data:application/pdf');
+
+        // Ajustar ancho del contenedor si es PDF para mejor lectura
+        if (isPdf) {
+            previewContainer.classList.remove('max-w-4xl');
+            previewContainer.classList.add('max-w-6xl');
+        } else {
+            previewContainer.classList.remove('max-w-6xl');
+            previewContainer.classList.add('max-w-4xl');
+        }
+
+        previewContent.innerHTML = `
+            <div class="p-4 md:p-8">
+                <div class="mb-6 flex justify-between items-center px-4">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${name}</h3>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-50 rounded-[2rem] border-2 border-slate-100 overflow-hidden shadow-inner flex items-center justify-center">
+                    ${isImage ? `
+                        <div class="p-4">
+                            <img src="${url}" class="max-w-full h-auto shadow-2xl rounded-2xl">
+                        </div>
+                    ` : isPdf ? `
+                        <div class="w-full h-[80vh]">
+                            <object data="${url}" type="application/pdf" class="w-full h-full">
+                                <iframe src="${url}" class="w-full h-full border-none">
+                                    <div class="p-20 text-center">
+                                        <p class="text-slate-500 font-bold mb-4">Tu navegador no permite la previsualización directa.</p>
+                                        <a href="${url}" target="_blank" class="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold uppercase text-[10px]">Abrir en pestaña nueva</a>
+                                    </div>
+                                </iframe>
+                            </object>
+                        </div>
+                    ` : `
+                        <div class="text-center p-20">
+                            <i data-lucide="file-warning" class="w-16 h-16 text-slate-300 mx-auto mb-4"></i>
+                            <p class="text-slate-500 font-bold">No se puede previsualizar este tipo de archivo.</p>
+                            <a href="${url}" target="_blank" class="mt-6 inline-block px-8 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs">Descargar Archivo</a>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+
+        previewOverlay.classList.remove('hidden');
+        setTimeout(() => {
+            previewOverlay.classList.add('opacity-100');
+            previewOverlay.querySelector('#preview-container').classList.remove('scale-95');
+        }, 10);
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.previewTorneoPDF = async (id) => {
+        const url = await window.exportConvocatoria(id, 'preview');
+        if (url) window.previewDocument(url, 'Ficha de Torneo');
+    };
+
+    window.handleTorneoDocUpload = async (id, files) => {
+        if (!files || files.length === 0) return;
+        const btn = document.querySelector(`button[onclick*="torneo-doc-upload"]`);
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="w-4 h-4 animate-spin text-blue-600">...</i>';
+        
+        try {
+            const uploadPromises = Array.from(files).map(async (file) => {
+                // Probamos con la ruta 'tasks' que es la que sabemos que funciona para otros módulos
+                const publicUrl = await db.uploadFile(file, 'tareas', 'tasks');
+                return publicUrl ? { name: file.name, url: publicUrl } : null;
+            });
+            
+            const results = (await Promise.all(uploadPromises)).filter(r => r !== null);
+            
+            if (results.length > 0) {
+                // Buscamos la convocatoria asegurando el tipo de ID
+                const { data: conv, error: fetchError } = await supabaseClient
+                    .from('convocatorias')
+                    .select('lugar')
+                    .eq('id', Number(id))
+                    .single();
+
+                if (fetchError || !conv) {
+                    console.error("Error buscando convocatoria:", fetchError);
+                    window.customAlert('Error', 'No se ha podido localizar el torneo en la base de datos para guardar los archivos.', 'error');
+                    return;
+                }
+
+                const metadata = window.getConvMetadata(conv);
+                const docs = metadata.documentos || [];
+                const updatedDocs = [...docs, ...results];
+                
+                await window.saveConvMetadata(id, 'documentos', updatedDocs);
+                window.viewTorneoRendimiento(id);
+                window.customAlert('Éxito', `${results.length} archivo(s) subido(s) correctamente`, 'success');
+            }
+        } catch (err) {
+            console.error("Upload error details:", err);
+            const errorMsg = err.message || err.error_description || 'Error de permisos o conexión';
+            window.customAlert('Error al subir', `No se pudieron subir los archivos. Detalle: ${errorMsg}`, 'error');
+        } finally {
+            btn.innerHTML = originalHtml;
+        }
+    };
+
+    window.deleteTorneoDoc = async (id, docIndex) => {
+        if (!confirm('¿Seguro que quieres eliminar este documento?')) return;
+        try {
+            const { data: conv, error: fetchError } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+            if (fetchError || !conv) throw new Error('No se pudo encontrar el torneo');
+            
+            const metadata = window.getConvMetadata(conv);
+            const docs = metadata.documentos || [];
+            docs.splice(docIndex, 1);
+            
+            await window.saveConvMetadata(id, 'documentos', docs);
+            window.viewTorneoRendimiento(id);
+        } catch (err) {
+            console.error("Delete error:", err);
+            window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
+        }
+    };
+
+    window.exportConvocatoria = async (id, mode = 'download') => {
         const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
         if (error) return;
 
@@ -7861,6 +8062,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // Aplicar posiciones específicas del torneo (herencia del rendimiento)
         const rendimiento = conv.rendimiento || {};
+            const docs = window.getConvMetadata(conv).documentos || [];
         convocados.forEach(p => {
             if (rendimiento[p.id] && rendimiento[p.id].pos) {
                 p.posicion = rendimiento[p.id].pos;
@@ -8103,7 +8305,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             doc.text(`Generado por RS CENTRO - Página ${i} de ${pageCount}`, 150, 285);
         }
 
-        doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
+        if (mode === 'preview') {
+            const blob = doc.output('blob');
+            return URL.createObjectURL(blob);
+        } else {
+            doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
+        }
     };
 
     window.exportSessionPDF = async (id) => {
@@ -8928,6 +9135,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
             const convocados = players.filter(p => pids.includes(p.id.toString()));
             const rendimiento = conv.rendimiento || {};
+            const docs = window.getConvMetadata(conv).documentos || [];
             
             // Aplicar posiciones específicas del torneo (herencia)
             convocados.forEach(p => {
@@ -8950,7 +9158,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                         </div>
                         <div class="flex gap-2">
-                             <button onclick="window.exportConvocatoria(${conv.id})" class="p-2 bg-slate-900 text-white rounded-full hover:bg-black transition-all shadow-lg" title="Exportar PDF"><i data-lucide="file-down" class="w-5 h-5"></i></button>
+                             <button onclick="window.previewTorneoPDF(${conv.id})" class="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all shadow-lg" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
+                             <button onclick="window.exportConvocatoria(${conv.id})" class="p-2 bg-slate-900 text-white rounded-full hover:bg-black transition-all shadow-lg" title="Descargar PDF"><i data-lucide="file-down" class="w-5 h-5"></i></button>
                              <button onclick="window.viewTorneoRendimiento(${conv.id})" class="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-all"><i data-lucide="refresh-cw" class="w-5 h-5"></i></button>
                              <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                         </div>
@@ -9090,6 +9299,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                  </div>
                                  <div id="pitch-display-area" class="relative">
                                      ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433', 'horizontal')}
+                                 </div>
+                             </div>
+
+                             <!-- Documentos -->
+                             <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
+                                 <div class="flex justify-between items-center">
+                                     <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                         <i data-lucide="file-text" class="w-4 h-4 text-blue-600"></i>
+                                         Documentación y Horarios
+                                     </h4>
+                                     <button onclick="document.getElementById('torneo-doc-upload').click()" class="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all shadow-sm">
+                                         <i data-lucide="plus" class="w-4 h-4"></i>
+                                     </button>
+                                     <input type="file" id="torneo-doc-upload" class="hidden" multiple onchange="window.handleTorneoDocUpload(${conv.id}, this.files)">
+                                 </div>
+                                 <div id="torneo-docs-list" class="space-y-2">
+                                     ${docs.length > 0 ? docs.map((doc, idx) => `
+                                         <div class="flex items-center justify-between p-3 bg-slate-50 rounded-2xl group hover:bg-blue-50/50 transition-all border border-transparent hover:border-blue-100">
+                                             <div class="flex items-center gap-3 overflow-hidden">
+                                                 <div class="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-blue-600 shadow-sm border border-slate-100">
+                                                     <i data-lucide="file" class="w-4 h-4"></i>
+                                                 </div>
+                                                 <span class="text-[10px] font-bold text-slate-600 truncate">${doc.name}</span>
+                                             </div>
+                                             <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                 <button onclick="window.previewDocument('${doc.url}', '${doc.name}')" class="p-1.5 text-blue-500 hover:bg-white rounded-lg transition-all" title="Previsualizar"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>
+                                                 <button onclick="window.deleteTorneoDoc(${conv.id}, ${idx})" class="p-1.5 text-red-400 hover:bg-white rounded-lg transition-all" title="Eliminar"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                             </div>
+                                         </div>
+                                     `).join('') : '<p class="text-[10px] text-slate-400 italic text-center py-4">No hay documentos adjuntos.</p>'}
                                  </div>
                              </div>
                         </div>
