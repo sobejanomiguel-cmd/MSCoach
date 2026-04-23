@@ -102,35 +102,40 @@ window.getSortedTeams = (teams) => {
 
 
     window.getConvMetadata = (conv) => {
-        if (!conv || !conv.lugar || !conv.lugar.includes(' ||| ')) return {};
+        return window.parseLugarMetadata(conv?.lugar).extra;
+    };
+
+    window.parseLugarMetadata = (lugarStr) => {
+        if (!lugarStr) return { base: '', extra: {} };
+        if (!lugarStr.includes(' ||| ')) return { base: lugarStr, extra: {} };
         try {
-            return JSON.parse(conv.lugar.split(' ||| ')[1]) || {};
+            const [base, jsonInfo] = lugarStr.split(' ||| ');
+            return { base: (base || '').toUpperCase().trim(), extra: JSON.parse(jsonInfo) || {} };
         } catch (e) {
-            return {};
+            console.error("Error parsing lugar metadata:", e);
+            return { base: (lugarStr.split(' ||| ')[0] || '').toUpperCase().trim(), extra: {} };
         }
+    };
+
+    window.serializeLugarMetadata = (base, extra) => {
+        return `${(base || '').toUpperCase().trim()} ||| ${JSON.stringify(extra || {})}`;
     };
 
     window.saveConvMetadata = async (id, key, value) => {
         const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
         if (!conv) return;
         
-        const baseLugar = conv.lugar ? conv.lugar.split(' ||| ')[0] : '';
-        let metadata = {};
-        if (conv.lugar && conv.lugar.includes(' ||| ')) {
-            try { metadata = JSON.parse(conv.lugar.split(' ||| ')[1]); } catch(e) {}
-        }
-        
-        metadata[key] = value;
-        const newLugar = `${baseLugar} ||| ${JSON.stringify(metadata)}`;
+        const { base, extra } = window.parseLugarMetadata(conv.lugar);
+        extra[key] = value;
+        const newLugar = window.serializeLugarMetadata(base, extra);
         
         await db.update('convocatorias', { id: Number(id), lugar: newLugar });
     };
 
     window.cleanLugar = (l) => {
-    if (!l) return '';
-    if (typeof l !== 'string') return l;
-    return l.split(' ||| ')[0];
-};
+        return window.parseLugarMetadata(l).base;
+    };
+
 window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCallback = "") => {
     const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
                  selectedPositions.length === 1 ? selectedPositions[0] : 
@@ -1097,14 +1102,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const sw = Array.isArray(item.sharedWith) ? item.sharedWith : [item.sharedWith.toString()];
                     if (sw.includes(currentUser.id)) return true;
                 }
-                if (item.lugar && item.lugar.includes(' ||| ')) {
-                    try {
-                        const extra = JSON.parse(item.lugar.split(' ||| ')[1]);
-                        if (extra.sw) {
-                            const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
-                            if (sw.includes(currentUser.id)) return true;
-                        }
-                    } catch (e) {}
+                const { extra } = window.parseLugarMetadata(item.lugar);
+                if (extra && extra.sw) {
+                    const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
+                    if (sw.includes(currentUser.id)) return true;
                 }
                 return false;
             };
@@ -1134,7 +1135,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 let isExtraDate = false;
                 if (c.lugar && c.lugar.includes(' ||| ')) {
                     try {
-                        const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
+                        const { extra } = window.parseLugarMetadata(c.lugar);
                         isExtraDate = (extra.s2?.f === selDateStr) || (extra.s3?.f === selDateStr);
                     } catch (e) {}
                 }
@@ -1812,12 +1813,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
                             ${(() => {
                                 let teamIds = [session.equipoid];
-                                if (session.lugar && session.lugar.includes(' ||| ')) {
-                                    try {
-                                        const ex = JSON.parse(session.lugar.split(' ||| ')[1]);
-                                        if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
-                                    } catch(e) {}
-                                }
+                                const { extra } = window.parseLugarMetadata(session.lugar);
+                                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
                                 return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
                                     <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
                                 `).join('');
@@ -2757,12 +2754,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const filteredSessions = mySessions.filter(s => {
             let sessionTeamIds = [String(s.equipoid)];
-            if (s.lugar && s.lugar.includes(' ||| ')) {
-                try {
-                    const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
-                    if (ex.eids) sessionTeamIds = [...new Set([...sessionTeamIds, ...ex.eids.map(String)])];
-                } catch(e) {}
-            }
+            const { extra: ex } = window.parseLugarMetadata(s.lugar);
+            if (ex.eids) sessionTeamIds = [...new Set([...sessionTeamIds, ...ex.eids.map(String)])];
 
             const matchesTeam = sessionFilters.team === 'TODOS' || sessionTeamIds.includes(String(sessionFilters.team));
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
@@ -2859,13 +2852,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <div class="flex flex-col gap-1.5">
                                                 <div class="flex flex-wrap gap-1">
                                                     ${(() => {
+                                                        const { extra } = window.parseLugarMetadata(s.lugar);
                                                         let teamIds = [s.equipoid];
-                                                        if (s.lugar && s.lugar.includes(' ||| ')) {
-                                                            try {
-                                                                const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
-                                                                if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
-                                                            } catch(e) {}
-                                                        }
+                                                        if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
                                                         return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                             <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teamsMap[id].split(' ||| ')[0]}</span>
                                                         `).join('');
@@ -2919,13 +2908,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div>
                                         <div class="flex flex-wrap gap-1 mb-1">
                                             ${(() => {
+                                                const { extra } = window.parseLugarMetadata(s.lugar);
                                                 let teamIds = [s.equipoid];
-                                                if (s.lugar && s.lugar.includes(' ||| ')) {
-                                                    try {
-                                                        const ex = JSON.parse(s.lugar.split(' ||| ')[1]);
-                                                        if (ex.eids) teamIds = [...new Set([...teamIds.map(String), ...ex.eids.map(String)])];
-                                                    } catch(e) {}
-                                                }
+                                                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
                                                 return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                     <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${teamsMap[id].split(' ||| ')[0]}</span>
                                                 `).join('');
@@ -3002,13 +2987,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2 px-1">Equipos Participantes</label>
                             <div id="session-teams-container" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar">
                                 ${teams.map(t => {
+                                    const { extra } = window.parseLugarMetadata(session.lugar);
                                     let isSelected = session.equipoid == t.id;
-                                    if (session.lugar && session.lugar.includes(' ||| ')) {
-                                        try {
-                                            const extra = JSON.parse(session.lugar.split(' ||| ')[1]);
-                                            if (extra.eids && extra.eids.includes(t.id.toString())) isSelected = true;
-                                        } catch(e) {}
-                                    }
+                                    if (extra.eids && extra.eids.includes(t.id.toString())) isSelected = true;
                                     return `
                                         <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
                                             <input type="checkbox" name="equipoids" value="${t.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 session-team-check">
@@ -3247,3812 +3228,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('session-modal-form').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            
-            const selectedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-            const extra = { eids: selectedTeamIds };
-            const baseLugar = (formData.get('lugar') || '').toUpperCase().trim();
-            const fullLugar = `${baseLugar} ||| ${JSON.stringify(extra)}`;
-
-            // Build clean data object with ONLY valid DB columns
-            const data = {
-                titulo: (formData.get('titulo') || '').toUpperCase().trim(),
-                fecha: formData.get('fecha'),
-                hora: formData.get('hora'),
-                lugar: fullLugar,
-                ciclo: formData.get('ciclo') ? parseInt(formData.get('ciclo')) : null,
-                numSesion: formData.get('numSesion') ? parseInt(formData.get('numSesion')) : null,
-                equipoid: selectedTeamIds.length > 0 ? parseInt(selectedTeamIds[0]) : null,
-                createdBy: currentUser?.id || session.createdBy || null,
-                sharedWith: formData.getAll('sharedWith'),
-                playerids: formData.getAll('playerids'),
-                taskids: []
-            };
-
-            if (isEdit && session.id) data.id = parseInt(session.id);
-
-            for (let i = 1; i <= 6; i++) {
-                const sel = document.getElementById(`task-select-${i}`);
-                if (sel && sel.value) data.taskids.push(sel.value);
-            }
-
-            try {
-                if (isEdit && data.id) {
-                    await db.update('sesiones', data);
-                } else {
-                    await db.add('sesiones', data);
-                }
-                closeModal();
-                window.renderView('sesiones');
-            } catch (err) {
-                console.error("Error saving session:", err);
-                const errorMsg = err.message || "Error desconocido";
-                window.customAlert('Error al Guardar', `No se pudo guardar la sesión: ${errorMsg}`, 'error');
-            }
-        };
-    };
-
-    window.viewSession = async (id) => {
-        const sessions = await db.getAll('sesiones');
-        const session = sessions.find(s => s.id == id);
-        window.renderSessionModal(session);
-    };
-
-    window.duplicateSession = async (id) => {
-        try {
-            const sessions = await db.getAll('sesiones');
-            const session = sessions.find(s => s.id == id);
-            if (!session) return;
-
-            const newSession = { ...session };
-            delete newSession.id;
-            newSession.titulo = `${newSession.titulo} (COPIA)`.toUpperCase();
-            
-            // Set date to today? Maybe user prefers keeping the original date to adjust later
-            // We'll keep original date but it will be at the end of the list usually
-            
-            await db.add('sesiones', newSession);
-            window.customAlert('¡Duplicado!', 'La sesión ha sido duplicada con éxito.', 'success');
-            window.renderView('sesiones');
-        } catch (err) {
-            console.error("Duplicate error:", err);
-            window.customAlert('Error', 'No se pudo duplicar la sesión.', 'error');
-        }
-    };
-
-    window.deleteSession = async (id) => {
-        window.customConfirm(
-            '¿Eliminar sesión?',
-            'Se borrará toda la planificación de este entrenamiento del calendario.',
-            async () => {
-                await db.delete('sesiones', Number(id));
-                closeModal();
-                window.switchView('sesiones');
-            }
-        );
-    };
-
-    window.printSession = async (id) => {
-        const session = (await db.getAll('sesiones')).find(s => s.id == id);
-        if (!session) return;
-        
-        const allTasks = await db.getAll('tareas');
-        const allPlayers = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
-        const currentTeam = teams.find(t => t.id == session.equipoid);
-
-        // Solo un escudo: Prioridad al del equipo, sino el de RS
-        const headerShield = (currentTeam && currentTeam.escudo) ? currentTeam.escudo : 'RS.png';
-
-        const sessionTasks = (session.taskids || []).map(taskId => allTasks.find(t => t.id == taskId)).filter(Boolean);
-        const sessionPlayers = allPlayers.filter(p => session.playerids && session.playerids.includes(p.id.toString()));
-        
-        const allMaterials = sessionTasks.map(t => t.material || '').join(',').split(',').map(m => m.trim()).filter(m => m !== '');
-        const uniqueMaterialList = [...new Set(allMaterials)].join(', ') || 'Estándar';
-
-        // Lógica de nombre de archivo PDF: 26.04.22_sesion1_Calahorra_2011
-        const d = new Date(session.fecha);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const yy = String(d.getFullYear()).slice(-2);
-        const dateStr = `${day}.${month}.${yy}`;
-        
-        const daySessions = (await db.getAll('sesiones'))
-            .filter(s => s.fecha === session.fecha && s.equipoid === session.equipoid)
-            .sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
-        const sesIdx = daySessions.findIndex(s => s.id == session.id) + 1;
-        const sesNum = `sesion${sesIdx}`;
-        
-        const lugarClean = (session.lugar || 'Lugar').split(' - ')[0].trim().replace(/\s+/g, '');
-        const teamYear = (session.equiponombre || '').match(/\d{4}/)?.[0] || '';
-        const pdfFileName = `${dateStr}_${sesNum}_${lugarClean}_${teamYear}`;
-
-        window.doPrintSession = () => {
-            const originalTitle = document.title;
-            document.title = pdfFileName;
-            window.print();
-            setTimeout(() => { document.title = originalTitle; }, 1000);
-        };
-
-        const printDiv = document.createElement('div');
-        printDiv.className = 'print-view bg-slate-100 fixed inset-0 z-[200] overflow-y-auto p-4 md:p-12';
-        printDiv.innerHTML = `
-            <style>
-                @media print {
-                    html, body { 
-                        height: auto !important; 
-                        overflow: visible !important; 
-                        margin: 0 !important; 
-                        padding: 0 !important; 
-                    }
-                    body * { visibility: hidden; }
-                    .print-view, .print-view * { visibility: visible; }
-                    .print-view { 
-                        position: absolute; 
-                        left: 0; 
-                        top: 0; 
-                        width: 100%; 
-                        height: auto !important; 
-                        display: block !important; 
-                        background: white !important; 
-                        padding: 0 !important; 
-                        overflow: visible !important;
-                    }
-                    .no-print { display: none !important; }
-                    .sheet-preview { 
-                        margin: 0 !important; 
-                        box-shadow: none !important; 
-                        border: none !important; 
-                        padding: 40px !important; 
-                        border-radius: 0 !important; 
-                    }
-                    .force-page-break { 
-                        page-break-before: always !important; 
-                        break-before: page !important; 
-                        display: block !important;
-                    }
-                }
-                .sheet-preview {
-                    background: white;
-                    box-shadow: 0 20px 50px rgba(0,0,0,0.1);
-                    margin-bottom: 40px;
-                    padding: 60px;
-                    width: 100%;
-                    max-width: 900px;
-                    margin-left: auto;
-                    margin-right: auto;
-                    border-radius: 8px;
-                }
-            </style>
-            
-            <div class="no-print sticky top-0 mb-8 flex justify-center gap-4 z-[300]">
-                <div class="bg-white/90 backdrop-blur-md p-3 rounded-[2.5rem] border border-white shadow-2xl flex gap-3">
-                    <button onclick="window.doPrintSession()" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/30 hover:bg-blue-700 transition-all flex items-center gap-3">
-                        <i data-lucide="file-down" class="w-5 h-5"></i>
-                        GUARDAR PDF
-                    </button>
-                    <button onclick="document.querySelector('.print-view').remove()" class="px-8 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all flex items-center gap-3">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                        CERRAR VISTA
-                    </button>
-                </div>
-            </div>
-
-            <!-- Page 1 -->
-            <div class="sheet-preview">
-                <header class="flex justify-between items-center border-b-8 border-blue-600 pb-8 mb-10">
-                    <div class="flex items-center gap-6">
-                        <img src="${headerShield}" class="w-[77px] h-[77px] object-contain">
-                    </div>
-                    <div class="text-right">
-                        <h1 class="text-4xl font-black text-blue-900 uppercase leading-none">RS CENTRO</h1>
-                        <p class="text-blue-600 font-bold text-lg mt-1 tracking-widest uppercase">Plan de Entrenamiento</p>
-                    </div>
-                </header>
-
-                <div class="grid grid-cols-5 gap-3 mb-10">
-                    <div class="bg-slate-50 p-4 rounded-2xl col-span-2">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Nombre de la Sesión</p>
-                        <p class="text-sm font-bold text-slate-800 uppercase tracking-tight">${session.titulo || session.nombre}</p>
-                    </div>
-                    <div class="bg-slate-50 p-4 rounded-2xl">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Equipo</p>
-                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.equiponombre}</p>
-                    </div>
-                    <div class="bg-slate-50 p-4 rounded-2xl">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Fecha / Hora</p>
-                        <p class="text-[11px] font-bold text-slate-800 uppercase">${session.fecha} | ${session.hora}</p>
-                    </div>
-                    <div class="bg-slate-50 p-4 rounded-2xl border-l-4 border-blue-500">
-                        <p class="text-[10px] font-black text-slate-400 uppercase mb-1">Lugar</p>
-                        <p class="text-[11px] font-bold text-slate-800 uppercase">${window.cleanLugar(session.lugar) || '--'}</p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-8 mb-8">
-                    <div class="col-span-2">
-                        <div class="flex items-center gap-6 bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                            <div>
-                                <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Convocatoria</p>
-                                <p class="text-sm font-bold text-slate-800">${sessionPlayers.length} Jugadores</p>
-                            </div>
-                            <div class="w-px h-8 bg-slate-200"></div>
-                            <div>
-                                <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Material Requerido</p>
-                                <p class="text-sm font-bold text-slate-800">${uniqueMaterialList}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <p class="text-2xl font-black text-blue-600 bg-blue-50 p-5 rounded-3xl border border-blue-100 text-center">${sessionTasks.length} <span class="text-[10px] text-blue-400 uppercase tracking-widest ml-1">Ejercicios</span></p>
-                    </div>
-                </div>
-
-                <!-- NEW: Convocatoria Names List -->
-                <div class="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                    <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Listado de Jugadores Convocados</p>
-                    <div class="flex flex-wrap gap-x-3 gap-y-2">
-                        ${sessionPlayers.map(p => `
-                            <span class="text-[10px] font-bold text-slate-700 flex items-center gap-1.5">
-                                <span class="w-1 h-1 bg-blue-500 rounded-full"></span>
-                                ${p.nombre}
-                            </span>
-                        `).join('') || '<span class="text-[10px] text-slate-400 italic">No hay jugadores asignados a esta sesión</span>'}
-                    </div>
-                </div>
-
-                <div class="space-y-8">
-                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 border-b pb-2">Desglose de Tareas - Parte I</p>
-                    ${sessionTasks.slice(0, 1).map((t, idx) => `
-                        <div class="breakout-page">
-                            <h4 class="text-sm font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-3 py-1 mb-3">${idx + 1}. ${t.name}</h4>
-                            <div class="grid grid-cols-2 gap-4 items-start">
-                                <div class="space-y-2">
-                                    ${t.image ? `<img src="${t.image}" class="w-full h-[220px] rounded-2xl object-contain border border-slate-100 bg-slate-50 shadow-sm">` : `<div class="w-full h-[220px] bg-slate-50 rounded-2xl flex items-center justify-center border border-dashed border-slate-200"><i data-lucide="image" class="w-8 h-8 text-slate-300"></i></div>`}
-                                </div>
-                                <div class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col h-full min-h-[220px]">
-                                    <p class="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
-                                    <p class="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap flex-1">${t.description || 'Sin descripción.'}</p>
-                                    ${t.video ? `
-                                        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                                            <div class="flex items-center gap-2">
-                                                <a href="${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
-                                                </a>
-                                                <span class="text-[8px] font-black text-blue-600 uppercase">Ver Video Interactivo</span>
-                                            </div>
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
-                                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
-                                            </div>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-
-            <!-- Additional Pages (2 tasks per page) -->
-            ${(() => {
-                let extraPages = '';
-                const remaining = sessionTasks.slice(1);
-                for (let i = 0; i < remaining.length; i += 2) {
-                    const chunk = remaining.slice(i, i + 2);
-                    extraPages += `
-                        <div class="sheet-preview force-page-break" style="padding: 40px !important;">
-                            <div class="space-y-6">
-                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 border-b pb-2">Desglose de Tareas - Parte ${Math.floor(i/2) + 2}</p>
-                                ${chunk.map((t, idx) => {
-                                    const totalIdx = i + idx + 2;
-                                    return `
-                                    <div class="breakout-page border-b border-slate-50 pb-6 last:border-0">
-                                        <h4 class="text-sm font-black text-slate-800 uppercase border-l-4 border-blue-600 pl-3 py-1 mb-3">${totalIdx}. ${t.name}</h4>
-                                        <div class="grid grid-cols-2 gap-4 items-start">
-                                            <div class="space-y-2">
-                                                ${t.image ? `<img src="${t.image}" class="w-full h-[220px] rounded-2xl object-contain border border-slate-100 bg-slate-50 shadow-sm">` : `<div class="w-full h-[220px] bg-slate-50 rounded-2xl flex items-center justify-center border border-dashed border-slate-200"><i data-lucide="image" class="w-8 h-8 text-slate-300"></i></div>`}
-                                            </div>
-                                            <div class="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col h-full min-h-[220px]">
-                                                <p class="text-[9px] font-black text-slate-400 uppercase mb-2 tracking-widest">Explicación Técnica</p>
-                                                <p class="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap flex-1">${t.description || 'Sin descripción.'}</p>
-                                                ${t.video ? `
-                                                    <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                                                        <div class="flex items-center gap-2">
-                                                            <a href="${t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`}" target="_blank" class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
-                                                            </a>
-                                                            <span class="text-[8px] font-black text-blue-600 uppercase">Ver Video</span>
-                                                        </div>
-                                                        <div class="flex items-center gap-2">
-                                                            <span class="text-[8px] font-black text-slate-400 uppercase text-right">Escanea<br>QR</span>
-                                                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`)}" class="w-10 h-10 bg-white p-1 border rounded-lg">
-                                                        </div>
-                                                    </div>
-                                                ` : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                                `;}).join('')}
-                            </div>
-                        </div>
-                    `;
-                }
-                return extraPages;
-            })()}
-
-            <footer class="mt-20 py-10 text-center no-print border-t border-slate-100">
-                <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">RS CENTRO Tactician • Pro Reporting System • Powering Performance</p>
-            </footer>
-        `;
-        
-        document.body.appendChild(printDiv);
-        if (window.lucide) lucide.createIcons();
-    };
-
-
-    async function renderEquipos(container) { 
-        const [teams, allPlayers, allConvs, allSessions, allAttendance] = await Promise.all([
-            db.getAll('equipos'),
-            db.getAll('jugadores'),
-            db.getAll('convocatorias'),
-            db.getAll('sesiones'),
-            db.getAll('asistencia')
-        ]);
-        
-        // Calculate dynamic attendance for each team
-        teams.forEach(t => {
-            const teamReports = allAttendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
-            let totalPresent = 0;
-            let totalPossible = 0;
-            teamReports.forEach(r => {
-                const pData = Object.values(r.players || r.data || {});
-                totalPresent += pData.filter(s => {
-                    const status = typeof s === 'object' ? s.status : s;
-                    return status === 'asiste' || status === 'presente';
-                }).length;
-                totalPossible += pData.length;
-            });
-            t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
-        });
-
-        const sortedTeams = window.getSortedTeams(teams);
-
-        container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-                ${sortedTeams.map(e => {
-                    const playersCount = allPlayers.filter(p => p.equipoid == e.id).length;
-                    const tournamentsCount = allConvs.filter(c => c.equipoid == e.id && (c.tipo || '').toUpperCase() === 'TORNEO').length;
-                    const sessionsCount = allSessions.filter(s => s.equipoid == e.id).length;
-
-                    return `
-                    <div onclick="window.editTeam(${e.id})" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-pointer hover:border-blue-200 transition-all">
-                        <div class="flex items-center gap-4 mb-6">
-                            ${e.escudo ? `<img src="${e.escudo}" class="w-[45px] h-[45px] object-contain rounded-xl">` : `<div class="w-[45px] h-[45px] bg-blue-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">${e.nombre.substring(0,2).toUpperCase()}</div>`}
-                            <div>
-                                <h4 class="font-bold text-slate-800">${e.nombre.split(' ||| ')[0]}</h4>
-                                <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-0.5">${e.nombre.includes(' ||| ') ? e.nombre.split(' ||| ')[1] : e.categoria || 'S/C'}</p>
-                            </div>
-                        </div>
-                        <div class="space-y-4 mb-6">
-                            <div class="flex justify-between items-end">
-                                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Asistencia Media</span>
-                                <span class="text-sm font-black text-blue-600">${e.computedAsistencia || 0}%</span>
-                            </div>
-                            <div class="attendance-bar-bg"><div class="attendance-bar-fill" style="width: ${e.computedAsistencia || 0}%"></div></div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Plantilla</p><p class="text-sm font-black text-slate-700">${playersCount}</p></div>
-                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Torneos</p><p class="text-sm font-black text-blue-600">${tournamentsCount}</p></div>
-                            <div class="bg-slate-50 p-3 rounded-xl text-center flex flex-col justify-center"><p class="text-[8px] font-black text-slate-300 uppercase">Sesiones</p><p class="text-sm font-black text-emerald-600">${sessionsCount}</p></div>
-                        </div>
-
-                        <div class="flex gap-2 mt-6">
-                            <button onclick="event.stopPropagation(); window.viewTeamPlayers(${e.id})" class="flex-1 py-3 border border-slate-100 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 hover:border-blue-200 transition-all">
-                                Ver Plantilla
-                            </button>
-                            <button onclick="event.stopPropagation(); window.deleteTeam(${e.id})" class="p-3 bg-slate-50 text-slate-400 rounded-xl hover:text-red-500 hover:bg-red-50 transition-all">
-                                <i data-lucide="trash-2" class="w-5 h-5"></i>
-                            </button>
-                        </div>
-                    </div>
-                `;}).join('')}
-            </div>
-        `;
-    }
-
-
-    window.deleteTeam = async (id) => {
-        window.customConfirm(
-            '¿Eliminar Equipo?',
-            'Se borrarán los datos del equipo. Los jugadores asociados dejarán de estar asignados.',
-            async () => {
-                await db.delete('equipos', Number(id));
-                window.switchView('equipos');
-            }
-        );
-    };
-
-    window.editTeam = async (id) => {
-        const team = await db.get('equipos', id);
-        const players = await db.getAll('jugadores');
-        
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-bold text-slate-800">Editar Equipo</h3>
-                    <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x"></i></button>
-                </div>
-                <form id="edit-team-form" class="space-y-6">
-                    <input type="hidden" name="id" value="${team.id}">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2">
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del equipo</label>
-                             <input name="nombre" value="${team.nombre.split(' ||| ')[0].toUpperCase()}" class="w-full p-3 border rounded-xl" required>
-                        </div>
-                        <div class="col-span-2">
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
-                             <div class="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
-                                 ${[2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020].map(y => {
-                                     const currentYears = team.nombre.includes(' ||| ') ? team.nombre.split(' ||| ')[1].split(', ').map(s=>s.trim()) : [team.categoria?.toString()];
-                                     return `
-                                        <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all">
-                                            <input type="checkbox" name="categoria" value="${y}" ${currentYears.includes(y.toString()) ? 'checked' : ''} class="edit-year-checkbox w-4 h-4 rounded text-blue-600">
-                                            <span class="text-[10px] font-black text-slate-600">${y}</span>
-                                        </label>
-                                     `;
-                                 }).join('')}
-                             </div>
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido (Vinculación)</label>
-                            <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white outline-none focus:ring-2 ring-blue-50">
-                                <option value="">Ninguno</option>
-                                ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${team.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
-                            <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
-                                <div id="edit-crest-preview">
-                                    ${team.escudo ? `<img src="${team.escudo}" class="h-[51px] w-[51px] object-contain">` : `<i data-lucide="shield" class="w-10 h-10 text-slate-300"></i>`}
-                                </div>
-                                <input type="file" id="edit-team-crest-input" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700">
-                            </div>
-                        </div>
-                        <div class="col-span-2">
-                            <div class="flex justify-between items-center mb-4">
-                                <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">Vincular Jugadores (Filtrados por Año)</label>
-                                <button type="button" id="edit-select-all-btn" class="text-[9px] font-black text-blue-600 uppercase hover:text-blue-700 transition-colors">Seleccionar Todos</button>
-                            </div>
-                            <div id="edit-linked-players-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                <!-- Filered players will load here -->
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex gap-4 mt-6">
-                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Cambios</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        
-        const yearInput = document.getElementById('edit-team-year-input');
-        const listDiv = document.getElementById('edit-linked-players-list');
-        
-        const updatePlayerLinkage = () => {
-            const selectedYears = [...document.querySelectorAll('.edit-year-checkbox:checked')].map(cb => cb.value);
-            const filtered = players.filter(p => selectedYears.length === 0 || selectedYears.includes(p.anionacimiento?.toString()));
-            listDiv.innerHTML = filtered.map(p => `
-                <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200 transition-all">
-                    <input type="checkbox" name="linkedPlayerIds" value="${p.id}" ${p.equipoid == team.id ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
-                    <div class="flex-1 min-w-0">
-                         <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
-                         <p class="text-[8px] font-black text-slate-400 uppercase">${p.anionacimiento || '----'}</p>
-                    </div>
-                </label>
-            `).join('') || `<p class="col-span-full p-8 text-center text-xs text-slate-400 italic font-medium">No hay jugadores para estos años.</p>`;
-        };
-
-        document.querySelectorAll('.edit-year-checkbox').forEach(cb => cb.addEventListener('change', updatePlayerLinkage));
-        updatePlayerLinkage();
-        
-        document.getElementById('edit-select-all-btn').onclick = () => {
-            const checkboxes = listDiv.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(cb => cb.checked = true);
-        };
-        
-        lucide.createIcons(); modalOverlay.classList.add('active');
-        
-
-        document.getElementById('edit-team-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const submitBtn = e.target.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Guardando...';
-
-            try {
-                const formData = new FormData(e.target);
-                const selectedYears = formData.getAll('categoria');
-                const catStr = selectedYears.join(', ');
-                const data = { 
-                    ...team,
-                    id: parseInt(formData.get('id')),
-                    nombre: `${formData.get('nombre').toString().trim().toUpperCase()} ||| ${catStr}`,
-                    categoria: parseInt(selectedYears[0]) || null,
-                    equipoConvenido: formData.get('equipoConvenido') || null
-                };
-                
-                const imgInput = document.getElementById('edit-team-crest-input');
-                if (imgInput.files[0]) {
-                    const url = await db.uploadImage(imgInput.files[0]);
-                    if (url) data.escudo = url;
-                } else {
-                    data.escudo = team.escudo;
-                }
-
-                const linkedPlayerIds = formData.getAll('linkedPlayerIds').map(id => parseInt(id));
-                
-                // Update individual players
-                for (const p of players) {
-                    const isNowLinked = linkedPlayerIds.includes(p.id);
-                    const wasLinked = p.equipoid == data.id;
-
-                    if (isNowLinked && !wasLinked) {
-                        p.equipoid = data.id;
-                        await db.update('jugadores', p);
-                    } else if (!isNowLinked && wasLinked) {
-                        p.equipoid = null;
-                        await db.update('jugadores', p);
-                    }
-                }
-
-
-                
-                await db.update('equipos', data);
-                closeModal();
-                
-                window.customAlert('¡Cambios Guardados!', 'El equipo se ha actualizado correctamente en el sistema.', 'success');
-                window.switchView('equipos');
-            } catch (err) {
-                console.error("Error saving team:", err);
-                window.customAlert('Error al guardar', 'Supabase ha rechazado el cambio: ' + (err.message || err), 'error');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = originalText;
-            }
-        });
-    };
-
-    window.viewTeamPlayers = async (equipoid) => {
-        try {
-            const userRes = await supabaseClient.auth.getUser();
-            const currentUser = userRes.data?.user;
-            if (!currentUser) return;
-
-            // Fetch all data from Supabase for real-time consistency
-            const { data: teams } = await supabaseClient.from('equipos').select('*');
-            const team = (teams || []).find(t => t.id == equipoid);
-            if (!team) return;
-
-            const { data: allPlayers } = await supabaseClient.from('jugadores').select('*').eq('equipoid', equipoid);
-            const teamPlayers = allPlayers || [];
-            
-            const { data: allSessions } = await supabaseClient.from('sesiones').select('*').eq('equipoid', equipoid);
-            const teamSessions = (allSessions || []).sort((a,b) => b.fecha.localeCompare(a.fecha));
-            
-            const { data: allTasks } = await supabaseClient.from('tareas').select('*');
-            const sessionTaskIds = [...new Set(teamSessions.flatMap(s => s.taskids || []))];
-            const teamTasks = sessionTaskIds.map(tid => (allTasks || []).find(t => t.id == tid)).filter(Boolean);
-
-            const { data: allConvs } = await supabaseClient.from('convocatorias').select('*').eq('equipoid', equipoid);
-            const teamTournaments = (allConvs || []).filter(c => (c.tipo || '').toUpperCase() === 'TORNEO').sort((a,b) => b.fecha.localeCompare(a.fecha));
-
-            const wrapper = document.createElement('div');
-            wrapper.className = 'animate-in fade-in slide-in-from-right duration-500 max-w-7xl mx-auto pb-20';
-            
-            // Per-team formation state
-            if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
-            const currentFormationId = (window.formationsState.teams && window.formationsState.teams[equipoid.toString()]) || 'F11_433';
-
-            wrapper.innerHTML = `
-                <!-- Header -->
-                <div class="flex justify-between items-center mb-10 px-4 pt-12">
-                    <div class="flex items-center gap-8">
-                        <button onclick="window.switchView('equipos')" class="w-14 h-14 bg-white rounded-[1.5rem] shadow-sm hover:shadow-xl hover:text-blue-600 transition-all border border-slate-100 flex items-center justify-center">
-                            <i data-lucide="arrow-left" class="w-6 h-6 text-slate-400"></i>
-                        </button>
-                        <div>
-                            <h2 class="text-5xl font-black text-blue-950 tracking-tighter uppercase mb-1">${team.nombre}</h2>
-                            <div class="flex items-center gap-4">
-                                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">${team.categoria || 'Sin Categoría'}</span>
-                                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <i data-lucide="users" class="w-4 h-4"></i>
-                                    ${teamPlayers.length} Futbolistas en Plantilla
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex gap-4">
-                         <button onclick="window.addPlayerToTeam('${equipoid}')" class="px-8 py-5 bg-blue-600 text-white font-black rounded-[2rem] shadow-2xl shadow-blue-500/30 hover:bg-blue-700 transition-all text-[11px] uppercase tracking-widest flex items-center gap-3">
-                            <i data-lucide="plus" class="w-4 h-4"></i>
-                            Nuevo Jugador
-                         </button>
-                    </div>
-                </div>
-
-                <!-- Summary Row: 3 Columns -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 px-4 mb-12">
-                    
-                    <!-- Col 1: Tasks -->
-                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
-                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-emerald-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div class="relative z-10">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
-                                <span class="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
-                                    <i data-lucide="target" class="w-4 h-4"></i>
-                                </span>
-                                Objetivos Trabajados
-                            </h4>
-                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
-                                ${teamTasks.slice(0, 10).map(t => `
-                                    <div onclick="window.viewTask(${t.id})" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-emerald-100 transition-all group/item cursor-pointer shadow-sm">
-                                        <div class="w-10 h-10 bg-white text-emerald-600 rounded-xl flex items-center justify-center font-black text-[9px] uppercase border border-slate-100 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-all shadow-sm">${t.type?.substring(0,3) || 'TAR'}</div>
-                                        <div class="flex-1 min-w-0">
-                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.name}</h4>
-                                            <p class="text-[8px] font-black text-emerald-600 uppercase tracking-tighter mt-1">${t.type || 'General'}</p>
-                                        </div>
-                                    </div>
-                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin tareas registradas</p>'}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Col 2: Sessions -->
-                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
-                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div class="relative z-10">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
-                                <span class="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
-                                    <i data-lucide="calendar" class="w-4 h-4"></i>
-                                </span>
-                                Plan de Sesiones
-                            </h4>
-                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
-                                ${teamSessions.slice(0, 10).map(s => `
-                                    <div onclick="window.viewSessionFicha('${s.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-blue-100 transition-all group/item cursor-pointer shadow-sm">
-                                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover/item:bg-blue-600 group-hover/item:text-white transition-all">${s.fecha.split('-')[2]}</div>
-                                        <div class="flex-1 min-w-0">
-                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${s.titulo || s.nombre}</h4>
-                                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${s.fecha}</p>
-                                        </div>
-                                    </div>
-                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin sesiones registradas</p>'}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Col 3: Tournaments -->
-                    <div class="bg-white p-10 rounded-[3.5rem] border border-slate-100 shadow-sm flex flex-col min-h-[450px] relative overflow-hidden group">
-                        <div class="absolute -top-10 -right-10 w-40 h-40 bg-amber-50 rounded-full opacity-50 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div class="relative z-10">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-3">
-                                <span class="w-8 h-8 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center">
-                                    <i data-lucide="award" class="w-4 h-4"></i>
-                                </span>
-                                Rendimiento Torneos
-                            </h4>
-                            <div class="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[300px]">
-                                ${teamTournaments.slice(0, 10).map(t => `
-                                    <div onclick="window.viewTorneoRendimiento('${t.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.5rem] hover:bg-white border border-transparent hover:border-amber-100 transition-all group/item cursor-pointer shadow-sm">
-                                        <div class="w-10 h-10 bg-white text-amber-600 rounded-xl flex items-center justify-center shadow-sm border border-slate-100 group-hover/item:bg-amber-600 group-hover/item:text-white transition-all">
-                                            <i data-lucide="trophy" class="w-5 h-5"></i>
-                                        </div>
-                                        <div class="flex-1 min-w-0">
-                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${t.nombre}</h4>
-                                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">${t.fecha}</p>
-                                        </div>
-                                    </div>
-                                `).join('') || '<p class="text-center py-20 text-slate-300 font-bold uppercase text-[10px]">Sin torneos registrados</p>'}
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-
-                <!-- Squad List: Full Width -->
-                <div class="px-4 mb-16">
-                    <div class="bg-white p-12 rounded-[4rem] border border-slate-100 shadow-sm relative overflow-hidden">
-                        <div class="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
-                            <i data-lucide="users" class="w-64 h-64 text-blue-900"></i>
-                        </div>
-                        <div class="relative z-10">
-                            <div class="flex justify-between items-center mb-10 pb-6 border-b border-slate-50">
-                                <h4 class="text-xs font-black text-blue-900 uppercase tracking-widest flex items-center gap-3">
-                                    <span class="w-2 h-8 bg-blue-600 rounded-full"></span>
-                                    Ficha de Plantilla Actual
-                                </h4>
-                                <span class="px-5 py-2 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-100">${teamPlayers.length} Futbolistas Convocables</span>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                ${teamPlayers.map(p => `
-                                    <div onclick="window.viewPlayer('${p.id}')" class="flex items-center gap-4 p-5 bg-slate-50 rounded-[1.8rem] hover:bg-white border border-transparent hover:border-blue-100 transition-all group cursor-pointer shadow-sm">
-                                        <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 group-hover:bg-blue-600 group-hover:text-white transition-all text-xs">${p.dorsal || '--'}</div>
-                                        <div class="flex-1 min-w-0">
-                                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate">${p.nombre}</h4>
-                                            <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${p.posicion || 'Sin posición'}</p>
-                                        </div>
-                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-200 group-hover:text-blue-400 transition-all translate-x-0 group-hover:translate-x-1"></i>
-                                    </div>
-                                `).join('') || '<p class="col-span-full text-center py-24 text-slate-300 font-bold uppercase text-[10px] tracking-widest">Sin jugadores registrados en este equipo</p>'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tactical Area: Like in reports -->
-                <div class="px-4">
-                    <div class="bg-blue-950 p-12 rounded-[4.5rem] shadow-2xl relative overflow-hidden border-[12px] border-white/5">
-                        <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/50 via-transparent to-transparent opacity-50"></div>
-                        <div class="flex justify-between items-center mb-12 relative z-10">
-                            <div>
-                                <h4 class="text-xs font-black text-blue-400 uppercase tracking-[0.3em]">Scouting & Posicionamiento</h4>
-                                <p class="text-xl text-white font-black mt-2 tracking-tight">MAPA TÁCTICO DE JUGADORES</p>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <div class="relative">
-                                    <select onchange="window.updateTeamPitch(this.value, '${equipoid}')" class="pl-6 pr-12 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-[1.5rem] text-[11px] font-black uppercase text-white outline-none shadow-xl cursor-pointer hover:bg-white/20 transition-all appearance-none">
-                                        ${Object.entries(FORMATIONS).map(([fid, f]) => `
-                                            <option value="${fid}" ${fid === currentFormationId ? 'selected' : ''} class="text-slate-900">${f.name}</option>
-                                        `).join('')}
-                                    </select>
-                                    <i data-lucide="chevron-down" class="w-4 h-4 text-white/40 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-                                </div>
-                                <button onclick="window.openFullScreenPitch('team', '${equipoid}', '${currentFormationId}')" class="bg-blue-600 px-8 py-4 rounded-[1.5rem] text-[10px] font-black text-white uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-600/20">
-                                    <i data-lucide="maximize" class="w-4 h-4"></i>
-                                    Panorámica
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Pitch Container Fixed -->
-                        <div class="relative z-10 max-w-6xl mx-auto">
-                            <div class="bg-white/5 p-4 rounded-[3.5rem] backdrop-blur-sm border border-white/10">
-                                <div id="team-pitch-container" class="w-full shadow-2xl rounded-[3rem] overflow-hidden">
-                                    ${renderTacticalPitchHtml(teamPlayers, currentFormationId, window.innerWidth < 768 ? 'vertical' : 'horizontal')}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            contentContainer.innerHTML = '';
-            contentContainer.appendChild(wrapper);
-            if (window.lucide) lucide.createIcons();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-
-        } catch (err) {
-            console.error("Error viewTeamPlayers:", err);
-            window.customAlert('Error', 'No se pudo cargar la vista de equipo.', 'error');
-        }
-    };
-
-    window.updateTeamPitch = (formationId, equipoid) => {
-        if (!window.formationsState) window.formationsState = { teams: {}, torneos: {}, convocatorias: {} };
-        window.formationsState.teams[equipoid.toString()] = formationId;
-        
-        // Persistir en localStorage
-        localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
-        
-        window.viewTeamPlayers(equipoid);
-    };
-
-    window.openFullScreenPitch = async (type, id, formation) => {
-        let players = [];
-        
-        // Resolución robusta de la formación actual
-        let currentFormation = formation || 'F11_433';
-        
-        // Si nos llega la por defecto, intentamos buscar una más específica en el estado global
-        if (!window.formationsState) {
-            const saved = localStorage.getItem('ms_coach_formation_state');
-            if (saved) window.formationsState = JSON.parse(saved);
-        }
-
-        if (currentFormation === 'F11_433' && window.formationsState) {
-            if (type === 'team' && window.formationsState.teams) currentFormation = window.formationsState.teams[id] || 'F11_433';
-            else if (type === 'torneo' && window.formationsState.torneos) currentFormation = window.formationsState.torneos[id] || 'F11_433';
-            else if (type === 'conv' && window.formationsState.torneos) currentFormation = window.formationsState.torneos[id] || 'F11_433';
-            else if (type === 'conv' && window.formationsState.convocatorias) currentFormation = window.formationsState.convocatorias[id] || 'F11_433';
-        }
-
-        if (type === 'team') {
-            const { data: teamPlayers } = await supabaseClient.from('jugadores').select('*').eq('equipoid', id);
-            players = teamPlayers || [];
-        } else if (type === 'scouting') {
-            const allPlayers = await db.getAll('jugadores');
-            players = allPlayers.filter(p => {
-                const teamMatch = campogramaFilters.equipos.length === 0 || campogramaFilters.equipos.includes((p.equipoid || "").toString());
-                const levelMatch = campogramaFilters.niveles.length === 0 || campogramaFilters.niveles.includes(Number(p.nivel || 3));
-                const posMatch = campogramaFilters.posiciones.length === 0 || campogramaFilters.posiciones.includes(p.posicion);
-                const yearMatch = campogramaFilters.years.length === 0 || campogramaFilters.years.includes(p.anionacimiento?.toString());
-                const clubMatch = campogramaFilters.clubesConvenidos.length === 0 || campogramaFilters.clubesConvenidos.includes(p.equipoConvenido);
-                return teamMatch && levelMatch && posMatch && yearMatch && clubMatch;
-            });
-        } else {
-            // Convocatoria or Torneo - Fetch from Supabase for consistency
-            const { data: conv } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
-            if (conv) {
-                const allPlayers = await db.getAll('jugadores');
-                const pids = Array.isArray(conv.playerids) ? conv.playerids.map(x => x.toString()) : [];
-                players = allPlayers.filter(p => pids.includes(p.id.toString()));
-            }
-        }
-        
-        const fsDiv = document.createElement('div');
-        fsDiv.className = 'fixed inset-0 z-[1000] bg-slate-900 p-10 flex flex-col animate-in fade-in zoom-in duration-300';
-        fsDiv.innerHTML = `
-            <div class="flex justify-between items-center mb-10">
-                <div>
-                    <h2 class="text-white text-3xl font-black uppercase tracking-tight">Pizarra Táctica Panorámica</h2>
-                    <p class="text-blue-400 text-xs font-bold uppercase tracking-widest mt-1">Vista del sistema: ${FORMATIONS[currentFormation]?.name || currentFormation}</p>
-                </div>
-                <button onclick="this.parentElement.parentElement.remove()" class="p-5 bg-white/5 text-white rounded-full hover:bg-white/20 transition-all border border-white/10"><i data-lucide="x" class="w-10 h-10"></i></button>
-            </div>
-            <div class="flex-1 flex justify-center items-center overflow-hidden p-4 md:p-8">
-                <div class="w-full h-full flex items-center justify-center">
-                    <div class="w-full max-w-[1400px] h-fit max-h-full">
-                        ${renderTacticalPitchHtml(players, currentFormation, 'horizontal')}
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(fsDiv);
-        if (window.lucide) lucide.createIcons();
-    };
-
-    window.addPlayerToTeam = (equipoid) => {
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <h3 class="text-2xl font-bold mb-6 text-slate-800">Nuevo Jugador</h3>
-                <form id="new-player-form" class="space-y-4">
-                    <input type="hidden" name="equipoid" value="${equipoid}">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2"><input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required></div>
-                        <div class="col-span-2">
-                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Posiciones del Jugador</label>
-                             ${window.renderPositionSelector()}
-                        </div>
-                        <select name="pie" class="w-full p-3 border rounded-xl bg-white outline-none">
-                            <option value="">Selecciona Pie...</option>
-                            <option value="DIESTRO">DIESTRO</option>
-                            <option value="ZURDO">ZURDO</option>
-                            <option value="AMBIDIESTRO">AMBIDIESTRO</option>
-                        </select>
-                        <select name="sexo" class="w-full p-3 border rounded-xl bg-white outline-none">
-                            <option value="Masculino">Masculino</option>
-                            <option value="Femenino">Femenino</option>
-                            <option value="Otro">Otro</option>
-                        </select>
-                        <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24"></textarea>
-
-                    </div>
-                    <div class="flex gap-4 mt-6">
-                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all">Guardar Jugador</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        document.getElementById('new-player-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
-            data.posicion = formData.getAll('posicion').join(', ');
-            await db.add('jugadores', data);
-            window.viewTeamPlayers(equipoid);
+            
+            const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+            data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (session.equipoid || null);
+            
+            // Reconstruct data structure
+            const extra = {
+                eids: checkedTeamIds,
+                sw: formData.getAll('sharedWith'),
+            };
+            
+            data.taskids = [1,2,3,4,5,6].map(num => formData.get(`task-select-${num}`)).filter(x => x);
+            data.playerids = formData.getAll('playerids');
+            data.lugar = window.serializeLugarMetadata(data.lugar, extra);
+            delete data.equipoids;
+            delete data.sharedWith;
+
+            if (isEdit) {
+                await db.update('sesiones', { ...data, id: session.id });
+            } else {
+                await db.add('sesiones', { ...data, createdBy: currentUser.id });
+            }
+            
+            window.customAlert('¡Éxito!', 'Sesión guardada correctamente.', 'success');
             closeModal();
-        });
-        
-    };
-
-    window.renderJugadores = async function(container, onlyTable = false) {
-        try {
-            const players = await db.getAll('jugadores');
-            const teams = await db.getAll('equipos');
-            const sortedTeams = window.getSortedTeams(teams);
-            
-            if (!window.currentPlayerTeamTab) window.currentPlayerTeamTab = 'all';
-            if (!window.playerFilters) {
-                window.playerFilters = { 
-                    search: '', 
-                    teams: [], 
-                    clubs: [], 
-                    positions: [], 
-                    levels: [] 
-                };
-            }
-
-            if (!onlyTable) {
-                container.innerHTML = `
-                    <!-- Sub-tabs -->
-                    <div class="mb-8 flex flex-wrap gap-2 animate-in slide-in-from-left duration-500">
-                        <button onclick="window.switchPlayerTeamTab('all')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab === 'all' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            TODOS LOS JUGADORES
-                        </button>
-                        ${sortedTeams.map(t => `
-                            <button onclick="window.switchPlayerTeamTab('${t.id}')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                                ${t.nombre}
-                            </button>
-                        `).join('')}
-                        <button onclick="window.switchPlayerTeamTab('none')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${window.currentPlayerTeamTab === 'none' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            JUGADORES LIBRES
-                        </button>
-                    </div>
-
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                        <div class="flex flex-wrap flex-1 gap-3 w-full">
-                            <div class="relative flex-1 min-w-[300px]">
-                                <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                <input type="text" id="player-search-input" value="${window.playerFilters.search}" placeholder="Buscar jugador..." class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm" oninput="window.togglePlayerFilter('search', this.value)">
-                            </div>
-                            
-                            <!-- Multi-Select Filters -->
-                            <div class="flex flex-wrap gap-2">
-                                ${(() => {
-                                    const renderFilter = (id, label, options, currentValues) => {
-                                        const displayText = currentValues.length === 0 ? `TODOS ${label}` : `${currentValues.length} ${label}`;
-                                        return `
-                                            <div class="relative group/ms">
-                                                <button id="${id}-btn" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-menu' && m.classList.add('hidden')); document.getElementById('${id}-menu').classList.toggle('hidden')" 
-                                                    class="px-5 py-3 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm flex items-center gap-2 hover:border-blue-200">
-                                                    <span>${displayText.toUpperCase()}</span>
-                                                    <i data-lucide="chevron-down" class="w-3 h-3 opacity-50"></i>
-                                                </button>
-                                                <div id="${id}-menu" class="hidden absolute top-full left-0 mt-2 w-64 bg-white border border-slate-100 rounded-3xl shadow-2xl z-[100] p-4 max-h-72 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
-                                                    <div class="space-y-1">
-                                                        <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                                                            <input type="checkbox" onchange="window.togglePlayerFilter('${id}', 'TODOS')" ${currentValues.length === 0 ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
-                                                            <span class="text-xs font-black text-slate-400 uppercase">Todos</span>
-                                                        </label>
-                                                        <div class="h-px bg-slate-50 my-2"></div>
-                                                        ${options.map(opt => {
-                                                            const isSelected = currentValues.includes(opt.value.toString());
-                                                            return `
-                                                                <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                                                                    <input type="checkbox" onchange="window.togglePlayerFilter('${id}', '${opt.value}')" ${isSelected ? 'checked' : ''} class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
-                                                                    <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'} uppercase">${opt.label}</span>
-                                                                </label>
-                                                            `;
-                                                        }).join('')}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    `;
-                                };
-
-                                    return `
-                                        ${window.currentPlayerTeamTab === 'all' ? renderFilter('team', 'Equipos', sortedTeams.map(t=>({value:t.id, label:t.nombre})).concat([{value:'SIN_EQUIPO', label:'Libres'}]), window.playerFilters.teams) : ''}
-                                        ${renderFilter('club', 'Clubes', [...new Set(players.map(p => (p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase()).filter(c => c))].sort().map(c=>({value:c, label:c})), window.playerFilters.clubs)}
-                                        ${renderFilter('pos', 'Posiciones', PLAYER_POSITIONS.map(p=>({value:p, label:p})), window.playerFilters.positions)}
-                                        ${renderFilter('level', 'Niveles', [1,2,3,4,5].map(lvl=>({value:lvl, label:`Nivel ${'★'.repeat(lvl)}`})), window.playerFilters.levels)}
-                                    `;
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="players-table-container">
-                        <!-- Se inyecta vía updateTable -->
-                    </div>
-                `;
-            }
-
-            const tableContainer = onlyTable ? document.getElementById('players-table-container') : container.querySelector('#players-table-container');
-
-            window.switchPlayerTeamTab = (tab) => {
-                window.currentPlayerTeamTab = tab;
-                window.renderJugadores(document.getElementById('content-container'));
-            };
-
-            const updateTable = () => {
-                if (!tableContainer) return;
-
-                const searchVal = (window.playerFilters.search || '').toLowerCase();
-                
-                const filtered = (players || []).filter(p => {
-                    const matchesSearch = (p.nombre || '').toLowerCase().includes(searchVal);
-                    
-                    let matchesTeam = true;
-                    if (window.currentPlayerTeamTab === 'none') {
-                        matchesTeam = !p.equipoid;
-                    } else if (window.currentPlayerTeamTab !== 'all') {
-                        matchesTeam = p.equipoid?.toString() === window.currentPlayerTeamTab.toString();
-                    } else {
-                        // Tab "Todos": usar filtro multi-select si hay algo seleccionado
-                        matchesTeam = window.playerFilters.teams.length === 0 || 
-                                     (window.playerFilters.teams.includes('SIN_EQUIPO') && !p.equipoid) ||
-                                     (window.playerFilters.teams.includes(p.equipoid?.toString()));
-                    }
-                    
-                    const matchesClub = window.playerFilters.clubs.length === 0 || window.playerFilters.clubs.includes((p.equipoConvenido || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase());
-                    const matchesPos = window.playerFilters.positions.length === 0 || window.playerFilters.positions.some(pos => (p.posicion || '').includes(pos));
-                    const matchesLevel = window.playerFilters.levels.length === 0 || window.playerFilters.levels.includes(p.nivel?.toString());
-                    
-                    return matchesSearch && matchesTeam && matchesClub && matchesPos && matchesLevel;
-                });
-
-                tableContainer.innerHTML = `
-                    <!-- Desktop View (Table) -->
-                    <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-                        <table class="w-full border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50/50 text-left border-b border-slate-100">
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo RS</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Posición</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center font-bold">Nivel</th>
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-50">
-                                ${filtered.map(p => {
-                                    const playerTeam = teams.find(t => t.id == p.equipoid);
-                                    let levelVal = Math.min(Math.max(parseInt(p.nivel) || 1, 1), 5);
-
-                                    return `
-                                        <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-all group">
-                                            <td class="px-8 py-4 flex items-center gap-4 min-w-[280px]">
-                                                ${p.foto ? 
-                                                    `<img src="${p.foto}" class="w-10 h-10 rounded-xl object-cover shadow-sm transition-all">` :
-                                                    `<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm shadow-sm">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
-                                                }
-                                                <div class="flex-1">
-                                                    <span contenteditable="true" onblur="window.updatePlayerField('${p.id}', 'nombre', this.textContent)" class="text-sm font-black text-slate-800 uppercase tracking-tight block outline-none px-1 rounded-md transition-all hover:bg-slate-100 focus:bg-white focus:ring-2 ring-blue-100 cursor-text">${p.nombre}</span>
-                                                    <span contenteditable="true" onblur="window.updatePlayerField('${p.id}', 'anionacimiento', this.textContent)" class="text-[9px] font-black text-slate-300 uppercase tracking-widest block mt-0.5 px-1 outline-none hover:bg-slate-100 rounded cursor-text">${p.anionacimiento || '----'}</span>
-                                                </div>
-                                            </td>
-                                            <td class="px-8 py-4 text-center">
-                                                <select onchange="window.updatePlayerField('${p.id}', 'equipoid', this.value)" class="bg-transparent border-none text-[10px] font-bold text-slate-600 uppercase tracking-tight outline-none focus:ring-2 ring-blue-50 rounded p-1 cursor-pointer">
-                                                    <option value="">LIBRE</option>
-                                                    ${sortedTeams.map(t => `<option value="${t.id}" ${p.equipoid == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0].toUpperCase()}</option>`).join('')}
-                                                </select>
-                                            </td>
-                                            <td class="px-8 py-4 text-center">
-                                                <select onchange="window.updatePlayerField('${p.id}', 'equipoConvenido', this.value)" class="bg-transparent border-none text-[10px] font-bold text-slate-400 uppercase tracking-tight outline-none focus:ring-2 ring-blue-50 rounded p-1 cursor-pointer">
-                                                    <option value="">NINGUNO</option>
-                                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${p.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
-                                                </select>
-                                            </td>
-                                            <td class="px-8 py-4 text-center">
-                                                <select onchange="window.updatePlayerField('${p.id}', 'posicion', this.value)" class="bg-slate-100 border-none text-[9px] font-black text-slate-600 uppercase tracking-widest rounded-lg px-2 py-1 outline-none focus:ring-2 ring-blue-50 cursor-pointer">
-                                                    <option value="">S/P</option>
-                                                    ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${p.posicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
-                                                </select>
-                                            </td>
-                                            <td class="px-8 py-4 text-center">
-                                                <div class="flex items-center justify-center gap-0.5 text-slate-200 hover:text-amber-400 transition-colors cursor-pointer" onclick="const newLvl = (parseInt('${p.nivel}')||0)%5+1; window.updatePlayerField('${p.id}', 'nivel', newLvl)">
-                                                    ${Array.from({length: 5}, (_, i) => i < levelVal ? '<span class="text-amber-400">★</span>' : '<span>★</span>').join('')}
-                                                </div>
-                                            </td>
-                                            <td class="px-8 py-4 text-right">
-                                                <div class="flex justify-end gap-1">
-                                                    <button onclick="window.viewPlayer('${p.id}')" title="Ver Ficha" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
-                                                        <i data-lucide="eye" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.editPlayer('${p.id}')" title="Editar Completo" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.deletePlayer('${p.id}')" title="Eliminar" class="p-2 bg-white shadow-sm border border-slate-100 rounded-xl text-red-200 hover:text-red-600 hover:bg-red-50 transition-all">
-                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-                                }).join('') || `<tr><td colspan="6" class="py-24 text-center text-slate-300 italic">No hay jugadores registrados</td></tr>`}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Mobile View (Cards) -->
-                    <div class="md:hidden space-y-3">
-                        ${filtered.length > 0 ? filtered.map(p => {
-                            const team = teams.find(t => t.id == p.equipoid);
-                            let levelVal = parseInt(p.nivel) || 1;
-                            return `
-                                <div onclick="window.viewPlayer(${p.id})" class="bg-white p-4 rounded-[1.5rem] border border-slate-100 shadow-sm flex items-center gap-3 active:scale-[0.98] transition-all">
-                                    <div class="relative">
-                                        ${p.foto ? 
-                                            `<img src="${p.foto}" class="w-14 h-14 rounded-2xl object-cover">` :
-                                            `<div class="w-14 h-14 rounded-2xl bg-slate-50 text-slate-300 flex items-center justify-center font-black text-lg">${(p.nombre || 'J').substring(0,1).toUpperCase()}</div>`
-                                        }
-                                        <div class="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-[10px] font-black border-2 border-white">${p.dorsal || '--'}</div>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <h4 class="font-bold text-slate-800 text-sm truncate">${p.nombre}</h4>
-                                        <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded">${p.posicion || 'S/P'}</span>
-                                            <span class="text-[9px] font-bold text-slate-400 uppercase truncate">${team ? team.nombre : 'Libre'}</span>
-                                            ${p.equipoConvenido ? `<span class="text-[9px] font-bold text-emerald-600 uppercase truncate bg-emerald-50 px-1.5 py-0.5 rounded">${p.equipoConvenido}</span>` : ''}
-                                        </div>
-                                    </div>
-                                    <div class="flex flex-col items-end gap-2">
-                                         <div class="flex text-amber-400 text-[8px]">${'★'.repeat(levelVal)}</div>
-                                         <button onclick="event.stopPropagation(); window.deletePlayer(${p.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('') : `
-                                 <p class="text-xs text-slate-400">Sin resultados</p>
-                             </div>
-                        `}
-                    </div>
-                `;
-                if (window.lucide) lucide.createIcons();
-            };
-
-            window.togglePlayerFilter = async (type, value) => {
-                if (type === 'search') {
-                    window.playerFilters.search = value;
-                    updateTable();
-                    return;
-                }
-                const filterKey = type === 'team' ? 'teams' : type === 'club' ? 'clubs' : type === 'pos' ? 'positions' : 'levels';
-                if (value === 'TODOS') {
-                    window.playerFilters[filterKey] = [];
-                } else {
-                    const idx = window.playerFilters[filterKey].indexOf(value.toString());
-                    if (idx > -1) window.playerFilters[filterKey].splice(idx, 1);
-                    else window.playerFilters[filterKey].push(value.toString());
-                }
-                await window.renderJugadores(container);
-                // Mantener el menú abierto tras el re-render
-                const menu = document.getElementById(`${type}-menu`);
-                if (menu) menu.classList.remove('hidden');
-            };
-
-            updateTable();
-            if (window.lucide) lucide.createIcons();
-        } catch (err) {
-            console.error("Error en renderJugadores:", err);
-            container.innerHTML = `<div class="p-20 text-center text-red-500 font-bold uppercase tracking-widest text-xs">Error al cargar listado: ${err.message}</div>`;
-        }
-    }
-
-    window.updatePlayerField = async (id, field, value) => {
-        let cleanValue = typeof value === 'string' ? value.trim() : value;
-        if (field === 'nombre' || field === 'posicion' || field === 'equipoConvenido') cleanValue = cleanValue.toUpperCase();
-        
-        try {
-            // Usar db.update para sincronizar tanto localmente como en la nube
-            await db.update('jugadores', { id: Number(id), [field]: cleanValue });
-            
-            // Si el campo afecta visualmente o a los filtros, refrescamos la tabla
-            if (['nivel', 'nombre', 'posicion', 'equipoConvenido', 'equipoid', 'anionacimiento'].includes(field)) {
-                const container = document.getElementById('content-container');
-                if (container) await window.renderJugadores(container, true);
-            }
-        } catch (err) {
-            console.error('Error actualizando jugador:', err);
-            window.customAlert('Error', 'No se pudo guardar el cambio', 'error');
-        }
-    };
-
-    window.editPlayer = async (id) => {
-        await window.viewPlayer(id);
-    };
-
-    window.viewPlayer = async (id) => {
-        const currentUserRes = await supabaseClient.auth.getUser();
-        const currentUser = currentUserRes.data.user;
-
-        const { data: allConvs } = await (supabaseClient.from('convocatorias').select('*'));
-        const { data: allSess } = await (supabaseClient.from('sesiones').select('*'));
-        const { data: allAsistencia } = await (supabaseClient.from('asistencia').select('*'));
-        const teams = await db.getAll('equipos');
-        const players = await db.getAll('jugadores');
-        const player = players.find(p => p.id == id);
-        if (!player) return;
-
-        // Helper para visibilidad (igual que en el calendario)
-        const isSharedWithMe = (item) => {
-            if (item.sharedWith) {
-                const sw = Array.isArray(item.sharedWith) ? item.sharedWith : [item.sharedWith.toString()];
-                if (sw.includes(currentUser.id)) return true;
-            }
-            if (item.lugar && item.lugar.includes(' ||| ')) {
-                try {
-                    const extra = JSON.parse(item.lugar.split(' ||| ')[1]);
-                    if (extra.sw) {
-                        const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
-                        if (sw.includes(currentUser.id)) return true;
-                    }
-                } catch (e) {}
-            }
-            return false;
+            window.switchView('sesiones');
         };
-
-        const pidStr = id.toString();
-        
-        // Filtrar por propiedad/compartido Y por pertenencia del jugador
-        const playerConvs = allConvs.filter(c => {
-            return Array.isArray(c.playerids) && c.playerids.map(x => x.toString()).includes(pidStr);
-        });
-
-        const playerSesiones = allSess.filter(s => {
-            const isOwnerOrShared = s.createdBy === currentUser.id || isSharedWithMe(s);
-            const isParticipant = Array.isArray(s.playerids) && s.playerids.map(x => x.toString()).includes(pidStr);
-            return isOwnerOrShared && isParticipant;
-        });
-
-        const playerAsistencias = allAsistencia.filter(a => {
-            const isOwnerOrShared = a.createdBy === currentUser.id || isSharedWithMe(a);
-            const isParticipant = a.data && (a.data[pidStr] || a.data[id]);
-            return isOwnerOrShared && isParticipant;
-        });
-
-        const stats = {
-            asiste: playerAsistencias.filter(a => a.data[id] === 'asiste' || a.data[id] === 'presente').length,
-            ausente: playerAsistencias.filter(a => a.data[id] === 'ausente').length,
-            sin_motivo: playerAsistencias.filter(a => a.data[id] === 'sin_motivo').length,
-            enfermo: playerAsistencias.filter(a => a.data[id] === 'enfermo').length,
-            lesionado: playerAsistencias.filter(a => a.data[id] === 'lesionado' || a.data[id] === 'lesion').length,
-            seleccion: playerAsistencias.filter(a => a.data[id] === 'seleccion').length,
-            zubieta: playerAsistencias.filter(a => a.data[id] === 'zubieta').length,
-            estudiar: playerAsistencias.filter(a => a.data[id] === 'estudiar').length,
-            otro: playerAsistencias.filter(a => a.data[id] === 'otro').length,
-            total: playerAsistencias.length
-        };
-        const attendanceRate = stats.total > 0 ? Math.round((stats.asiste / stats.total) * 100) : 0;
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'animate-in fade-in slide-in-from-right duration-500';
-        wrapper.innerHTML = `
-            <div class="max-w-6xl mx-auto pb-20">
-                <!-- Header / Intro -->
-                <div class="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-100 shadow-sm mb-8 relative overflow-hidden">
-                    <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 rounded-full -mr-32 -mt-32 blur-3xl"></div>
-                    <div class="flex flex-col md:flex-row items-center gap-10 relative z-10">
-                        <div class="relative group cursor-pointer" onclick="document.getElementById('player-photo-input').click()">
-                            ${player.foto ? 
-                                `<img src="${player.foto}" class="w-32 h-32 md:w-48 md:h-48 rounded-[2.5rem] object-cover shadow-2xl ring-8 ring-slate-50">` :
-                                `<div class="w-32 h-32 md:w-48 md:h-48 rounded-[2.5rem] bg-blue-600 text-white flex items-center justify-center text-6xl font-black shadow-2xl ring-8 ring-slate-50">${(player.nombre || 'J').substring(0,1)}</div>`
-                            }
-                            <div class="absolute bottom-4 right-4 w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-xl group-hover:bg-blue-600 group-hover:text-white transition-all scale-0 group-hover:scale-100 duration-300">
-                                <i data-lucide="camera" class="w-5 h-5"></i>
-                            </div>
-                            <input type="file" id="player-photo-input" class="hidden" accept="image/*">
-                        </div>
-                        <div class="flex-1 text-center md:text-left">
-                            <div class="flex flex-col md:flex-row items-center gap-4 mb-4 justify-center md:justify-start">
-                                <h2 class="text-4xl md:text-5xl font-black text-slate-900 tracking-tight uppercase">${player.nombre}</h2>
-                                <span class="px-4 py-1 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">${teams.find(t => t.id == player.equipoid)?.nombre || 'Jugador Libre'}</span>
-                            </div>
-                            <div class="flex flex-wrap justify-center md:justify-start gap-3 items-center">
-                                <div class="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
-                                    <i data-lucide="fingerprint" class="w-4 h-4 text-slate-400"></i>
-                                    <span class="text-xs font-black text-slate-500 uppercase tracking-widest">ID #${player.id}</span>
-                                </div>
-                                <div class="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
-                                    <i data-lucide="map-pin" class="w-4 h-4 text-slate-400"></i>
-                                    <span class="text-xs font-black text-slate-500 uppercase tracking-widest">${player.equipoConvenido || 'Sin Club Convenido'}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex gap-3">
-                            <button onclick="window.printPlayerCard(${player.id})" class="px-6 py-4 bg-emerald-600 text-white font-black rounded-2xl hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px] flex items-center gap-2 shadow-lg shadow-emerald-500/20">
-                                <i data-lucide="file-down" class="w-4 h-4"></i>
-                                EXPORTAR FICHA PDF
-                            </button>
-                            <button onclick="window.switchView('jugadores')" class="px-6 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">VOLVER AL LISTADO</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <!-- Left Column: Info & Form -->
-                    <div class="lg:col-span-2 space-y-8">
-                        <div class="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
-                            <div class="flex items-center justify-between mb-10">
-                                <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-3">
-                                    <i data-lucide="user-plus" class="w-6 h-6 text-blue-600"></i>
-                                    Información Técnica
-                                </h3>
-                            </div>
-                            <form id="edit-player-form-full" class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <input type="hidden" name="id" value="${player.id}">
-                                <div class="col-span-1">
-                                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Nombre y Apellidos</label>
-                                     <input name="nombre" value="${player.nombre || ''}" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all">
-                                </div>
-                                <div class="col-span-1">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Equipo / Categoría</label>
-                                    <select name="equipoid" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
-                                        <option value="">Sin equipo</option>
-                                        ${window.getSortedTeams(teams).map(t => `<option value="${t.id}" ${player.equipoid == t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="col-span-1">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Club Convenido</label>
-                                    <select name="equipoConvenido" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
-                                        <option value="">Ninguno</option>
-                                        ${CLUBES_CONVENIDOS.map(c => `<option value="${c}" ${player.equipoConvenido === c ? 'selected' : ''}>${c}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="col-span-full">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Posiciones Técnicas (Multiselección)</label>
-                                    ${window.renderPositionSelector((player.posicion || '').split(',').map(s=>s.trim()), 'edit-pos')}
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Año de Nacimiento</label>
-                                    <input name="anionacimiento" type="number" value="${player.anionacimiento || ''}" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Fecha de Nacimiento</label>
-                                    <input name="fechanacimiento" type="date" value="${player.fechanacimiento || ''}" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Nivel Actual (1-5)</label>
-                                    <select name="nivel" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer">
-                                        ${[1,2,3,4,5].map(n => `<option value="${n}" ${player.nivel == n ? 'selected' : ''}>${'★'.repeat(n)} ${n === 5 ? 'Top Elite' : ''}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Lateralidad / Pie</label>
-                                    <select name="pie" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer">
-                                        <option value="DIESTRO" ${player.pie === 'DIESTRO' ? 'selected' : ''}>DIESTRO</option>
-                                        <option value="ZURDO" ${player.pie === 'ZURDO' ? 'selected' : ''}>ZURDO</option>
-                                        <option value="AMBIDIESTRO" ${player.pie === 'AMBIDIESTRO' ? 'selected' : ''}>AMBIDIESTRO</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Género / Sexo</label>
-                                    <select name="sexo" class="w-full p-5 bg-slate-50 border-none rounded-2xl font-bold text-slate-800 outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer">
-                                        <option value="Masculino" ${player.sexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
-                                        <option value="Femenino" ${player.sexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
-                                        <option value="Otro" ${player.sexo === 'Otro' ? 'selected' : ''}>Otro</option>
-                                    </select>
-                                </div>
-                                <div class="col-span-full">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Análisis Técnico / Notas de Scout</label>
-                                    <textarea name="notas" class="w-full p-6 bg-slate-50 border-none rounded-3xl h-48 font-medium text-slate-700 outline-none focus:ring-4 ring-blue-50 transition-all">${player.notas || ''}</textarea>
-                                </div>
-                                <div class="col-span-full pt-4 flex gap-4">
-                                    <button type="submit" class="flex-[3] py-5 bg-blue-600 text-white font-black rounded-3xl shadow-2xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-[1.02] transition-all uppercase tracking-widest text-xs">Guardar Cambios en Ficha</button>
-                                    <button type="button" onclick="window.deletePlayer(${player.id})" class="flex-1 py-5 bg-rose-50 text-rose-500 font-black rounded-3xl hover:bg-rose-100 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
-                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                        Borrar
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Right Column: Stats & History -->
-                    <div class="space-y-8">
-                        <!-- Asistencia Summary -->
-                        <div class="bg-slate-900 text-white p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden">
-                            <i data-lucide="check-circle" class="absolute -bottom-10 -right-10 w-48 h-48 text-white/5"></i>
-                            <h4 class="text-xs font-black text-blue-400 uppercase tracking-[0.2em] mb-8">Asistencia Global</h4>
-                            <div class="flex items-end gap-3 mb-8">
-                                <span class="text-6xl font-black">${attendanceRate}%</span>
-                                <span class="text-blue-400 font-bold mb-2">Ratio</span>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4 mb-8">
-                                <div class="bg-emerald-500/10 p-4 rounded-2xl border border-emerald-500/20">
-                                    <p class="text-[9px] font-black text-emerald-400 uppercase mb-1">Presencias</p>
-                                    <p class="text-2xl font-black text-emerald-400">${stats.asiste}</p>
-                                </div>
-                                <div class="bg-rose-500/10 p-4 rounded-2xl border border-rose-500/20">
-                                    <p class="text-[9px] font-black text-rose-400 uppercase mb-1">Ausencias</p>
-                                    <p class="text-2xl font-black text-rose-400">${stats.total - stats.asiste}</p>
-                                </div>
-                            </div>
-                            
-                            <h5 class="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-4 border-b border-white/5 pb-2">Desglose Detallado</h5>
-                            <div class="grid grid-cols-2 gap-y-3 gap-x-6">
-                                ${[
-                                    { label: 'Asiste', val: stats.asiste, color: 'text-emerald-400' },
-                                    { label: 'Ausente', val: stats.ausente, color: 'text-rose-400' },
-                                    { label: 'Sin Motivo', val: stats.sin_motivo, color: 'text-rose-400/70' },
-                                    { label: 'Enfermo', val: stats.enfermo, color: 'text-amber-400' },
-                                    { label: 'Lesionado', val: stats.lesionado, color: 'text-amber-500' },
-                                    { label: 'Selección', val: stats.seleccion, color: 'text-blue-400' },
-                                    { label: 'Zubieta', val: stats.zubieta, color: 'text-indigo-400' },
-                                    { label: 'Estudiar', val: stats.estudiar, color: 'text-violet-400' },
-                                    { label: 'Otro', val: stats.otro, color: 'text-slate-400' }
-                                ].map(s => `
-                                    <div class="flex justify-between items-center text-[11px]">
-                                        <span class="font-bold text-white/50">${s.label}</span>
-                                        <span class="font-black ${s.color}">${s.val}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <!-- Torneos History -->
-                        <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i data-lucide="trophy" class="w-4 h-4 text-blue-500"></i>
-                                Historial Competitivo
-                            </h4>
-                            <div class="space-y-4">
-                                ${playerConvs.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO').map(c => {
-                                    const evalData = c.rendimiento && c.rendimiento[id] ? c.rendimiento[id] : null;
-                                    return `
-                                        <div onclick="window.viewTorneoRendimiento(${c.id})" class="p-5 bg-slate-50 rounded-2xl border border-slate-100/50 hover:border-blue-200 hover:bg-white hover:shadow-xl transition-all group cursor-pointer">
-                                            <div class="flex justify-between items-start mb-3">
-                                                <div>
-                                                    <p class="text-[9px] font-bold text-blue-600 uppercase opacity-60 tracking-widest">${c.fecha}</p>
-                                                    <p class="text-xs font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                                                </div>
-                                                <div class="bg-blue-600 text-white w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs">
-                                                    ${evalData ? evalData.score : '--'}
-                                                </div>
-                                            </div>
-                                            ${evalData ? `<p class="text-[10px] text-slate-500 italic leading-relaxed border-t pt-3 border-slate-200 mt-2 line-clamp-2">${evalData.comment}</p>` : ''}
-                                        </div>
-                                    `;
-                                }).join('') || '<p class="text-center py-10 text-[10px] font-bold text-slate-300 uppercase tracking-widest">Sin torneos registrados</p>'}
-                            </div>
-                        </div>
-
-                        <!-- Sesiones Summary -->
-                        <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i data-lucide="calendar" class="w-4 h-4 text-emerald-500"></i>
-                                Sesiones de Entrenamiento
-                            </h4>
-                            <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                ${(() => {
-                                    const combinedSesiones = [...playerSesiones].sort((a,b) => b.fecha.localeCompare(a.fecha));
-
-                                    return combinedSesiones.map(s => `
-                                        <div onclick="window.viewSession(${s.id})" class="flex items-center gap-4 p-3 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-emerald-100 group">
-                                            <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${s.fecha.split('-')[2]}</div>
-                                            <div class="min-w-0 flex-1">
-                                                <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-emerald-600 transition-colors">${s.titulo || s.nombre}</p>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(s.fecha).toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                                            </div>
-                                            <i data-lucide="chevron-right" class="w-3 h-3 text-slate-200 group-hover:text-emerald-400"></i>
-                                        </div>
-                                    `).join('') || '<p class="text-center py-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sin sesiones</p>';
-                                })()}
-                            </div>
-                        </div>
-
-                        <!-- Convocatorias History -->
-                        <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm mt-8">
-                            <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <i data-lucide="clipboard-list" class="w-4 h-4 text-blue-500"></i>
-                                Historial de Convocatorias
-                            </h4>
-                            <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                ${playerConvs.filter(c => c.tipo !== 'Torneo').sort((a,b) => b.fecha.localeCompare(a.fecha)).map(c => `
-                                    <div onclick="window.viewConvocatoria(${c.id})" class="flex items-center gap-4 p-3 hover:bg-blue-50 rounded-xl transition-all cursor-pointer border border-transparent hover:border-blue-100 group">
-                                        <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black text-[10px] group-hover:bg-white transition-colors">${c.fecha.split('-')[2]}</div>
-                                        <div class="min-w-0 flex-1">
-                                            <div class="flex items-center gap-2">
-                                                <span class="px-1 text-[7px] font-black bg-blue-100 text-blue-600 rounded uppercase tracking-tighter">${c.tipo}</span>
-                                                <p class="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                                            </div>
-                                            <p class="text-[8px] font-bold text-slate-400 uppercase">${new Date(c.fecha).toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                                        </div>
-                                        <i data-lucide="chevron-right" class="w-3 h-3 text-slate-200 group-hover:text-blue-400"></i>
-                                    </div>
-                                `).join('') || '<p class="text-center py-4 text-[10px] text-slate-400 font-bold uppercase tracking-widest">Sin convocatorias</p>'}
-                            </div>
-                        </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        contentContainer.innerHTML = '';
-        contentContainer.appendChild(wrapper);
-        if (window.lucide) lucide.createIcons();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-
-        // Handle Image Upload
-        document.getElementById('player-photo-input').onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            try {
-                const url = await db.uploadImage(file);
-                if (url) {
-                    player.foto = url;
-                    await db.update('jugadores', player);
-                    window.viewPlayer(id);
-                }
-            } catch (err) { console.error(err); }
-        };
-
-        // Handle Form Submit
-        document.getElementById('edit-player-form-full').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
-            data.posicion = formData.getAll('posicion').join(', ');
-            
-            const upId = Number(data.id);
-            const updatePayload = {
-                id: upId,
-                nombre: data.nombre,
-                equipoid: data.equipoid ? Number(data.equipoid) : null,
-                posicion: data.posicion,
-                anionacimiento: data.anionacimiento ? Number(data.anionacimiento) : null,
-                fechanacimiento: data.fechanacimiento || null,
-                pie: data.pie || null,
-                sexo: data.sexo || 'Masculino',
-                nivel: data.nivel ? Number(data.nivel) : 3,
-                equipoConvenido: data.equipoConvenido || null,
-                notas: data.notas
-            };
-
-            try {
-                await db.update('jugadores', updatePayload);
-                window.customAlert('¡Actualizado!', 'La ficha se ha guardado con éxito.', 'success');
-                window.viewPlayer(upId);
-            } catch (err) {
-                console.error(err);
-                window.customAlert('Error al guardar', 'No se ha podido guardar la ficha: ' + err.message, 'error');
-            }
-        };
-    };
-
-    window.updatePlayerInline = async (id, field, value) => {
-        try {
-            const payload = { id: Number(id) };
-            if (field === 'nivel' || field === 'equipoid') {
-                payload[field] = value ? Number(value) : null;
-            } else {
-                payload[field] = value;
-            }
-            await db.update('jugadores', payload);
-            // Si es un cambio que afecta a filtros o nombres, refrescamos la vista suavemente
-            if (field === 'equipoid' || field === 'equipoConvenido' || field === 'posicion') {
-                const container = document.getElementById('main-content');
-                if (container) await renderJugadores(container.firstChild);
-            }
-        } catch (err) {
-            console.error("Error inline update:", err);
-        }
-    };
-
-    window.deletePlayer = async (id) => {
-        window.customConfirm(
-            '¿Eliminar Jugador?',
-            'Se borrarán todos los datos y notas técnicas de este futbolista del sistema.',
-            async () => {
-                await db.delete('jugadores', Number(id));
-                closeModal();
-                window.switchView('jugadores');
-            }
-        );
-    };
-
-
-    window.printPlayerCard = async (id) => {
-        const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
-        const convocatorias = await db.getAll('convocatorias');
-        const sesiones = await db.getAll('sesiones');
-        const asistencia = await db.getAll('asistencia');
-        
-        const player = players.find(p => p.id == id);
-        if (!player) return;
-
-        const playerTeam = teams.find(t => t.id == player.equipoid);
-        const playerConvs = convocatorias.filter(c => c.players && c.players.includes(id.toString()));
-        const playerSesiones = sesiones.filter(s => s.asistenciadatos && s.asistenciadatos.players && s.asistenciadatos.players.some(pId => pId.toString() === id.toString()));
-        
-        // Attendance stats
-        const playerAsist = asistencia.filter(a => a.players && a.players[id]);
-        const stats = {
-            total: playerAsist.length,
-            asiste: playerAsist.filter(a => a.players[id].status === 'asiste').length,
-            ausente: playerAsist.filter(a => a.players[id].status === 'ausente').length,
-            lesionado: playerAsist.filter(a => a.players[id].status === 'lesionado').length,
-            enfermo: playerAsist.filter(a => a.players[id].status === 'enfermo').length,
-            seleccion: playerAsist.filter(a => a.players[id].status === 'seleccion').length,
-            zubieta: playerAsist.filter(a => a.players[id].status === 'zubieta').length,
-            estudiar: playerAsist.filter(a => a.players[id].status === 'estudiar').length
-        };
-        const attendanceRate = stats.total > 0 ? Math.round((stats.asiste / stats.total) * 100) : 0;
-
-        const headerShield = "RS.png"; // Official shield
-
-        const printView = document.createElement('div');
-        printView.className = 'print-view fixed inset-0 bg-slate-100 z-[500] overflow-y-auto no-scrollbar';
-        printView.innerHTML = `
-            <style>
-                @media print {
-                    .no-print { display: none !important; }
-                    body { background: white !important; }
-                    .print-view { position: relative !important; inset: auto !important; background: white !important; padding: 0 !important; }
-                    .sheet-preview { box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; max-width: 100% !important; }
-                }
-                .sheet-preview {
-                    background: white;
-                    box-shadow: 0 20px 50px rgba(0,0,0,0.1);
-                    margin: 40px auto;
-                    padding: 60px;
-                    width: 210mm;
-                    min-height: 297mm;
-                    border-radius: 4px;
-                }
-            </style>
-            
-            <div class="no-print sticky top-0 mb-8 flex justify-center gap-4 z-[600] py-6">
-                <div class="bg-white/90 backdrop-blur-md p-3 rounded-[2.5rem] border border-white shadow-2xl flex gap-3">
-                    <button onclick="window.print()" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all flex items-center gap-3">
-                        <i data-lucide="file-down" class="w-5 h-5"></i>
-                        GUARDAR PDF
-                    </button>
-                    <button onclick="document.querySelector('.print-view').remove()" class="px-8 py-4 bg-slate-800 text-white font-black rounded-2xl shadow-xl hover:bg-slate-900 transition-all flex items-center gap-3">
-                        <i data-lucide="x" class="w-5 h-5"></i>
-                        CERRAR VISTA
-                    </button>
-                </div>
-            </div>
-
-            <div class="sheet-preview">
-                <!-- Header -->
-                <header class="flex justify-between items-start border-b-8 border-slate-900 pb-10 mb-10">
-                    <div class="flex items-center gap-8">
-                        <div class="relative">
-                            ${player.foto ? 
-                                `<img src="${player.foto}" class="w-32 h-32 rounded-3xl object-cover border-4 border-slate-900 shadow-xl">` :
-                                `<div class="w-32 h-32 rounded-3xl bg-slate-900 text-white flex items-center justify-center text-5xl font-black">${(player.nombre || 'J').substring(0,1)}</div>`
-                            }
-                        </div>
-                        <div>
-                            <h1 class="text-4xl font-black text-slate-900 uppercase leading-none mb-2">${player.nombre}</h1>
-                            <div class="flex items-center gap-3">
-                                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest">${playerTeam?.nombre || 'LIBRE'}</span>
-                                <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${player.posicion || 'SIN POSICIÓN'}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <img src="${headerShield}" class="w-20 h-20 object-contain grayscale opacity-20">
-                </header>
-
-                <div class="grid grid-cols-3 gap-10">
-                    <div class="col-span-2 space-y-10">
-                        <!-- Technical Data -->
-                        <section>
-                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
-                                <span class="w-2 h-2 bg-blue-600 rounded-full"></span>
-                                Datos Biográficos y Técnicos
-                            </h2>
-                            <div class="grid grid-cols-2 gap-y-6">
-                                <div>
-                                    <p class="text-[9px] font-black text-slate-400 uppercase">Año de Nacimiento</p>
-                                    <p class="text-lg font-bold text-slate-800">${player.anionacimiento || '----'}</p>
-                                </div>
-                                <div>
-                                    <p class="text-[9px] font-black text-slate-400 uppercase">Club Convenido</p>
-                                    <p class="text-lg font-bold text-slate-800">${player.equipoConvenido || 'Sin Club'}</p>
-                                </div>
-                                <div>
-                                    <p class="text-[9px] font-black text-slate-400 uppercase">Lateralidad / Pie</p>
-                                    <p class="text-lg font-bold text-slate-800">${player.pie || 'Indiferente'}</p>
-                                </div>
-                                <div>
-                                    <p class="text-[9px] font-black text-slate-400 uppercase">Nivel RS Centro</p>
-                                    <p class="text-lg font-bold text-amber-500">${'★'.repeat(player.nivel || 3)}</p>
-                                </div>
-                            </div>
-                        </section>
-
-                        <!-- Tournament History -->
-                        <section>
-                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
-                                <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                                Historial Competitivo (Torneos)
-                            </h2>
-                            <div class="bg-slate-50 rounded-3xl overflow-hidden border border-slate-100">
-                                <table class="w-full">
-                                    <thead class="bg-slate-100">
-                                        <tr>
-                                            <th class="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Fecha</th>
-                                            <th class="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Competición</th>
-                                            <th class="px-6 py-4 text-center text-[9px] font-black uppercase tracking-widest">Rend.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-200">
-                                        ${playerConvs.length > 0 ? playerConvs.filter(c => c.tipo === 'Torneo').map(c => {
-                                            const evalData = c.rendimiento && c.rendimiento[id] ? c.rendimiento[id] : null;
-                                            return `
-                                                <tr>
-                                                    <td class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">${c.fecha}</td>
-                                                    <td class="px-6 py-4 text-xs font-black text-slate-800 uppercase">${c.nombre}</td>
-                                                    <td class="px-6 py-4 text-center font-black text-blue-600">${evalData ? evalData.score : '--'}</td>
-                                                </tr>
-                                            `;
-                                        }).join('') : `<tr><td colspan="3" class="px-6 py-8 text-center text-[10px] text-slate-400 font-bold uppercase">Sin registros competitivos</td></tr>`}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </section>
-
-                        <!-- Sessions History -->
-                        <section>
-                            <h2 class="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 border-b-2 border-slate-100 pb-2 flex items-center gap-2">
-                                <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
-                                Sesiones de Entrenamiento
-                            </h2>
-                            <div class="space-y-2">
-                                ${playerSesiones.slice(0, 10).map(s => `
-                                    <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <div class="flex items-center gap-4">
-                                            <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400 border border-slate-100">${s.fecha.split('-')[2]}</div>
-                                            <p class="text-xs font-black text-slate-800 uppercase">${s.titulo || s.nombre}</p>
-                                        </div>
-                                        <p class="text-[9px] font-bold text-slate-400 uppercase">${s.fecha}</p>
-                                    </div>
-                                `).join('') || `<p class="text-center py-6 text-[10px] text-slate-400 font-bold uppercase">No hay sesiones registradas</p>`}
-                            </div>
-                        </section>
-                    </div>
-
-                    <div class="space-y-10">
-                        <!-- Stats Center -->
-                        <div class="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden">
-                            <i data-lucide="activity" class="absolute -bottom-10 -right-10 w-48 h-48 text-white/5"></i>
-                            <h3 class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8">Asistencia Global</h3>
-                            <div class="text-6xl font-black mb-8">${attendanceRate}% <span class="text-xs font-bold text-blue-400 block mt-2 opacity-60">Ratio Presencia</span></div>
-                            
-                            <div class="space-y-4">
-                                ${[
-                                    { label: 'Presencias', val: stats.asiste, color: 'text-emerald-400' },
-                                    { label: 'Ausencias', val: stats.ausente, color: 'text-rose-400' },
-                                    { label: 'Lesiones', val: stats.lesionado, color: 'text-amber-400' },
-                                    { label: 'Zubieta / Sel.', val: stats.zubieta + stats.seleccion, color: 'text-blue-400' },
-                                    { label: 'Estudios', val: stats.estudiar, color: 'text-indigo-400' }
-                                ].map(s => `
-                                    <div class="flex justify-between items-center text-[11px] border-b border-white/10 pb-2">
-                                        <span class="font-bold text-white/40">${s.label}</span>
-                                        <span class="font-black ${s.color}">${s.val}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-
-                        <!-- Technical Notes -->
-                        <div class="bg-blue-50 p-8 rounded-[3rem] border border-blue-100">
-                            <h3 class="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-6">Análisis del Coach</h3>
-                            <p class="text-sm text-blue-900/70 italic leading-relaxed whitespace-pre-line">
-                                ${player.notas || 'No se han registrado observaciones técnicas adicionales para este futbolista.'}
-                            </p>
-                        </div>
-
-                        <div class="pt-20 opacity-20 text-right">
-                            <p class="text-[8px] font-black uppercase tracking-[0.3em]">RS CENTRO INTEL</p>
-                            <p class="text-[7px] font-bold uppercase">${new Date().toLocaleDateString()} | ${new Date().toLocaleTimeString()}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(printView);
-        if (window.lucide) lucide.createIcons();
-    };
-
-    async function renderAsistencia(container) {
-        const reports = (await db.getAll('asistencia')) || [];
-        const teams = (await db.getAll('equipos')) || [];
-        
-        const filteredReports = reports.filter(r => {
-            if (!r || !r.fecha) return false;
-            
-            let reportTeamIds = [String(r.equipoid)];
-            if (r.nombre && r.nombre.includes(' ||| ')) {
-                try {
-                    const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
-                    if (ex.eids) reportTeamIds = [...new Set([...reportTeamIds, ...ex.eids.map(String)])];
-                } catch(e) {}
-            }
-
-            const searchTerm = (asistenciaFilters.search || '').toLowerCase();
-            const matchesSearch = !searchTerm || 
-                                 (r.nombre || '').toLowerCase().includes(searchTerm) || 
-                                 reportTeamIds.some(id => teams.find(t => t.id == id)?.nombre.toLowerCase().includes(searchTerm));
-                                 
-            const matchesTeam = asistenciaFilters.activeTeamId === 'TODOS' || reportTeamIds.includes(String(asistenciaFilters.activeTeamId));
-            return matchesSearch && matchesTeam;
-        }).sort((a,b) => (b.fecha || '').localeCompare(a.fecha || ''));
-
-        container.innerHTML = `
-            <div class="space-y-8 animate-in fade-in duration-500">
-                <!-- Search and Controls -->
-                <div class="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                    <div class="relative w-full">
-                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300"></i>
-                        <input type="text" 
-                            id="asistencia-search"
-                            placeholder="Buscar por nombre o equipo..." 
-                            value="${asistenciaFilters.search}"
-                            oninput="window.updateAsistenciaSearch(this.value)"
-                            class="w-full pl-12 pr-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50/50 transition-all font-medium text-slate-700">
-                    </div>
-                </div>
-
-                <!-- Team Tabs -->
-                <div class="flex gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
-                    <button onclick="window.setAsistenciaTeam('TODOS')" 
-                        class="px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${asistenciaFilters.activeTeamId === 'TODOS' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                        Todos los Equipos
-                    </button>
-                    ${window.getSortedTeams(teams).map(t => `
-                        <button onclick="window.setAsistenciaTeam('${t.id}')" 
-                            class="px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${asistenciaFilters.activeTeamId == t.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            ${t.nombre}
-                        </button>
-                    `).join('')}
-                </div>
-
-                <!-- Mobile View (Cards) -->
-                <div class="md:hidden space-y-4">
-                    ${filteredReports.map(r => {
-                        const team = teams.find(t => t.id == r.equipoid);
-                        // Fix: Support both string and object formats in 'players' column
-                        const playersData = r.players || r.data || {};
-                        const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
-                        const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
-                        const total = dataValues.length;
-
-                                     const rawName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
-                                     let teamIds = [String(r.equipoid)];
-                                     if (r.nombre && r.nombre.includes(' ||| ')) {
-                                         try {
-                                             const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
-                                             if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
-                                         } catch(e) {}
-                                     }
-                                     
-                                     let reportName = rawName;
-                                     if (teamIds.length > 1) {
-                                         const names = teamIds.map(id => {
-                                             const t = teams.find(team => team.id == id);
-                                             return t ? t.nombre.split(' ||| ')[0] : null;
-                                         }).filter(Boolean);
-                                         
-                                         if (names.length > 1) {
-                                             const namesStr = names.join(' / ');
-                                             // Solo añadir si no parecen estar ya en el nombre (evitar duplicados como Asistencia_TeamA_TeamB (TeamA / TeamB))
-                                             const alreadyIncluded = names.every(n => rawName.toLowerCase().includes(n.toLowerCase()));
-                                             if (!alreadyIncluded) {
-                                                 reportName = `${rawName} (${namesStr})`;
-                                             }
-                                         }
-                                     }
-
-                        
-                        return `
-                            <div onclick="window.viewAsistenciaReport(${r.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
-                                <div class="flex justify-between items-start mb-4">
-                                    <div>
-                                        <h4 class="font-bold text-slate-800 text-sm">${reportName}</h4>
-                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">${new Date(r.fecha + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: 'long' })}</p>
-                                    </div>
-                                    <div class="flex flex-wrap gap-1 justify-end max-w-[50%]">
-                                        ${(() => {
-                                            let teamIds = [String(r.equipoid)];
-                                            if (r.nombre && r.nombre.includes(' ||| ')) {
-                                                try {
-                                                    const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
-                                                    if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
-                                                } catch(e) {}
-                                            }
-                                            return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
-                                                <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tight">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
-                                            `).join('');
-                                        })()}
-                                    </div>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div>
-                                        <span class="text-xs font-black text-slate-700">${presentes}/${total} PRESENTES</span>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button onclick="event.stopPropagation(); window.deleteAsistenciaReport(${r.id})" class="p-2 text-red-300 hover:text-red-500 transition-all">
-                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }).join('') || `<div class="py-20 text-center"><p class="text-slate-400 text-sm font-bold uppercase tracking-widest">No hay informes</p></div>`}
-                </div>
-
-                <!-- Desktop View (Table) -->
-                <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50/50">
-                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Nombre del Informe</th>
-                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Fecha</th>
-                                    <th class="px-6 py-5 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Equipo</th>
-                                    <th class="px-6 py-5 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Jugadores</th>
-                                    <th class="px-6 py-5 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-50">
-                                ${filteredReports.map(r => {
-                                    const team = teams.find(t => t.id == r.equipoid);
-                                    // Fix: Support both string and object formats in 'players' column
-                                    const playersData = r.players || r.data || {};
-                                    const dataValues = Object.values(playersData).map(v => typeof v === 'object' ? v.status : v);
-                                    const presentes = dataValues.filter(s => s === 'asiste' || s === 'presente').length;
-                                    const total = dataValues.length;
-
-                                     const rawName = (r.nombre || `Informe ${r.fecha}`).split(' ||| ')[0];
-                                     let teamIds = [String(r.equipoid)];
-                                     if (r.nombre && r.nombre.includes(' ||| ')) {
-                                         try {
-                                             const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
-                                             if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
-                                         } catch(e) {}
-                                     }
-                                     
-                                     let reportName = rawName;
-                                     if (teamIds.length > 1) {
-                                         const names = teamIds.map(id => {
-                                             const t = teams.find(team => team.id == id);
-                                             return t ? t.nombre.split(' ||| ')[0] : null;
-                                         }).filter(Boolean);
-                                         
-                                         if (names.length > 1) {
-                                             const namesStr = names.join(' / ');
-                                             // Solo añadir si no parecen estar ya en el nombre (evitar duplicados como Asistencia_TeamA_TeamB (TeamA / TeamB))
-                                             const alreadyIncluded = names.every(n => rawName.toLowerCase().includes(n.toLowerCase()));
-                                             if (!alreadyIncluded) {
-                                                 reportName = `${rawName} (${namesStr})`;
-                                             }
-                                         }
-                                     }
-
-                                    
-                                    return `
-                                        <tr class="hover:bg-slate-50/50 transition-colors group">
-                                            <td class="px-6 py-5">
-                                                <span class="font-bold text-slate-800 text-sm">${reportName}</span>
-                                            </td>
-                                            <td class="px-6 py-5">
-                                                <span class="text-xs font-black text-slate-400 uppercase">${new Date(r.fecha + 'T12:00:00').toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                                            </td>
-                                            <td class="px-6 py-5">
-                                                <div class="flex flex-wrap gap-1">
-                                                    ${(() => {
-                                                        let teamIds = [String(r.equipoid)];
-                                                        if (r.nombre && r.nombre.includes(' ||| ')) {
-                                                            try {
-                                                                const ex = JSON.parse(r.nombre.split(' ||| ')[1]);
-                                                                if (ex.eids) teamIds = [...new Set([...teamIds, ...ex.eids.map(String)])];
-                                                            } catch(e) {}
-                                                        }
-                                                        return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
-                                                            <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
-                                                        `).join('');
-                                                    })()}
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-5 text-center">
-                                                <div class="flex flex-col items-center">
-                                                    <span class="text-sm font-black text-slate-800">${presentes}/${total}</span>
-                                                    <div class="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                                                        <div class="h-full bg-emerald-500" style="width: ${(presentes/total)*100}%"></div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-5 text-right">
-                                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onclick="window.viewAsistenciaReport(${r.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Editar">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.deleteAsistenciaReport(${r.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Eliminar">
-                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-                                }).join('') || `<tr><td colspan="5" class="py-20 text-center"><p class="text-slate-400 text-sm font-bold uppercase tracking-widest">No se encontraron informes</p></td></tr>`}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-        if (window.lucide) lucide.createIcons();
-    }
-
-    window.updateAsistenciaSearch = (val) => {
-        asistenciaFilters.search = val;
-        renderAsistencia(contentContainer);
-    };
-
-    window.setAsistenciaTeam = (id) => {
-        asistenciaFilters.activeTeamId = id;
-        renderAsistencia(contentContainer);
-    };
-
-    window.deleteAsistenciaReport = async (id) => {
-        window.customConfirm('¡ATENCIÓN!', '¿Estás seguro de que quieres eliminar este informe de asistencia?', async () => {
-            try {
-                const { error } = await supabaseClient.from('asistencia').delete().eq('id', id);
-                if (error) throw error;
-                window.customAlert('¡Eliminado!', 'El informe ha sido borrado correctamente.', 'success');
-                renderView('asistencia');
-            } catch (err) {
-                window.customAlert('Error al eliminar', err.message, 'error');
-            }
-        });
-    };
-
-    window.newAsistenciaReport = async () => {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'view animate-in slide-in-from-right duration-300';
-        await renderAsistenciaForm(wrapper);
-        contentContainer.innerHTML = '';
-        contentContainer.appendChild(wrapper);
-        
-    };
-
-    window.viewAsistenciaReport = async (id) => {
-        const reports = await db.getAll('asistencia');
-        const report = reports.find(r => r.id == id);
-        const wrapper = document.createElement('div');
-        wrapper.className = 'view animate-in slide-in-from-right duration-300';
-        await renderAsistenciaForm(wrapper, report);
-        contentContainer.innerHTML = '';
-        contentContainer.appendChild(wrapper);
-        
-    };
-
-    async function renderAsistenciaForm(container, existingReport = null) {
-        const teams = await db.getAll('equipos');
-        const players = await db.getAll('jugadores');
-        const convocatorias = await db.getAll('convocatorias');
-
-        let selectedTeamIds = [];
-        if (existingReport) {
-            if (existingReport.equipoid) selectedTeamIds.push(String(existingReport.equipoid));
-            if (existingReport.nombre && existingReport.nombre.includes(' ||| ')) {
-                try {
-                    const ex = JSON.parse(existingReport.nombre.split(' ||| ')[1]);
-                    if (ex.eids) selectedTeamIds = [...new Set([...selectedTeamIds, ...ex.eids.map(String)])];
-                } catch(e) {}
-            }
-        }
-        
-        let selectedDate = existingReport ? (existingReport.fecha || existingReport.date) : new Date().toISOString().split('T')[0];
-        let selectedConvId = existingReport ? (existingReport.convocatoriaid || null) : null;
-        // Search dynamically if not explicitly stored
-        if (!selectedConvId && existingReport && selectedDate && selectedTeamIds.length > 0) {
-            const matchingConv = convocatorias.find(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
-            if (matchingConv) selectedConvId = matchingConv.id;
-        }
-        
-        attendanceData = existingReport ? (existingReport.players || existingReport.data || {}) : {};
-
-        const formatDateShort = (dateStr) => {
-            if (!dateStr) return '';
-            const parts = dateStr.split('-');
-            if (parts.length !== 3) return dateStr;
-            return `${parts[2]}.${parts[1]}.${parts[0].slice(-2)}`;
-        };
-
-        const updateAutoName = () => {
-            const nameInput = container.querySelector('#report-name');
-            if (!nameInput || existingReport) return;
-            
-            const selectedTeams = teams.filter(t => selectedTeamIds.includes(String(t.id)));
-            const conv = convocatorias.find(c => c.id == selectedConvId);
-            const datePart = formatDateShort(selectedDate);
-            const teamNames = selectedTeams.map(t => t.nombre.split(' ||| ')[0]).join('_');
-            const lugarParts = conv ? (conv.lugar || '').split(' ||| ') : [''];
-            const lugarPart = lugarParts[0];
-            
-            let name = `Asistencia ${datePart}`;
-            if (teamNames) name += `_${teamNames}`;
-            if (lugarPart) name += `_${lugarPart}`;
-            
-            nameInput.value = name;
-        };
-
-        const updateBoard = () => {
-            const list = container.querySelector('#asistencia-list');
-            const listMobile = container.querySelector('#asistencia-list-mobile');
-            if (!list && !listMobile) return;
-
-            let targetPlayers = [];
-            if (selectedConvId) {
-                const conv = convocatorias.find(c => c.id == selectedConvId);
-                if (conv && Array.isArray(conv.playerids)) {
-                    targetPlayers = players.filter(p => conv.playerids.includes(p.id.toString()));
-                }
-            } else if (selectedTeamIds.length > 0) {
-                // Check for matching convocatorias for any of the selected teams
-                const matchingConvs = convocatorias.filter(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
-                if (matchingConvs.length > 0) {
-                    const allPids = [...new Set(matchingConvs.flatMap(c => (c.playerids || []).map(String)))];
-                    targetPlayers = players.filter(p => allPids.includes(p.id.toString()));
-                } else {
-                    targetPlayers = players.filter(j => selectedTeamIds.includes(String(j.equipoid)));
-                }
-            }
-            
-            if (selectedTeamIds.length === 0 && !selectedConvId && selectedDate) {
-                 const dayConvs = convocatorias.filter(c => c.fecha === selectedDate);
-                 const allPids = [...new Set(dayConvs.flatMap(c => (c.playerids || []).map(String)))];
-                 if (allPids.length > 0) {
-                     targetPlayers = players.filter(p => allPids.includes(p.id.toString()));
-                 }
-            }
-
-            // Fix for editing: ensure players with recorded data are always shown
-            if (existingReport && (existingReport.players || existingReport.data)) {
-                const data = existingReport.players || existingReport.data;
-                const recordedIds = Object.keys(data).map(String);
-                players.forEach(p => {
-                    const pidStr = String(p.id);
-                    if (recordedIds.includes(pidStr) && !targetPlayers.find(tp => String(tp.id) === pidStr)) {
-                        targetPlayers.push(p);
-                    }
-                });
-            }
-
-            if (targetPlayers.length === 0) {
-                const emptyHtml = `<div class="py-20 text-center"><p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Sin jugadores asignados</p></div>`;
-                if (list) list.innerHTML = `<tr><td colspan="3">${emptyHtml}</td></tr>`;
-                if (listMobile) listMobile.innerHTML = emptyHtml;
-                if (window.lucide) lucide.createIcons();
-                return;
-            }
-
-            const isAbsent = (s) => {
-                const statusStr = typeof s === 'object' ? s.status : s;
-                return statusStr !== 'asiste' && statusStr !== 'presente';
-            };
-            const motives = [
-                { id: 'ausente', label: 'Sin Motivo' },
-                { id: 'enfermo', label: 'Enfermo' },
-                { id: 'lesionado', label: 'Lesionado' },
-                { id: 'seleccion', label: 'Seleccion' },
-                { id: 'zubieta', label: 'Zubieta' },
-                { id: 'estudiar', label: 'Estudiar' },
-                { id: 'otro', label: 'Otro' }
-            ];
-
-            const desktopHtml = targetPlayers.map((j, idx) => {
-                const rawStatus = attendanceData[j.id] || 'asiste';
-                const statusStr = typeof rawStatus === 'object' ? rawStatus.status : rawStatus;
-                const currentIsAbsent = isAbsent(statusStr);
-                return `
-                    <tr class="border-b border-slate-50">
-                        <td class="px-6 py-4 font-bold text-slate-400 text-xs">${idx + 1}</td>
-                        <td class="px-6 py-4">
-                            <div class="font-bold text-slate-800 text-sm">${j.nombre}</div>
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">${j.equipoConvenido || 'Sin Club'}</div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="flex flex-col items-end gap-3">
-                                <!-- Main Status -->
-                                <div class="flex gap-1">
-                                    <button onclick="window.setPlayerStatus(${j.id}, 'asiste')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${!currentIsAbsent ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white border text-slate-400 hover:bg-slate-50'}">
-                                        Asiste
-                                    </button>
-                                    <button onclick="window.setPlayerStatus(${j.id}, 'ausente')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${currentIsAbsent ? 'bg-red-600 text-white shadow-lg' : 'bg-white border text-slate-400 hover:bg-slate-50'}">
-                                        Ausente
-                                    </button>
-                                </div>
-                                <!-- Motive Sub-menu -->
-                                ${currentIsAbsent ? `
-                                    <div class="flex flex-wrap justify-end gap-1 animate-in fade-in slide-in-from-right-2 duration-200">
-                                        <span class="text-[9px] font-black text-slate-300 uppercase self-center mr-2">Motivo:</span>
-                                        ${motives.map(m => `
-                                            <button onclick="window.setPlayerStatus(${j.id}, '${m.id}')" class="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${statusStr === m.id ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:bg-slate-100'}">
-                                                ${m.label}
-                                            </button>
-                                        `).join('')}
-                                    </div>
-                                ` : ''}
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-
-            const mobileHtml = targetPlayers.map((j, idx) => {
-                const rawStatus = attendanceData[j.id] || 'asiste';
-                const statusStr = typeof rawStatus === 'object' ? rawStatus.status : rawStatus;
-                const currentIsAbsent = isAbsent(statusStr);
-                return `
-                    <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                        <div class="flex justify-between items-center mb-6">
-                            <div class="flex items-center gap-4">
-                                <div class="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center font-black text-[10px] border border-slate-100">${idx + 1}</div>
-                                <div>
-                                    <span class="font-black text-slate-800 text-sm uppercase tracking-tight block">${j.nombre}</span>
-                                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">${j.equipoConvenido || 'Sin Club'}</span>
-                                </div>
-                            </div>
-                            <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">
-                                <button onclick="window.setPlayerStatus(${j.id}, 'asiste')" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${!currentIsAbsent ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}">SI</button>
-                                <button onclick="window.setPlayerStatus(${j.id}, 'ausente')" class="px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${currentIsAbsent ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}">NO</button>
-                            </div>
-                        </div>
-                        ${currentIsAbsent ? `
-                            <div class="pt-4 border-t border-slate-50 transition-all animate-in slide-in-from-top-2">
-                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Motivo de ausencia:</p>
-                                <div class="grid grid-cols-2 gap-2">
-                                    ${motives.map(m => `
-                                        <button onclick="window.setPlayerStatus(${j.id}, '${m.id}')" class="py-3 px-1 rounded-xl text-[9px] font-black uppercase border transition-all ${statusStr === m.id ? 'bg-slate-900 border-slate-900 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-400'}">
-                                            ${m.label}
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('');
-
-            if (list) list.innerHTML = desktopHtml;
-            if (listMobile) listMobile.innerHTML = mobileHtml;
-            if (window.lucide) lucide.createIcons();
-        };
-
-        window.setPlayerStatus = (pId, s) => { attendanceData[pId] = s; updateBoard(); };
-
-        const renderForm = () => {
-            const sortedTeams = window.getSortedTeams(teams);
-            const dateConvs = convocatorias.filter(c => c.fecha === selectedDate && (selectedTeamIds.length === 0 || selectedTeamIds.includes(String(c.equipoid))));
-            
-            container.innerHTML = `
-                <div class="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden">
-                    <div class="p-8 border-b bg-slate-50/50">
-                        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                            <div class="flex items-center gap-4">
-                                <button onclick="window.switchView('asistencia')" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-100 rounded-xl shadow-sm hover:bg-red-50 hover:text-red-500 transition-all text-slate-500">
-                                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
-                                    <span class="text-[10px] font-black uppercase tracking-widest">Volver</span>
-                                </button>
-                                <div>
-                                    <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mb-1">${existingReport ? 'EDITAR ASISTENCIA' : 'NUEVA ASISTENCIA'}</h3>
-                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Control de presencia diario</p>
-                                </div>
-                            </div>
-                            
-                            <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                                <div class="relative flex-1 lg:flex-none min-w-[200px]">
-                                    <i data-lucide="tag" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                                    <input type="text" id="report-name" value="${existingReport ? (existingReport.nombre || '').split(' ||| ')[0] : 'Asistencia ' + selectedDate}" placeholder="Nombre del Informe" class="pl-12 pr-4 py-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 w-full transition-all">
-                                </div>
-                                <input id="date-sel" type="date" value="${selectedDate}" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all">
-                                
-                                <div class="relative min-w-[180px]">
-                                    <button id="team-multi-btn" class="w-full p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all flex items-center gap-2 ${existingReport ? 'opacity-50 cursor-not-allowed' : ''}" ${existingReport ? 'disabled' : ''}>
-                                        <i data-lucide="users" class="w-4 h-4 text-slate-400"></i>
-                                        <span class="truncate">${selectedTeamIds.length > 0 ? `${selectedTeamIds.length} Equipos` : 'Equipos'}</span>
-                                        <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400 ml-auto"></i>
-                                    </button>
-                                    <div id="team-multi-dropdown" class="absolute top-full left-0 mt-2 w-72 bg-white border border-slate-100 rounded-3xl shadow-2xl p-4 hidden z-50 animate-in fade-in zoom-in-95 duration-200">
-                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Seleccionar Equipos</p>
-                                        <div class="grid grid-cols-1 gap-1 max-h-60 overflow-y-auto custom-scrollbar">
-                                            ${sortedTeams.map(t => `
-                                                <label class="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-xl cursor-pointer transition-all">
-                                                    <input type="checkbox" value="${t.id}" ${selectedTeamIds.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 asistencia-team-check">
-                                                    <span class="text-xs font-bold text-slate-700">${t.nombre}</span>
-                                                </label>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <select id="conv-sel" class="p-4 border rounded-2xl bg-white font-bold text-sm outline-none focus:ring-4 ring-blue-50 transition-all cursor-pointer ${existingReport ? 'opacity-50' : ''}" ${existingReport ? 'disabled' : ''}>
-                                    <option value="">- Convocatoria (Opcional) -</option>
-                                    ${dateConvs.map(c => `<option value="${c.id}" ${selectedConvId == c.id ? 'selected' : ''}>[${c.tipo}] ${c.nombre}</option>`).join('')}
-                                </select>
-
-                                <button id="save-report" class="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl shadow-blue-600/30 hover:bg-blue-700 hover:-translate-y-0.5 active:translate-y-0 transition-all text-xs uppercase tracking-widest whitespace-nowrap ml-auto">
-                                    <div class="flex items-center gap-2">
-                                        <i data-lucide="save" class="w-4 h-4"></i>
-                                        Finalizar Informe
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Desktop View Table -->
-                    <div class="hidden md:block overflow-x-auto">
-                        <table class="w-full">
-                            <thead class="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <tr>
-                                    <th class="px-6 py-4 text-left">#</th>
-                                    <th class="px-6 py-4 text-left">Jugador</th>
-                                    <th class="px-6 py-4 text-right">Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody id="asistencia-list"></tbody>
-                        </table>
-                    </div>
-
-                    <!-- Mobile View Cards -->
-                    <div class="md:hidden p-4 space-y-3 bg-slate-50/50" id="asistencia-list-mobile">
-                        <!-- Injected via updateBoard -->
-                    </div>
-                </div>
-            `;
-            if (window.lucide) lucide.createIcons();
-
-            const teamMultiBtn = container.querySelector('#team-multi-btn');
-            const teamDropdown = container.querySelector('#team-multi-dropdown');
-            const convSel = container.querySelector('#conv-sel');
-            const dateSel = container.querySelector('#date-sel');
-            const saveBtn = container.querySelector('#save-report');
-
-            if (teamMultiBtn && teamDropdown) {
-                teamMultiBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    teamDropdown.classList.toggle('hidden');
-                };
-                document.addEventListener('click', (e) => {
-                    if (!teamDropdown.contains(e.target) && !teamMultiBtn.contains(e.target)) {
-                        teamDropdown.classList.add('hidden');
-                    }
-                });
-            }
-
-            container.querySelectorAll('.asistencia-team-check').forEach(chk => {
-                chk.onchange = () => {
-                    selectedTeamIds = Array.from(container.querySelectorAll('.asistencia-team-check:checked')).map(c => c.value);
-                    selectedConvId = null;
-                    renderForm();
-                    updateBoard();
-                };
-            });
-            
-            convSel.onchange = (e) => { 
-                selectedConvId = e.target.value;
-                const selectedConv = convocatorias.find(c => c.id == selectedConvId);
-                if (selectedConv) {
-                    selectedTeamIds = [String(selectedConv.equipoid)];
-                }
-                updateAutoName();
-                updateBoard(); 
-                renderForm();
-            };
-
-            dateSel.onchange = (e) => {
-                selectedDate = e.target.value;
-                selectedConvId = null;
-                renderForm();
-                updateAutoName();
-                updateBoard();
-            };
-
-            saveBtn.onclick = async () => {
-                const nameInput = container.querySelector('#report-name');
-                if (selectedTeamIds.length === 0 && !selectedConvId) {
-                    window.customAlert('Faltan Datos', 'Por favor selecciona al menos un equipo o una convocatoria.', 'warning');
-                    return;
-                }
-                
-                const finalData = { ...attendanceData };
-                
-                // Aggregate current target players
-                let currentPlayers = [];
-                if (selectedConvId) {
-                    const conv = convocatorias.find(c => c.id == selectedConvId);
-                    if (conv && Array.isArray(conv.playerids)) {
-                        currentPlayers = players.filter(p => conv.playerids.includes(p.id.toString()));
-                    }
-                } else if (selectedTeamIds.length > 0) {
-                    const matchingConvs = convocatorias.filter(c => c.fecha === selectedDate && selectedTeamIds.includes(String(c.equipoid)));
-                    if (matchingConvs.length > 0) {
-                        const allPids = [...new Set(matchingConvs.flatMap(c => (c.playerids || []).map(String)))];
-                        currentPlayers = players.filter(p => allPids.includes(p.id.toString()));
-                    } else {
-                        currentPlayers = players.filter(j => selectedTeamIds.includes(String(j.equipoid)));
-                    }
-                }
-
-                currentPlayers.forEach(p => {
-                    if (!finalData[p.id]) finalData[p.id] = 'asiste';
-                });
-
-                const extra = { eids: selectedTeamIds };
-                const baseName = (nameInput ? nameInput.value : 'Asistencia').split(' ||| ')[0].toUpperCase().trim();
-                const fullName = `${baseName} ||| ${JSON.stringify(extra)}`;
-
-                const report = { 
-                    id: existingReport ? existingReport.id : undefined, 
-                    nombre: fullName,
-                    equipoid: selectedTeamIds.length > 0 ? parseInt(selectedTeamIds[0]) : null, 
-                    fecha: selectedDate, 
-                    players: finalData 
-                };
-                if (existingReport) await db.update('asistencia', report);
-                else await db.add('asistencia', report);
-                window.switchView('asistencia');
-            };
-
-            updateAutoName();
-            updateBoard();
-        };
-
-        renderForm();
-    }
-
-
-    // Modal Handling
-    addBtn.addEventListener('click', async () => {
-        if (currentView === 'asistencia') {
-            window.newAsistenciaReport();
-            return;
-        }
-        if (currentView === 'torneos') {
-            window.newConvocatoria('Torneo');
-            return;
-        }
-        if (currentView === 'convocatorias') {
-            window.newConvocatoria();
-            return;
-        }
-        if (currentView === 'sesiones') {
-            window.renderSessionModal();
-            return;
-        }
-
-        let modalHtml = '';
-        if (currentView === 'tareas') {
-            modalHtml = `
-                <div class="p-8 max-w-2xl w-full mx-auto overflow-y-auto max-h-[80vh]">
-                    <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nueva Tarea de Entrenamiento</h3>
-                    <div id="new-task-video-preview"></div>
-                    <form id="modal-form" class="space-y-6">
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Nombre de la Tarea</label>
-                                <input name="name" placeholder="Ej: Rondo 4x4 + 3" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-100 transition-all outline-none" required>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tipo</label>
-                                    <select name="type" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 text-xs outline-none">
-                                        ${TASK_TYPES.map(t => `<option>${t}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Categoría</label>
-                                    <select name="categoria" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
-                                        ${TASK_CATEGORIES.map(c => `<option>${c}</option>`).join('')}
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Objetivo</label>
-                                    <select name="objetivo" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
-                                        <option value="">Seleccionar...</option>
-                                        ${TASK_OBJECTIVES.map(obj => `<option>${obj}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Espacio</label>
-                                    <select name="espacio" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none">
-                                        <option value="">Seleccionar...</option>
-                                        ${TASK_SPACES.map(s => `<option>${s}</option>`).join('')}
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">Tiempo (min)</label>
-                                    <input name="duration" type="number" value="15" class="w-full p-4 border border-slate-200 rounded-xl bg-slate-50 text-xs outline-none" required>
-                                </div>
-                        <div class="col-span-2">
-                            <label class="block text-xs font-black text-slate-400 uppercase mb-2">Material Requerido</label>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                                ${TASK_MATERIALS.map(m => `
-                                    <label class="flex items-center gap-2 cursor-pointer group/item">
-                                        <input type="checkbox" name="material" value="${m}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-50">
-                                        <span class="text-[10px] font-black text-slate-500 uppercase group-hover/item:text-blue-600 transition-colors">${m}</span>
-                                    </label>
-                                `).join('')}
-                            </div>
-                        </div>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Descripción del Ejercicio</label>
-                                <textarea name="description" rows="3" placeholder="Explica el funcionamiento de la tarea..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Variantes (Opcional)</label>
-                                <textarea name="variantes" rows="2" placeholder="Posibles variaciones..." class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none"></textarea>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-4">
-                                <div class="col-span-2">
-                                    <label class="block text-xs font-black text-slate-400 uppercase mb-2">ID Video (Drive/Youtube)</label>
-                                    <input name="video" placeholder="ID del video" class="w-full p-4 border border-slate-200 rounded-2xl bg-slate-50 focus:bg-white transition-all outline-none">
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="col-span-2">
-                                <label class="block text-xs font-black text-slate-400 uppercase mb-2">Cargar Gráfico (Imagen)</label>
-                                <input type="file" id="task-image-input" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 transition-all">
-                            </div>
-                        </div>
-
-                        <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest">Crear Tarea</button>
-                        </div>
-                    </form>
-                </div>
-            `;
-            
-            setTimeout(() => {
-                const input = document.getElementById('task-image-input');
-                if (input) {
-                    input.addEventListener('change', (e) => {
-                        // Logic for preview if needed
-                    });
-                }
-                
-                // Real-time video preview
-                const videoInput = modalContainer.querySelector('input[name="video"]');
-                if (videoInput) {
-                    videoInput.addEventListener('input', (e) => {
-                        const val = e.target.value.trim();
-                        const container = document.getElementById('new-task-video-preview');
-                        container.innerHTML = window.getTaskVideoEmbed(val);
-                    });
-                }
-            }, 0);
-        } else if (currentView === 'equipos') {
-            const players = await db.getAll('jugadores');
-            modalHtml = `
-                <div class="p-8">
-                    <h3 class="text-2xl font-bold mb-6 text-slate-800">Registrar Nuevo Equipo</h3>
-                    <form id="modal-form" class="space-y-6">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Equipo</label>
-                                <input name="nombre" placeholder="Ej: Benjamín A" class="w-full p-4 border rounded-2xl font-bold outline-none focus:ring-2 ring-blue-100" required>
-                            </div>
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
-                                <select name="equipoConvenido" class="w-full p-4 border rounded-2xl bg-white outline-none focus:ring-2 ring-blue-100">
-                                    <option value="">Ninguno</option>
-                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}">${c}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-3">Años de Nacimiento (Categoría)</label>
-                                <div id="new-team-year-container" class="grid grid-cols-3 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
-                                    ${[2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020].map(y => `
-                                        <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all">
-                                            <input type="checkbox" name="categoria" value="${y}" class="year-checkbox w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                            <span class="text-[10px] font-black text-slate-600">${y}</span>
-                                        </label>
-                                    `).join('')}
-                                </div>
-                            </div>
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Escudo del Equipo</label>
-                                <div class="flex items-center gap-4 p-4 border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50">
-                                    <input type="file" id="team-crest-input" accept="image/*" class="text-xs text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 transition-all">
-                                </div>
-                            </div>
-                            <div class="col-span-2">
-                                <div class="flex justify-between items-center mb-4">
-                                    <div class="flex flex-col">
-                                        <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">Vincular Jugadores</label>
-                                        <div class="flex items-center gap-2 mt-2">
-                                            <button type="button" class="gender-tag-btn px-3 py-1 rounded-lg text-[8px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all select-none" data-gender="Masculino">Masculino</button>
-                                            <button type="button" class="gender-tag-btn px-3 py-1 rounded-lg text-[8px] font-black uppercase border border-slate-200 hover:bg-slate-50 transition-all select-none" data-gender="Femenino">Femenino</button>
-                                        </div>
-                                    </div>
-                                    <button type="button" id="new-select-all-btn" class="text-[9px] font-black text-blue-600 uppercase hover:text-blue-700 transition-colors">Seleccionar Todos</button>
-                                </div>
-                                <div id="new-linked-players-list" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <!-- Players will be filtered here -->
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all mt-4 uppercase tracking-widest">Crear Equipo</button>
-                        </div>
-                    </form>
-                </div>
-            `;
-            setTimeout(() => {
-                let selectedGender = null;
-                const update = () => {
-                    const selectedYears = [...document.querySelectorAll('.year-checkbox:checked')].map(cb => cb.value);
-                    const filtered = players.filter(p => {
-                        const matchesYear = selectedYears.length === 0 || selectedYears.includes(p.anionacimiento?.toString());
-                        const matchesGender = !selectedGender || p.sexo === selectedGender;
-                        return matchesYear && matchesGender;
-                    });
-                    
-                    listDiv.innerHTML = filtered.map(p => `
-                        <label class="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl cursor-pointer hover:border-blue-200 transition-all">
-                            <input type="checkbox" name="linkedPlayerIds" value="${p.id}" class="w-4 h-4 rounded text-blue-600">
-                            <div class="flex-1 min-w-0">
-                                <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
-                                <div class="flex gap-2 items-center">
-                                    <p class="text-[8px] font-black text-slate-400 uppercase">${p.anionacimiento || '----'}</p>
-                                    <p class="text-[7px] font-black ${p.sexo === 'Femenino' ? 'text-rose-400' : 'text-blue-400'} uppercase">${p.sexo || 'MASC'}</p>
-                                </div>
-                            </div>
-                        </label>
-                    `).join('') || `<p class="col-span-full p-8 text-center text-xs text-slate-400 italic font-medium">No hay jugadores para estos filtros.</p>`;
-                    if (window.lucide) lucide.createIcons();
-                };
-                
-                document.querySelectorAll('.gender-tag-btn').forEach(btn => {
-                    btn.onclick = () => {
-                        if (selectedGender === btn.getAttribute('data-gender')) {
-                            selectedGender = null;
-                            btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
-                        } else {
-                            document.querySelectorAll('.gender-tag-btn').forEach(b => b.classList.remove('bg-blue-600', 'text-white', 'border-blue-600'));
-                            selectedGender = btn.getAttribute('data-gender');
-                            btn.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
-                        }
-                        update();
-                    };
-                });
-                
-                document.querySelectorAll('.year-checkbox').forEach(cb => cb.addEventListener('change', update));
-                update();
-
-                if (selectAllBtn) {
-                    selectAllBtn.onclick = () => {
-                        const checkboxes = listDiv.querySelectorAll('input[type="checkbox"]');
-                        checkboxes.forEach(cb => cb.checked = true);
-                    };
-                }
-            }, 0);
-
-        } else if (currentView === 'eventos' || currentView === 'usuarios') {
-            const { data: users } = await supabaseClient.from('profiles').select('*');
-            const currentUser = (await supabaseClient.auth.getUser()).data.user;
-
-            if (currentView === 'usuarios') {
-                modalHtml = `
-                    <div class="p-8">
-                        <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nuevo Miembro del Staff</h3>
-                        <form id="modal-form" class="space-y-6">
-                             <div class="grid grid-cols-2 gap-4">
-                                <div class="col-span-2">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nombre Completo</label>
-                                    <input name="name" placeholder="Ej: Juan Pérez" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 font-bold" required>
-                                </div>
-                                <div class="col-span-2">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email de Acceso</label>
-                                    <input name="email" type="email" placeholder="email@ejemplo.com" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 font-bold" required>
-                                </div>
-                                <div class="col-span-2">
-                                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rol en el Equipo</label>
-                                    <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold">
-                                        <option>TECNICO</option>
-                                        <option>ELITE</option>
-                                        <option>TECNICO CLUB CONVENIDO</option>
-                                    </select>
-                                </div>
-                             </div>
-                             <div class="bg-blue-50 p-4 rounded-2xl text-[10px] text-blue-700 font-bold">
-                                <i data-lucide="info" class="inline w-3 h-3 mr-1"></i> Esto creará un registro de staff. El usuario podrá acceder si se registra con este mismo email.
-                             </div>
-                             <div class="flex gap-4">
-                                <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl">Cancelar</button>
-                                <button type="submit" class="flex-[2] py-4 bg-slate-900 text-white font-black rounded-2xl shadow-lg uppercase tracking-widest">Registrar Miembro</button>
-                             </div>
-                        </form>
-                    </div>
-                `;
-            } else {
-                modalHtml = `
-                    <div class="p-8">
-                    <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Nuevo Evento de Agenda</h3>
-                    <form id="modal-form" class="space-y-6">
-                        <!-- Campos principales -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <input name="nombre" placeholder="Título del evento" class="col-span-2 w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-amber-100" required>
-                            <select name="categoria" class="w-full p-3 border rounded-xl bg-white outline-none">
-                                <option>Reunión</option><option>Partido</option><option>Scouting</option><option>Mandar convocatorias</option><option>Preparar equipos torneos</option><option>Preparar jugadores ciclos/sesiones</option><option>Lavar ropa</option><option>Otro</option>
-                            </select>
-                            <input name="hora" type="time" class="w-full p-3 border rounded-xl" required>
-                            <input name="fecha" type="date" class="w-full p-3 border rounded-xl" required>
-                            <input name="lugar" placeholder="Lugar (Campo, Oficina...)" class="w-full p-3 border rounded-xl">
-                            <textarea name="notas" placeholder="Notas adicionales..." class="col-span-2 w-full p-3 border rounded-xl h-24 outline-none focus:ring-2 ring-amber-100"></textarea>
-                        </div>
-
-                        <!-- Panel de Compartir -->
-                        ${(users && db.userRole !== 'TECNICO CLUB CONVENIDO') ? `
-                            <div class="space-y-3">
-                                <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                                    ${users.filter(u => u.id !== currentUser.id).map(u => `
-                                        <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                            <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                            <div class="flex-1">
-                                                <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</p>
-                                            </div>
-                                        </label>
-                                    `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-amber-600 text-white font-black rounded-2xl shadow-lg shadow-amber-500/20 hover:bg-amber-700 transition-all uppercase tracking-widest">Añadir y Compartir</button>
-                        </div>
-                    </form>
-                </div>
-                `;
-            }
-        } else if (currentView === 'jugadores') {
-            const teams = await db.getAll('equipos');
-            modalHtml = `
-                <div class="p-8">
-                    <h3 class="text-2xl font-bold mb-6 text-slate-800">Registrar Futbolista</h3>
-                    <form id="modal-form" class="space-y-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre del Jugador</label>
-                                <input name="nombre" placeholder="Nombre completo" class="w-full p-3 border rounded-xl" required>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">EQUIPO RS</label>
-                                <select name="equipoid" class="w-full p-3 border rounded-xl bg-white">
-                                    <option value="">Ninguno (Libre)</option>
-                                    ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div class="col-span-2">
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Posiciones del Jugador (Multiselección)</label>
-                                 ${window.renderPositionSelector([], 'reg-pos')}
-                            </div>
-                            <div class="col-span-2">
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Club Convenido</label>
-                                <select name="equipoConvenido" class="w-full p-3 border rounded-xl bg-white">
-                                    <option value="">Ninguno</option>
-                                    ${CLUBES_CONVENIDOS.map(c => `<option value="${c}">${c}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Año de Nacimiento</label>
-                                <input name="anionacimiento" type="number" placeholder="Ej: 2010" class="w-full p-3 border rounded-xl">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha de Nacimiento</label>
-                                <input name="fechanacimiento" type="date" class="w-full p-3 border rounded-xl">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Pie / Lateralidad</label>
-                                <select name="pie" class="w-full p-3 border rounded-xl bg-white">
-                                    <option value="DIESTRO">DIESTRO</option>
-                                    <option value="ZURDO">ZURDO</option>
-                                    <option value="AMBIDIESTRO">AMBIDIESTRO</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Sexo / Género</label>
-                                <select name="sexo" class="w-full p-3 border rounded-xl bg-white">
-                                    <option value="Masculino" selected>Masculino</option>
-                                    <option value="Femenino">Femenino</option>
-                                    <option value="Otro">Otro</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nivel (1-5)</label>
-                                <select name="nivel" class="w-full p-3 border rounded-xl bg-white">
-                                    <option value="1">⭐ (Muy Bajo)</option><option value="2">⭐⭐ (Bajo)</option>
-                                    <option value="3" selected>⭐⭐⭐ (Normal)</option><option value="4">⭐⭐⭐⭐ (Alto)</option>
-                                    <option value="5">⭐⭐⭐⭐⭐ (Top)</option>
-                                </select>
-                            </div>
-                        </div>
-                         <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all font-black uppercase tracking-tight text-[10px]">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg mt-4 uppercase tracking-widest text-[10px]">Guardar en Directorio</button>
-                        </div>
-                        <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col items-center">
-                             <button type="button" onclick="window.showPlayerImportModal()" class="w-full py-4 bg-slate-50 text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all uppercase tracking-widest text-[9px] border border-blue-100/50">
-                                 O usar Importación Masiva (CSV)
-                             </button>
-                        </div>
-                    </form>
-                </div>
-            `;
-        }
-
-        if (modalHtml) {
-            modalContainer.innerHTML = modalHtml;
-            lucide.createIcons(); modalOverlay.classList.add('active');
-            attachFormSubmit(currentView);
-        }
-    });
-
-    function attachFormSubmit(viewId) {
-        const form = document.getElementById('modal-form');
-        if (!form) return;
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-
-            if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
-            if (data.titulo) data.titulo = data.titulo.toUpperCase().trim();
-            if (data.name) data.name = data.name.toUpperCase().trim();
-            if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
-
-            if (viewId === 'jugadores') {
-                data.posicion = formData.getAll('posicion').join(', ');
-            }
-
-            
-            try {
-                // Handle multiple checkboxes (taskids, playerids)
-                if (viewId === 'sesiones') {
-                    data.taskids = formData.getAll('taskids');
-                    data.playerids = formData.getAll('playerids');
-                    
-                    const tasksMeta = {};
-                    data.taskids.forEach(tid => {
-                        const playerGroups = {};
-                        data.playerids.forEach(pid => {
-                            const g = formData.get(`taskPlayerGroup_${tid}_${pid}`);
-                            if (g) playerGroups[pid] = g;
-                        });
-                        tasksMeta[tid] = {
-                            time: formData.get(`taskTime_${tid}`),
-                            space: formData.get(`taskSpace_${tid}`),
-                            playerGroups: playerGroups
-                        };
-                    });
-                    data.tasksMeta = tasksMeta;
-                }
-                
-                if (viewId === 'usuarios') {
-                    await window.addNewStaffMember(formData);
-                    return;
-                }
-                
-                if (viewId === 'tareas') {
-                    data.material = formData.getAll('material').join(', ');
-                    const imgInput = document.getElementById('task-image-input');
-                    if (imgInput && imgInput.files[0]) {
-                        data.image = await new Promise(resolve => {
-                            const reader = new FileReader();
-                            reader.onload = (re) => resolve(re.target.result);
-                            reader.readAsDataURL(imgInput.files[0]);
-                        });
-                    }
-                }
-
-                if (viewId === 'equipos') {
-                    const imgInput = document.getElementById('team-crest-input');
-                    if (imgInput && imgInput.files[0]) {
-                        data.escudo = await new Promise(resolve => {
-                            const reader = new FileReader();
-                            reader.onload = (re) => resolve(re.target.result);
-                            reader.readAsDataURL(imgInput.files[0]);
-                        });
-                    }
-
-                    const linkedPlayerIds = formData.getAll('linkedPlayerIds');
-                    const selectedCat = formData.getAll('categoria');
-                    const catStr = selectedCat.join(', ');
-                    
-                    data.nombre = `${data.nombre.trim().toUpperCase()} ||| ${catStr}`;
-                    data.categoria = parseInt(selectedCat[0]) || null;
-                    data.equipoConvenido = formData.get('equipoConvenido') || null;
-                    
-                    const savedTeam = await db.add('equipos', data);
-                    
-                    // Update linked players
-                    if (linkedPlayerIds.length > 0) {
-                        const players = await db.getAll('jugadores');
-                        for (const pid of linkedPlayerIds) {
-                            const p = players.find(x => x.id == pid);
-                            if (p) {
-                                p.equipoid = (savedTeam.id); 
-                                await db.update('jugadores', p);
-                            }
-                        }
-                    }
-                    
-                    window.customAlert('¡Éxito!', 'Equipo creado y jugadores vinculados correctamente.', 'success');
-                    closeModal();
-                    window.switchView('equipos');
-                    return; // Prevent default db.add at bottom
-                }
-                
-                if (viewId === 'sesiones') {
-                    const teams = await db.getAll('equipos');
-                    const t = teams.find(team => team.id == data.equipoid);
-                    data.equiponombre = t ? t.nombre : 'Equipo';
-                }
-
-                // Solo añadir metadatos de staff (compartir y creador) para entidades que lo permiten
-                const entitiesWithStaffMeta = ['tareas', 'sesiones', 'convocatorias', 'eventos', 'asistencia'];
-                if (entitiesWithStaffMeta.includes(viewId)) {
-                    data.sharedWith = formData.getAll('sharedWith');
-                    const currentUser = (await supabaseClient.auth.getUser()).data.user;
-                    if (currentUser) data.createdBy = currentUser.id;
-                }
-
-                await db.add(viewId, data);
-
-                if (window.refreshNotifications) window.refreshNotifications();
-                window.customAlert('Éxito', 'Guardado correctamente');
-                closeModal();
-                switchView(viewId);
-            } catch (err) {
-                console.error('Error saving data:', err);
-                window.customAlert('Error', 'Error al guardar: ' + err.message);
-            }
-        });
-    }
-
-    async function renderPerfil(container) {
-        try {
-            const { data: { user } } = await supabaseClient.auth.getUser();
-            if (!user) {
-                container.innerHTML = `<p class="p-10 text-slate-400 italic text-center">Inicia sesión para ver tu perfil.</p>`;
-                return;
-            }
-
-            let { data: profile, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle();
-            
-            // Si no hay perfil por ID, intentamos por email (usuarios creados manualmente)
-            if (!profile) {
-                const { data: emailProfiles } = await supabaseClient.from('profiles').select('*').eq('email', user.email);
-                if (emailProfiles && emailProfiles.length > 0) {
-                    profile = emailProfiles[0];
-                    // Atamos el ID para futuras consultas
-                    await supabaseClient.from('profiles').update({ id: user.id }).eq('email', user.email);
-                }
-            }
-
-            if (!profile) {
-                // Auto-creación definitiva con detección de columnas
-                const { data: firstProfile } = await supabaseClient.from('profiles').select('*').limit(1).maybeSingle();
-                const newRow = { id: user.id, email: user.email, role: 'TECNICO' };
-                const initialName = user.user_metadata?.full_name || user.user_metadata?.name || '';
-                
-                if (firstProfile) {
-                    if ('name' in firstProfile) newRow.name = initialName;
-                    if ('full_name' in firstProfile) newRow.full_name = initialName;
-                    if ('nombre' in firstProfile) newRow.nombre = initialName;
-                } else {
-                    // Fallback a 'name' si es el primer registro absoluto
-                    newRow.name = initialName;
-                }
-
-                const { data: newProfile } = await supabaseClient.from('profiles').insert([newRow]).select().maybeSingle();
-                profile = newProfile;
-            }
-
-            if (!profile) throw new Error("No se pudo obtener ni crear el perfil");
-            
-            const currentName = profile.name || profile.full_name || profile.nombre || '';
-
-        container.innerHTML = `
-            <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl relative overflow-hidden">
-                    <div class="absolute top-0 right-0 p-8 opacity-10">
-                        <i data-lucide="user" class="w-32 h-32"></i>
-                    </div>
-                    <div class="flex flex-col md:flex-row gap-8 items-center md:items-start relative z-10">
-                        <div class="relative group">
-                            <input type="file" id="avatar-input" class="hidden" accept="image/*">
-                            <div id="avatar-display" class="w-24 h-24 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-lg shadow-blue-500/30 group-hover:rotate-6 transition-all duration-500 overflow-hidden">
-                                ${profile.avatar_url ? `<img src="${profile.avatar_url}" class="w-full h-full object-cover">` : (currentName ? currentName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase())}
-                            </div>
-                            <button onclick="document.getElementById('avatar-input').click()" class="absolute -bottom-2 -right-2 p-2 bg-white rounded-xl border border-slate-100 shadow-md text-slate-400 hover:text-blue-600 transition-all shadow-xl">
-                                <i data-lucide="camera" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                        <div class="flex-1 text-center md:text-left">
-                            <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">${currentName || 'Sin Nombre'}</h3>
-                            <div class="flex flex-wrap justify-center md:justify-start gap-3 items-center">
-                                <span class="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest">${profile.role}</span>
-                                <span class="text-sm text-slate-400 font-medium">${user.email}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-lg space-y-6">
-                        <div class="flex items-center gap-3 mb-2">
-                             <div class="p-2 bg-slate-50 rounded-xl text-slate-400"><i data-lucide="settings-2" class="w-5 h-5"></i></div>
-                             <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight">Datos de Usuario</h4>
-                        </div>
-                        <form id="profile-form" class="space-y-4">
-                            <div>
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
-                                <input name="full_name" value="${currentName}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all font-bold text-slate-700" placeholder="Tu nombre...">
-                            </div>
-                            <button type="submit" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-lg hover:bg-black transition-all uppercase tracking-widest text-xs">Guardar Cambios</button>
-                        </form>
-                    </div>
-
-                    <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-lg space-y-6">
-                        <div class="flex items-center gap-3 mb-2">
-                             <div class="p-2 bg-red-50 rounded-xl text-red-400"><i data-lucide="key" class="w-5 h-5"></i></div>
-                             <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight">Seguridad</h4>
-                        </div>
-                        <form id="password-form" class="space-y-4">
-                            <div>
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nueva Contraseña</label>
-                                <input name="password" type="password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-red-50 transition-all font-bold text-slate-700" placeholder="••••••••">
-                            </div>
-                            <div>
-                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Confirmar Contraseña</label>
-                                <input name="confirm_password" type="password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:bg-white focus:ring-4 focus:ring-red-50 transition-all font-bold text-slate-700" placeholder="••••••••">
-                            </div>
-                            <button type="submit" class="w-full py-4 bg-red-600 text-white font-black rounded-2xl shadow-lg shadow-red-500/20 hover:bg-red-700 transition-all uppercase tracking-widest text-xs">Actualizar Contraseña</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        if (window.lucide) lucide.createIcons();
-        
-        const avatarInput = container.querySelector('#avatar-input');
-        if (avatarInput) {
-            avatarInput.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                // Show loading state
-                const display = container.querySelector('#avatar-display');
-                display.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-4 border-white border-t-transparent"></div>';
-
-                const reader = new FileReader();
-                reader.onload = async (re) => {
-                    const base64 = re.target.result;
-                    const { error } = await supabaseClient.from('profiles').update({ avatar_url: base64 }).eq('id', user.id);
-                    if (!error) {
-                        window.customAlert('Éxito', 'Foto de perfil actualizada', 'success');
-                        window.switchView('perfil');
-                    } else {
-                        window.customAlert('Error', 'No se pudo guardar la imagen: ' + error.message, 'error');
-                        window.switchView('perfil');
-                    }
-                };
-                reader.readAsDataURL(file);
-            };
-        }
-
-        container.querySelector('#profile-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const newName = formData.get('full_name');
-
-            // Detección dinámica ultra-robusta de columnas
-            const { data: profileCheck } = await supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle();
-            const updatePayload = {};
-            const nameKeys = ['name', 'full_name', 'nombre', 'nombre_completo'];
-            
-            if (profileCheck) {
-                const existingKeys = Object.keys(profileCheck);
-                nameKeys.forEach(key => {
-                    if (existingKeys.includes(key)) updatePayload[key] = newName;
-                });
-            }
-
-            if (Object.keys(updatePayload).length === 0) {
-                // Fallback desesperado: intentar con 'name'
-                updatePayload.name = newName;
-            }
-
-            const { error } = await supabaseClient.from('profiles').update(updatePayload).eq('id', user.id);
-
-            if (!error) {
-                window.customAlert('Éxito', 'Perfil actualizado', 'success');
-                window.switchView('perfil');
-            } else {
-                window.customAlert('Error', error.message, 'error');
-            }
-        };
-
-        container.querySelector('#password-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const pass = formData.get('password');
-            if (pass !== formData.get('confirm_password')) {
-                window.customAlert('Error', 'Las contraseñas no coinciden', 'error'); return;
-            }
-            const { error } = await supabaseClient.auth.updateUser({ password: pass });
-            if (!error) window.customAlert('Éxito', 'Contraseña actualizada', 'success');
-        };
-        } catch (err) {
-            console.error("Error in renderPerfil:", err);
-            container.innerHTML = `<p class="p-10 text-red-500">Error: ${err.message}</p>`;
-        }
-    }
-
-    async function renderUsuarios(container) {
-        try {
-            const { data: profiles, error } = await supabaseClient.from('profiles').select('*');
-            const currentUserRole = db.userRole || 'TECNICO';
-
-            if (error) {
-                 container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-3xl border border-red-100"><p class="font-bold">Error de Acceso</p><p class="text-xs opacity-80">${error.message}</p></div>`;
-                 return;
-            }
-
-            container.innerHTML = `
-                <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                    <table class="w-full">
-                        <thead>
-                            <tr class="bg-slate-50 text-left border-b border-slate-100">
-                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Nombre</th>
-                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Email</th>
-                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase">Rol</th>
-                                <th class="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${profiles && profiles.length > 0 ? profiles.map(u => `
-                                <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                    <td class="px-6 py-4 font-bold text-slate-800">${u.name || u.full_name || u.nombre || 'Sin Nombre'}</td>
-                                    <td class="px-6 py-4 text-xs text-slate-500">${u.email}</td>
-                                    <td class="px-6 py-4">
-                                        <span class="px-3 py-1 ${u.role === 'ELITE' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'} rounded-full text-[10px] font-black uppercase tracking-tighter">
-                                            ${u.role}
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-right">
-                                        ${currentUserRole === 'ELITE' ? `
-                                            <div class="flex justify-end gap-2">
-                                                <button onclick="window.resetUserPasswordEmail('${u.email}')" title="Resetear Contraseña" class="p-2 text-slate-400 hover:text-amber-500 transition-all"><i data-lucide="key" class="w-4 h-4"></i></button>
-                                                <button onclick="window.editUserAdmin('${u.id}')" title="Editar Perfil" class="p-2 text-slate-400 hover:text-blue-600 transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                                <button onclick="window.deleteUserStaff('${u.id}')" title="Eliminar" class="p-2 text-slate-400 hover:text-red-500 transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                            </div>
-                                        ` : '<span class="text-[10px] text-slate-300 italic">Lectura</span>'}
-                                    </td>
-                                </tr>
-                            `).join('') : '<tr><td colspan="4" class="p-10 text-center text-slate-400 italic">No hay miembros registrados aún.</td></tr>'}
-                        </tbody>
-                    </table>
-                </div>
-            <p class="mt-6 text-xs text-slate-400 italic px-6 mb-12">* Solo los usuarios con rol ELITE pueden editar perfiles de Staff y gestionar permisos globales.</p>
-            
-            <div class="pt-8 border-t border-slate-100">
-                <div class="flex items-center gap-3 mb-6 px-4">
-                    <div class="p-2 bg-blue-50 rounded-xl text-blue-600"><i data-lucide="user-cog" class="w-5 h-5"></i></div>
-                    <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Tu Configuración Personal</h3>
-                </div>
-                <div id="self-profile-container"></div>
-            </div>
-        `;
-
-        // Render profile card below
-        const selfContainer = container.querySelector('#self-profile-container');
-        if (selfContainer) await renderPerfil(selfContainer);
-
-        } catch (err) {
-            console.error("Error in renderUsuarios:", err);
-            container.innerHTML = `<p class="p-10 text-red-500">Error: ${err.message}</p>`;
-        }
-    }
-
-    window.toggleUserRole = async (userId, currentRole) => {
-        const newRole = currentRole === 'ELITE' ? 'TECNICO' : 'ELITE';
-        const { error } = await supabaseClient.from('profiles').update({ role: newRole }).eq('id', userId);
-        if (error) alert("Error: " + error.message);
-        else window.switchView('usuarios');
-    };
-
-    window.addNewStaffMember = async (formData) => {
-        const name = formData.get('name');
-        const email = formData.get('email');
-        const role = formData.get('role');
-
-        const { data, error } = await supabaseClient.from('profiles').insert([
-            { id: crypto.randomUUID(), name, email, role }
-        ]);
-
-        if (error) {
-            window.customAlert('Error', error.message, 'error');
-        } else {
-            window.customAlert('Éxito', 'Miembro añadido correctamente', 'success');
-            closeModal();
-            window.switchView('usuarios');
-        }
-    };
-    window.resetUserPasswordEmail = async (email) => {
-        window.customConfirm('RESETEAR ACCESO', `¿Quieres enviar un enlace de recuperación de contraseña a ${email}?`, async () => {
-            try {
-                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-                    redirectTo: window.location.origin
-                });
-                if (error) throw error;
-                window.customAlert('¡Enviado!', 'Se ha enviado un correo con las instrucciones para crear una nueva contraseña.', 'success');
-            } catch (err) {
-                window.customAlert('Error', err.message, 'error');
-            }
-        });
-    };
-
-    window.editUserAdmin = async (userId) => {
-        const { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', userId).single();
-        
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <h3 class="text-2xl font-black mb-6 text-slate-800 uppercase tracking-tight">Editar Perfil de Staff</h3>
-                <form id="admin-user-edit-form" class="space-y-6">
-                    <input type="hidden" name="id" value="${profile.id}">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Nombre Completo</label>
-                            <input name="full_name" value="${profile.name || profile.full_name || profile.nombre || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Rol de Permisos</label>
-                            <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-bold text-slate-700">
-                                <option ${profile.role === 'TECNICO' ? 'selected' : ''}>TECNICO</option>
-                                <option ${profile.role === 'ELITE' ? 'selected' : ''}>ELITE</option>
-                                <option ${profile.role === 'TECNICO CLUB CONVENIDO' ? 'selected' : ''}>TECNICO CLUB CONVENIDO</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                        <p class="text-[10px] text-amber-700 font-bold leading-relaxed">
-                            <i data-lucide="info" class="w-3 h-3 inline mr-1"></i> Por seguridad, no puedes cambiar la contraseña directamente. Si el usuario la olvidó, debe usar la opción de "Recuperar Contraseña" en el login o puedes enviar un email de reseteo si tienes configurado el servicio de Auth.
-                        </p>
-                    </div>
-                    <div class="flex gap-4">
-                        <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">Cerrar</button>
-                        <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Actualizar Staff</button>
-                    </div>
-                </form>
-            </div>
-        `;
-        
-        lucide.createIcons();
-        modalOverlay.classList.add('active');
-
-        modalContainer.querySelector('#admin-user-edit-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const updateData = { role: formData.get('role') };
-            const nameToSet = formData.get('full_name');
-            // Intentar actualizar ambos campos por si acaso
-            updateData.name = nameToSet;
-            
-            const { error } = await supabaseClient.from('profiles').update(updateData).eq('id', userId);
-            
-            if (!error) {
-                window.customAlert('Éxito', 'Staff actualizado correctamente', 'success');
-                closeModal();
-                window.renderView('usuarios');
-            } else {
-                window.customAlert('Error', error.message, 'error');
-            }
-        };
-    };
-
-    let currentConvocatoriaTab = 'Ciclo';
-    let currentConvocatoriaTeamId = 'all';
-
-    let convocatoriaSearchTerm = '';
-    window.updateConvocatoriaSearch = (val) => {
-        convocatoriaSearchTerm = val;
-        window.renderView('convocatorias');
-    };
-
-    window.switchConvocatoriaTeamTab = (tid) => {
-        currentConvocatoriaTeamId = tid;
-        window.renderView('convocatorias');
-    };
-
-    window.renderConvocatorias = async function(container) {
-        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false }).order('hora', { ascending: false });
-        if (error) {
-            container.innerHTML = `<p class="p-10 text-red-500">Error: ${error.message}</p>`;
-            return;
-        }
-
-        const teams = await db.getAll('equipos');
-        const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
-
-        const userRes = await supabaseClient.auth.getUser();
-        const currentUser = userRes.data?.user;
-        const isGlobal = window.currentVisibilityMode === 'global';
-
-        const filtered = convs.filter(c => {
-            const matchesTab = c.tipo === currentConvocatoriaTab;
-
-            const matchesTeam = currentConvocatoriaTeamId === 'all' || 
-                              (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
-                              (c.lugar && c.lugar.includes(' ||| ') && JSON.parse(c.lugar.split(' ||| ')[1]).eids?.includes(currentConvocatoriaTeamId.toString()));
-            const matchesSearch = !convocatoriaSearchTerm || 
-                c.nombre.toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
-                (c.lugar && c.lugar.toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()));
-            return matchesTab && matchesTeam && matchesSearch;
-        });
-
-        // Get teams that have convocatorias of this type to show in sub-tabs
-        const teamsWithConvs = teams.filter(t => 
-            convs.some(c => c.tipo === currentConvocatoriaTab && 
-                ((c.equipoid && c.equipoid.toString() === t.id.toString()) || 
-                 (c.lugar && c.lugar.includes(' ||| ') && JSON.parse(c.lugar.split(' ||| ')[1]).eids?.includes(t.id.toString())))
-            )
-        );
-
-        // Sort teams from senior to junior (by birth year / category)
-        teamsWithConvs.sort((a, b) => {
-            const valA = parseInt(a.categoria) || 9999;
-            const valB = parseInt(b.categoria) || 9999;
-            if (valA !== valB) return valA - valB;
-            return a.nombre.localeCompare(b.nombre);
-        });
-
-        container.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <!-- Tabs -->
-                <div class="flex gap-2 p-1 bg-slate-100 rounded-2xl w-max">
-                    ${[
-                        { label: 'Ciclos', value: 'Ciclo' },
-                        { label: 'Sesiones', value: 'Sesión' },
-                        { label: 'Zubieta', value: 'Zubieta' }
-                    ].map(tab => `
-                        <button onclick="window.switchConvocatoriaTab('${tab.value}')" class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${currentConvocatoriaTab === tab.value ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}">
-                            ${tab.label}
-                        </button>
-                    `).join('')}
-                </div>
-
-                <!-- Search box -->
-                <div class="relative w-full md:w-80">
-                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                    <input type="text" 
-                        id="convocatoria-search-input"
-                        placeholder="Buscar en ${currentConvocatoriaTab}..." 
-                        value="${convocatoriaSearchTerm}"
-                        oninput="window.updateConvocatoriaSearch(this.value)"
-                        class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 focus:border-blue-400 transition-all">
-                </div>
-            </div>
-
-            <!-- Team Sub-tabs -->
-            <div class="mb-8 flex flex-wrap gap-2 animate-in slide-in-from-left duration-500">
-                <button onclick="window.switchConvocatoriaTeamTab('all')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                    TODOS LOS EQUIPOS
-                </button>
-                ${teamsWithConvs.map(t => `
-                    <button onclick="window.switchConvocatoriaTeamTab('${t.id}')" class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                        ${t.nombre}
-                    </button>
-                `).join('')}
-            </div>
-
-            <!-- Mobile View (Cards) -->
-            <div class="md:hidden space-y-4">
-                ${filtered.map(c => `
-                    <div onclick="window.viewConvocatoria(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center"><i data-lucide="scroll-text" class="w-5 h-5"></i></div>
-                                <div>
-                                    <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                        ${c.fecha} • 
-                                        ${(() => {
-                                            if (c.lugar && c.lugar.includes(' ||| ')) {
-                                                try {
-                                                    const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
-                                                    if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
-                                                } catch(e) {}
-                                            }
-                                            return c.hora || '--:--';
-                                        })()}
-                                    </p>
-                                </div>
-                            </div>
-                            <span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-widest">${c.tipo}</span>
-                        </div>
-                        <div class="flex items-center justify-between mt-6">
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="users" class="w-4 h-4 text-slate-300"></i>
-                                <span class="text-[11px] font-black text-slate-600 uppercase tracking-tight">${(c.playerids || []).length} JUGADORES</span>
-                            </div>
-                            <div class="flex gap-2">
-                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500">
-                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('') || `<div class="py-20 text-center italic text-slate-400">No hay convocatorias</div>`}
-            </div>
-
-            <!-- Desktop View (Table) -->
-            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden animate-in fade-in duration-500">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-slate-50 border-b border-slate-100">
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Nombre / Evento</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Convocados</th>
-                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${filtered.map(c => {
-                                let displayLugar = window.cleanLugar(c.lugar) || '--';
-                                
-                                const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
-                                const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-
-                                return `
-                                    <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewConvocatoria(${c.id})">
-                                        <td class="p-6">
-                                            <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                                        </td>
-                                        <td class="p-6">
-                                            <div class="flex flex-col">
-                                                <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
-                                                <span class="text-[10px] font-black text-slate-400 uppercase">
-                                                    ${(() => {
-                                                        if (c.lugar && c.lugar.includes(' ||| ')) {
-                                                            try {
-                                                                const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
-                                                                if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
-                                                            } catch(e) {}
-                                                        }
-                                                        return c.hora || '--:--';
-                                                    })()}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td class="p-6">
-                                            <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamName}</span>
-                                        </td>
-                                        <td class="p-6">
-                                            <p class="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[150px]">${displayLugar}</p>
-                                        </td>
-                                        <td class="p-6 text-center">
-                                            <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-4 py-2 rounded-2xl border border-blue-100/50 shadow-sm transition-all hover:bg-blue-100/50">
-                                                <i data-lucide="users" class="w-4 h-4"></i>
-                                                <span class="text-sm font-black tracking-tight">${playerCount}</span>
-                                            </div>
-                                        </td>
-                                        <td class="p-6 text-right">
-                                            <div class="flex justify-end gap-2">
-                                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
-                                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                </button>
-                                                <i data-lucide="chevron-right" class="w-5 h-5 text-slate-200 group-hover:text-blue-400 transition-all"></i>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('') || `<tr><td colspan="6" class="p-20 text-center text-slate-300 italic">No se han encontrado convocatorias.</td></tr>`}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="mt-8 flex justify-between items-center px-4">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mostrando ${filtered.length} de ${convs.length} registros</p>
-            </div>
-        `;
-        if (window.lucide) lucide.createIcons();
-        // Focus the search input if it was active
-        const searchInput = document.getElementById('convocatoria-search-input');
-        if (searchInput && convocatoriaSearchTerm) {
-            searchInput.focus();
-            searchInput.setSelectionRange(convocatoriaSearchTerm.length, convocatoriaSearchTerm.length);
-        }
-    }
-
-    window.switchConvocatoriaTab = (tab) => {
-        currentConvocatoriaTab = tab;
-        currentConvocatoriaTeamId = 'all'; // Reset team filter when switching type
-        window.renderView('convocatorias');
-    };
-
-    window.newConvocatoria = async (forcedTab = null) => {
-        const userRes = await supabaseClient.auth.getUser();
-        const currentUser = userRes.data?.user;
-        const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
-        const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
-        const activeTab = forcedTab || currentConvocatoriaTab;
-        
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <h3 class="text-2xl font-bold text-slate-800 mb-6">Crear Convocatoria: <span class="text-blue-600">${activeTab}</span></h3>
-                <form id="new-convocatoria-form" class="space-y-6">
-                        <input type="hidden" name="tipo" value="${activeTab}">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="col-span-1 md:col-span-2">
-                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
-                                 <input name="nombre" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-2 ring-blue-100" placeholder="Ej: Entrenamiento Lunes" required>
-                            </div>
-                            
-                            ${activeTab === 'Ciclo' ? `
-                                <!-- SESION 1 -->
-                                <div class="col-span-1 md:col-span-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                                    <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3">Sesión 1</p>
-                                    <div class="grid grid-cols-3 gap-3">
-                                        <input name="fecha" type="date" class="p-3 border rounded-xl outline-none text-xs" required>
-                                        <input name="hora" type="time" class="p-3 border rounded-xl outline-none text-xs" required>
-                                        <input name="lugar" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 1">
-                                    </div>
-                                </div>
-                                <!-- SESION 2 -->
-                                <div class="col-span-1 md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sesión 2</p>
-                                    <div class="grid grid-cols-3 gap-3">
-                                        <input name="fecha2" type="date" class="p-3 border rounded-xl outline-none text-xs">
-                                        <input name="hora2" type="time" class="p-3 border rounded-xl outline-none text-xs">
-                                        <input name="lugar2" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 2">
-                                    </div>
-                                </div>
-                                <!-- SESION 3 -->
-                                <div class="col-span-1 md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Sesión 3</p>
-                                    <div class="grid grid-cols-3 gap-3">
-                                        <input name="fecha3" type="date" class="p-3 border rounded-xl outline-none text-xs">
-                                        <input name="hora3" type="time" class="p-3 border rounded-xl outline-none text-xs">
-                                        <input name="lugar3" class="p-3 border rounded-xl outline-none text-xs" placeholder="Lugar 3">
-                                    </div>
-                                </div>
-                            ` : `
-                                 <div class="col-span-2 grid grid-cols-3 gap-3">
-                                    <div>
-                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
-                                         <input name="hora_llegada" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
-                                    </div>
-                                    <div>
-                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
-                                         <input name="hora_inicio" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
-                                    </div>
-                                    <div>
-                                         <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
-                                         <input name="hora_salida" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
-                                    </div>
-                                </div>
-                                <div>
-                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
-                                     <input name="fecha" type="date" class="w-full p-3 border rounded-xl outline-none" required>
-                                </div>
-                                <div class="col-span-2">
-                                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                                     <input name="lugar" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
-                                </div>
-                            `}
-                        </div>
-
-                        <div id="player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
-                            <div class="flex items-center justify-between">
-                                <label class="block text-xs font-black text-slate-400 uppercase tracking-widest text-blue-600">Selección de Jugadores</label>
-                                <button type="button" id="conv-select-all" class="text-[10px] font-black text-blue-600 uppercase hover:underline">Seleccionar Todos</button>
-                            </div>
-                            
-                            <!-- Multi-Team Selector -->
-                            <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Equipos</label>
-                                <div id="conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-                                    ${window.getSortedTeams(teams).map(t => `
-                                        <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all shadow-sm">
-                                            <input type="checkbox" value="${t.id}" class="w-4 h-4 rounded text-blue-600 conv-team-check">
-                                            <span class="text-[9px] font-bold text-slate-700 truncate uppercase">${t.nombre}</span>
-                                        </label>
-                                    `).join('')}
-                                </div>
-                            </div>
-
-                            <div class="relative">
-                                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
-                                <input type="text" id="conv-player-search" placeholder="Filtrar jugadores por nombre..." class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
-                            </div>
-
-                            <div id="filtered-players-list" class="max-h-64 overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-1 custom-scrollbar">
-                                <!-- Los jugadores se cargarán aquí -->
-                            </div>
-                        </div>
-
-                        ${(users) ? `
-                            <div class="space-y-3 pt-4 border-t border-slate-100">
-                                <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                                    ${(users && currentUser) ? users.filter(u => u.id !== currentUser.id).map(u => `
-                                        <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                            <input type="checkbox" name="sharedWith" value="${u.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                            <div class="flex-1">
-                                                <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
-                                            </div>
-                                        </label>
-                                    `).join('') : '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
-                                </div>
-                            </div>
-                        ` : ''}
-
-                        <div class="flex gap-4 mt-6">
-                            <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-[10px]">Cancelar</button>
-                            <button type="submit" class="flex-[2] py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Generar Convocatoria</button>
-                        </div>
-                    </form>
-                </div>
-            `;
-            modalOverlay.classList.add('active');
-            if (window.lucide) lucide.createIcons();
-
-            const searchInput = document.getElementById('conv-player-search');
-            const selectAllBtn = document.getElementById('conv-select-all');
-            const playerList = document.getElementById('filtered-players-list');
-            const teamChecks = document.querySelectorAll('.conv-team-check');
-            const selectedPlayerIds = new Set();
-
-            const updatePlayers = () => {
-                const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-                const searchText = (searchInput.value || '').toLowerCase();
-                
-                let filtered = players;
-                if (checkedTeamIds.length > 0) {
-                    filtered = filtered.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
-                }
-                if (searchText) {
-                    filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
-                }
-
-                renderFilteredList(filtered);
-            };
-
-            const renderFilteredList = (list) => {
-                if (list.length > 0) {
-                    playerList.innerHTML = list.map(p => `
-                        <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group conv-player-label">
-                            <div class="flex items-center gap-3">
-                                <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
-                                <span class="text-sm font-bold text-slate-700 conv-player-name uppercase">${p.nombre}</span>
-                            </div>
-                            <span class="text-[10px] font-black text-slate-300 uppercase">${p.posicion || '--'}${p.equipoConvenido ? ` · ${p.equipoConvenido}` : ''}</span>
-                        </label>
-                    `).join('');
-
-                    playerList.querySelectorAll('.player-check').forEach(chk => {
-                        chk.onchange = (e) => {
-                            if (e.target.checked) selectedPlayerIds.add(String(e.target.value));
-                            else selectedPlayerIds.delete(String(e.target.value));
-                        };
-                    });
-                } else {
-                    playerList.innerHTML = `<p class="text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona algún equipo para ver jugadores.</p>`;
-                }
-            };
-
-            teamChecks.forEach(c => c.onchange = updatePlayers);
-            searchInput.oninput = updatePlayers;
-            
-            updatePlayers();
-            
-            selectAllBtn.onclick = () => {
-                const checks = playerList.querySelectorAll('.player-check');
-                const allChecked = Array.from(checks).every(c => c.checked);
-                checks.forEach(c => {
-                    c.checked = !allChecked;
-                    if (c.checked) selectedPlayerIds.add(String(c.value));
-                    else selectedPlayerIds.delete(String(c.value));
-                });
-            };
-
-            document.getElementById('new-convocatoria-form').onsubmit = async (e) => {
-                e.preventDefault();
-                try {
-                    const formData = new FormData(e.target);
-                    const data = Object.fromEntries(formData.entries());
-                    
-                    data.playerids = Array.from(selectedPlayerIds);
-                    data.sharedWith = formData.getAll('sharedWith');
-                    
-                    const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-                    data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : null;
-
-                    const extra = {
-                        s2: { f: data.fecha2, h: data.hora2, l: (data.lugar2 || '').toUpperCase().trim() },
-                        s3: { f: data.fecha3, h: data.hora3, l: (data.lugar3 || '').toUpperCase().trim() },
-                        hl: data.hora_llegada,
-                        hi: data.hora_inicio,
-                        hs: data.hora_salida,
-                        sw: data.sharedWith,
-                        eids: checkedTeamIds
-                    };
-                    
-                    const bundledData = { ...data };
-                    bundledData.hora = data.hora_inicio || data.hora;
-                    ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith', 'hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete bundledData[f]);
-                    bundledData.nombre = (bundledData.nombre || '').toUpperCase().trim();
-                    bundledData.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
-
-                    const newConv = await db.add('convocatorias', { ...bundledData, createdBy: currentUser.id });
-                    
-                    // Crear reportes de asistencia automáticos para que el usuario solo tenga que confirmar
-                    const createAutoAttendance = async (date, nameSuffix = '') => {
-                        if (!date || date === '') return;
-                        const playersData = {};
-                        (data.playerids || []).forEach(pid => { 
-                            playersData[pid] = 'asiste'; 
-                        });
-
-                        const teamNames = checkedTeamIds.map(tid => {
-                            const t = teams.find(team => team.id.toString() === tid.toString());
-                            return t ? t.nombre.split(' ||| ')[0] : tid;
-                        }).join('_');
-
-                        const dateParts = date.split('-');
-                        const dateShort = (dateParts.length === 3) ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0].slice(-2)}` : date;
-                        
-                        const baseName = `ASISTENCIA ${dateShort}${teamNames ? `_${teamNames}` : ''}${nameSuffix ? ` ${nameSuffix}` : ''}`;
-                        const fullName = `${baseName.toUpperCase()} ||| ${JSON.stringify({ eids: checkedTeamIds })}`;
-
-                        await db.add('asistencia', {
-                            nombre: fullName,
-                            equipoid: checkedTeamIds.length > 0 ? parseInt(checkedTeamIds[0]) : null,
-                            fecha: date,
-                            players: playersData,
-                            createdBy: currentUser.id,
-                            convocatoriaid: newConv.id
-                        });
-                    };
-
-                    // Crear asistencia para la fecha principal
-                    await createAutoAttendance(data.fecha);
-
-                    // Si es un ciclo, crear asistencias para las sesiones adicionales si tienen fecha
-                    if (activeTab === 'Ciclo') {
-                        if (data.fecha2) await createAutoAttendance(data.fecha2, '(S2)');
-                        if (data.fecha3) await createAutoAttendance(data.fecha3, '(S3)');
-                    }
-                    
-                    window.customAlert('¡Éxito!', 'Convocatoria y Asistencia generadas correctamente. Ya puedes verlas en Control de Asistencia.', 'success');
-                    closeModal();
-                    window.switchView(activeTab === 'Torneo' ? 'torneos' : 'convocatorias');
-                } catch (err) {
-                    alert("Error al guardar: " + err.message);
-                }
-            };
-
     };
 
     window.editConvocatoria = async (id) => {
@@ -7077,44 +3279,122 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nombre / Evento</label>
                              <input name="nombre" value="${conv.nombre}" class="w-full p-4 border rounded-2xl text-lg font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all" placeholder="Ej: Entrenamiento Lunes" required>
                         </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
-                             <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-3 border rounded-xl outline-none" required>
-                        </div>
-                        <div class="col-span-2 grid grid-cols-3 gap-3">
+                        
+                        ${activeTab === 'Ciclo' ? `
+                            <div class="col-span-2 space-y-6">
+                                <!-- SESIÓN 1 -->
+                                <div class="p-6 bg-blue-50/30 rounded-[2rem] border border-blue-100/50 space-y-4">
+                                    <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 1 (Principal)
+                                    </p>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        <div class="md:col-span-1">
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                            <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                            <input name="hl" value="${window.parseLugarMetadata(conv.lugar).extra.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                            <input name="hi" value="${window.parseLugarMetadata(conv.lugar).extra.hi || conv.hora || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs" required>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                            <input name="hs" value="${window.parseLugarMetadata(conv.lugar).extra.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 1</label>
+                                        <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 1">
+                                    </div>
+                                </div>
+
+                                <!-- SESIÓN 2 -->
+                                <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 2
+                                    </p>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        <div class="md:col-span-1">
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                            <input name="fecha2" value="${conv.fecha2 || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                            <input name="hl2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                            <input name="hi2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                            <input name="hs2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 2</label>
+                                        <input name="lugar2" value="${window.parseLugarMetadata(conv.lugar).extra.s2?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 2">
+                                    </div>
+                                </div>
+
+                                <!-- SESIÓN 3 -->
+                                <div class="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Sesión 3
+                                    </p>
+                                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        <div class="md:col-span-1">
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Fecha</label>
+                                            <input name="fecha3" value="${conv.fecha3 || ''}" type="date" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Llegada</label>
+                                            <input name="hl3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hl || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Inicio</label>
+                                            <input name="hi3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hi || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">H. Salida</label>
+                                            <input name="hs3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.hs || ''}" type="time" class="w-full p-2.5 border rounded-xl outline-none text-xs">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-black text-slate-400 uppercase mb-1">Lugar Sesión 3</label>
+                                        <input name="lugar3" value="${window.parseLugarMetadata(conv.lugar).extra.s3?.l || ''}" class="w-full p-2.5 border rounded-xl outline-none text-xs" placeholder="Estadio / Campo 3">
+                                    </div>
+                                </div>
+                            </div>
+                        ` : `
                             <div>
-                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
-                                 <input name="hora_llegada" value="${(() => {
-                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
-                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hl || ''; } catch(e) {}
-                                     }
-                                     return '';
-                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Fecha</label>
+                                 <input name="fecha" value="${conv.fecha}" type="date" class="w-full p-3 border rounded-xl outline-none" required>
+                            </div>
+                            <div class="col-span-2 grid grid-cols-3 gap-3">
+                                <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Llegada</label>
+                                     <input name="hl" value="${window.parseLugarMetadata(conv.lugar).extra.hl || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                                </div>
+                                <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
+                                     <input name="hi" value="${window.parseLugarMetadata(conv.lugar).extra.hi || conv.hora || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
+                                </div>
+                                <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
+                                     <input name="hs" value="${window.parseLugarMetadata(conv.lugar).extra.hs || ''}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
+                                </div>
                             </div>
                             <div>
-                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Inicio</label>
-                                 <input name="hora_inicio" value="${(() => {
-                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
-                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hi || conv.hora || ''; } catch(e) {}
-                                     }
-                                     return conv.hora || '';
-                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs" required>
+                                 <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
+                                 <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
                             </div>
-                            <div>
-                                 <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">Hora Salida</label>
-                                 <input name="hora_salida" value="${(() => {
-                                     if (conv.lugar && conv.lugar.includes(' ||| ')) {
-                                         try { return JSON.parse(conv.lugar.split(' ||| ')[1]).hs || ''; } catch(e) {}
-                                     }
-                                     return '';
-                                 })()}" type="time" class="w-full p-3 border rounded-xl outline-none text-xs">
-                            </div>
-                        </div>
-                        <div>
-                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar</label>
-                             <input name="lugar" value="${window.cleanLugar(conv.lugar) || ''}" class="w-full p-3 border rounded-xl outline-none" placeholder="Estadio / Campo">
-                        </div>
+                        `}
                     </div>
+
 
                     <div id="edit-player-selector-container" class="space-y-4 pt-4 border-t border-slate-100">
                         <div class="flex items-center justify-between">
@@ -7127,13 +3407,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Equipos</label>
                             <div id="edit-conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
                                 ${(() => {
-                                    let precheckedTeams = [];
-                                    if (conv.lugar && conv.lugar.includes(' ||| ')) {
-                                        try {
-                                            const extra = JSON.parse(conv.lugar.split(' ||| ')[1]);
-                                            if (extra.eids) precheckedTeams = extra.eids.map(String);
-                                        } catch (e) {}
-                                    }
+                                    const { extra: meta } = window.parseLugarMetadata(conv.lugar);
+                                    let precheckedTeams = meta.eids ? meta.eids.map(String) : [];
                                     if (precheckedTeams.length === 0 && conv.equipoid) {
                                         precheckedTeams = [String(conv.equipoid)];
                                     }
@@ -7243,20 +3518,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 data.nombre = (data.nombre || '').toUpperCase().trim();
 
-                let extra = {};
-                if (conv.lugar && conv.lugar.includes(' ||| ')) {
-                    try { extra = JSON.parse(conv.lugar.split(' ||| ')[1]); } catch (e) {}
-                }
+                const { extra: currentExtra } = window.parseLugarMetadata(conv.lugar);
+                let extra = { ...currentExtra };
+                
                 extra.eids = checkedTeamIds;
-                extra.hl = data.hora_llegada;
-                extra.hi = data.hora_inicio;
-                extra.hs = data.hora_salida;
-                data.hora = data.hora_inicio || data.hora;
-                ['hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete data[f]);
+                extra.hl = data.hl || data.hora_llegada;
+                extra.hi = data.hi || data.hora_inicio;
+                extra.hs = data.hs || data.hora_salida;
+                
+                data.hora = extra.hi || data.hora;
+                ['hora_llegada', 'hora_inicio', 'hora_salida', 'hl', 'hi', 'hs'].forEach(f => delete data[f]);
 
-                // Handle sub-session locations if they exist in the form (for Ciclos)
-                if (data.lugar2) extra.s2 = { ...extra.s2, l: data.lugar2.toUpperCase().trim() };
-                if (data.lugar3) extra.s3 = { ...extra.s3, l: data.lugar3.toUpperCase().trim() };
+                // Handle sub-session data for Ciclos
+                if (activeTab === 'Ciclo') {
+                    extra.s2 = { 
+                        f: data.fecha2, 
+                        hl: data.hl2, 
+                        hi: data.hi2, 
+                        hs: data.hs2, 
+                        l: (data.lugar2 || '').toUpperCase().trim() 
+                    };
+                    extra.s3 = { 
+                        f: data.fecha3, 
+                        hl: data.hl3, 
+                        hi: data.hi3, 
+                        hs: data.hs3, 
+                        l: (data.lugar3 || '').toUpperCase().trim() 
+                    };
+                    ['fecha2', 'fecha3', 'hl2', 'hi2', 'hs2', 'hl3', 'hi3', 'hs3', 'lugar2', 'lugar3'].forEach(f => delete data[f]);
+                } else {
+                    if (data.lugar2) extra.s2 = { ...extra.s2, l: data.lugar2.toUpperCase().trim() };
+                    if (data.lugar3) extra.s3 = { ...extra.s3, l: data.lugar3.toUpperCase().trim() };
+                }
 
                 data.lugar = `${baseLugar} ||| ${JSON.stringify(extra)}`;
 
@@ -7360,21 +3653,33 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const selectedTeams = formData.getAll('equipoids');
             data.equipoid = selectedTeams.length > 0 ? parseInt(selectedTeams[0]) : null;
 
-            // BUNDLE EXTRA INFO Proactively
+            // Formalized metadata serialization using centralized utility
             const extra = {
-                s2: { f: data.fecha2, h: data.hora2, l: data.lugar2 },
-                s3: { f: data.fecha3, h: data.hora3, l: data.lugar3 },
-                hl: data.hora_llegada,
-                hi: data.hora_inicio,
-                hs: data.hora_salida,
+                hl: data.hl || data.hora_llegada,
+                hi: data.hi || data.hora_inicio || data.hora,
+                hs: data.hs || data.hora_salida,
+                s2: { 
+                    f: data.fecha2, 
+                    hl: data.hl2, 
+                    hi: data.hi2 || data.hora2, 
+                    hs: data.hs2, 
+                    l: (data.lugar2 || '').toUpperCase().trim() 
+                },
+                s3: { 
+                    f: data.fecha3, 
+                    hl: data.hl3, 
+                    hi: data.hi3 || data.hora3, 
+                    hs: data.hs3, 
+                    l: (data.lugar3 || '').toUpperCase().trim() 
+                },
                 sw: data.sharedWith,
                 eids: selectedTeams
             };
             
             const bundledData = { ...data };
-            bundledData.hora = data.hora_inicio || data.hora;
-            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids', 'hora_llegada', 'hora_inicio', 'hora_salida'].forEach(f => delete bundledData[f]);
-            bundledData.lugar = `${data.lugar || ''} ||| ${JSON.stringify(extra)}`;
+            bundledData.hora = extra.hi || data.hora;
+            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids', 'hora_llegada', 'hora_inicio', 'hora_salida', 'hl', 'hi', 'hs', 'hl2', 'hi2', 'hs2', 'hl3', 'hi3', 'hs3'].forEach(f => delete bundledData[f]);
+            bundledData.lugar = window.serializeLugarMetadata(data.lugar, extra);
             
             await db.update('convocatorias', { ...bundledData, id });
             
@@ -7403,34 +3708,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const { data: rawConv, error } = await supabaseClient.from("convocatorias").select("*").eq("id", id).single();
             if (error) throw error;
             let conv = { ...rawConv };
-            if (conv.lugar && conv.lugar.includes(" ||| ")) {
-                try {
-                    const [mainLugar, jsonInfo] = conv.lugar.split(" ||| ");
-                    const extra = JSON.parse(jsonInfo);
-                    conv.lugar = mainLugar;
-                    if (extra.s2) {
-                        conv.fecha2 = extra.s2.f; conv.hora2 = extra.s2.h; conv.lugar2 = extra.s2.l;
-                        conv.fecha3 = extra.s3.f; conv.hora3 = extra.s3.h; conv.lugar3 = extra.s3.l;
-                    }
-                    if (extra.sw) conv.sharedWith = extra.sw;
-                    if (extra.eids && !conv.equipoid) conv.equipoid = extra.eids;
-                } catch (pe) { console.error("Error parsing extra info:", pe); }
+            
+            // Refactored to use centralized parseLugarMetadata
+            const { base, extra: meta } = window.parseLugarMetadata(conv.lugar);
+            conv.lugar = base;
+            if (meta.s2) {
+                conv.fecha2 = meta.s2.f; 
+                conv.hl2 = meta.s2.hl; conv.hi2 = meta.s2.hi || meta.s2.h; conv.hs2 = meta.s2.hs; conv.lugar2 = meta.s2.l;
+                conv.fecha3 = meta.s3.f; 
+                conv.hl3 = meta.s3.hl; conv.hi3 = meta.s3.hi || meta.s3.h; conv.hs3 = meta.s3.hs; conv.lugar3 = meta.s3.l;
             }
+            conv.hl = meta.hl; conv.hi = meta.hi || conv.hora; conv.hs = meta.hs;
+            if (meta.sw) conv.sharedWith = meta.sw;
+            if (meta.eids && !conv.equipoid) conv.equipoid = meta.eids;
 
             const players = await db.getAll('jugadores');
             const teams = await db.getAll('equipos');
             const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
             
             let selectedTeamIds = [];
-            let extra = {};
-            if (rawConv.lugar && rawConv.lugar.includes(" ||| ")) {
-                try {
-                    const jsonInfo = rawConv.lugar.split(" ||| ")[1];
-                    extra = JSON.parse(jsonInfo);
-                    if (extra.eids && Array.isArray(extra.eids)) {
-                        selectedTeamIds = extra.eids.map(String);
-                    }
-                } catch (e) {}
+            const { base: mainLugar, extra } = window.parseLugarMetadata(rawConv.lugar);
+            if (extra.eids && Array.isArray(extra.eids)) {
+                selectedTeamIds = extra.eids.map(String);
             }
             
             if (selectedTeamIds.length === 0 && rawConv.equipoid) {
@@ -7472,20 +3771,70 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${conv.nombre}</h3>
                             ${conv.tipo === 'Ciclo' ? `
                                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                                    <div class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
-                                        <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-1">Sesión 1</p>
-                                        <p class="text-xs font-bold text-slate-700">${conv.fecha} • ${conv.hora || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar) || 'Sin lugar'}</p>
+                                    <!-- Card Sesión 1 -->
+                                    <div class="p-6 bg-blue-50/50 rounded-[2rem] border border-blue-100/50 shadow-sm relative overflow-hidden group">
+                                        <div class="absolute -right-4 -top-4 w-16 h-16 bg-blue-600/5 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700"></div>
+                                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-3 h-3"></i> Sesión 1
+                                        </p>
+                                        <div class="space-y-3">
+                                            <p class="text-sm font-black text-slate-800 uppercase tracking-tight">${conv.fecha}</p>
+                                            <div class="flex items-center gap-4 py-2 border-y border-blue-100/30">
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Llegada</span><span class="text-xs font-bold text-slate-700">${conv.hl || '--'}</span></div>
+                                                <div class="w-px h-6 bg-blue-100/50"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</span><span class="text-xs font-bold text-blue-600">${conv.hi || '--'}</span></div>
+                                                <div class="w-px h-6 bg-blue-100/50"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</span><span class="text-xs font-bold text-slate-700">${conv.hs || '--'}</span></div>
+                                            </div>
+                                            <div class="flex items-center gap-2 text-slate-400">
+                                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                                <span class="text-[10px] font-bold uppercase tracking-tight">${window.cleanLugar(conv.lugar) || 'SIN LUGAR'}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 2</p>
-                                        <p class="text-xs font-bold text-slate-700">${conv.fecha2 || '--'} • ${conv.hora2 || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar2) || 'Sin lugar'}</p>
+
+                                    <!-- Card Sesión 2 -->
+                                    <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                                        <div class="absolute -right-4 -top-4 w-16 h-16 bg-slate-100 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700"></div>
+                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-3 h-3"></i> Sesión 2
+                                        </p>
+                                        <div class="space-y-3">
+                                            <p class="text-sm font-black text-slate-800 uppercase tracking-tight">${conv.fecha2 || '--'}</p>
+                                            <div class="flex items-center gap-4 py-2 border-y border-slate-100">
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Llegada</span><span class="text-xs font-bold text-slate-700">${conv.hl2 || '--'}</span></div>
+                                                <div class="w-px h-6 bg-slate-100"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</span><span class="text-xs font-bold text-slate-700">${conv.hi2 || '--'}</span></div>
+                                                <div class="w-px h-6 bg-slate-100"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</span><span class="text-xs font-bold text-slate-700">${conv.hs2 || '--'}</span></div>
+                                            </div>
+                                            <div class="flex items-center gap-2 text-slate-400">
+                                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                                <span class="text-[10px] font-bold uppercase tracking-tight">${window.cleanLugar(conv.lugar2) || 'SIN LUGAR'}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Sesión 3</p>
-                                        <p class="text-xs font-bold text-slate-700">${conv.fecha3 || '--'} • ${conv.hora3 || '--:--'}</p>
-                                        <p class="text-[10px] text-slate-400 font-bold mt-1">${window.cleanLugar(conv.lugar3) || 'Sin lugar'}</p>
+
+                                    <!-- Card Sesión 3 -->
+                                    <div class="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                                        <div class="absolute -right-4 -top-4 w-16 h-16 bg-slate-100 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700"></div>
+                                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                                            <i data-lucide="calendar" class="w-3 h-3"></i> Sesión 3
+                                        </p>
+                                        <div class="space-y-3">
+                                            <p class="text-sm font-black text-slate-800 uppercase tracking-tight">${conv.fecha3 || '--'}</p>
+                                            <div class="flex items-center gap-4 py-2 border-y border-slate-100">
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Llegada</span><span class="text-xs font-bold text-slate-700">${conv.hl3 || '--'}</span></div>
+                                                <div class="w-px h-6 bg-slate-100"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</span><span class="text-xs font-bold text-slate-700">${conv.hi3 || '--'}</span></div>
+                                                <div class="w-px h-6 bg-slate-100"></div>
+                                                <div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</span><span class="text-xs font-bold text-slate-700">${conv.hs3 || '--'}</span></div>
+                                            </div>
+                                            <div class="flex items-center gap-2 text-slate-400">
+                                                <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                                <span class="text-[10px] font-bold uppercase tracking-tight">${window.cleanLugar(conv.lugar3) || 'SIN LUGAR'}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ` : `
@@ -7496,14 +3845,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </p>
                                     ${(() => {
                                         let times = [];
-                                        if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
-                                            try {
-                                                const ex = JSON.parse(rawConv.lugar.split(' ||| ')[1]);
-                                                if (ex.hl) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Llegada</span><span class="text-xs font-bold text-slate-700">${ex.hl}</span></div>`);
-                                                if (ex.hi) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Inicio</span><span class="text-xs font-bold text-slate-700">${ex.hi}</span></div>`);
-                                                if (ex.hs) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Salida</span><span class="text-xs font-bold text-slate-700">${ex.hs}</span></div>`);
-                                            } catch(e) {}
-                                        }
+                                        const { extra: meta } = window.parseLugarMetadata(rawConv.lugar);
+                                        if (meta.hl) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Llegada</span><span class="text-xs font-bold text-slate-700">${meta.hl}</span></div>`);
+                                        if (meta.hi) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Inicio</span><span class="text-xs font-bold text-slate-700">${meta.hi}</span></div>`);
+                                        if (meta.hs) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Salida</span><span class="text-xs font-bold text-slate-700">${meta.hs}</span></div>`);
                                         if (times.length === 0) return `<p class="text-slate-500 font-bold flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 opacity-40"></i> ${conv.hora || '--:--'}</p>`;
                                         return `<div class="flex items-center gap-4">${times.join('<div class="w-px h-4 bg-slate-200"></div>')}</div>`;
                                     })()}
@@ -7596,23 +3941,62 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                                 
                                 ${conv.tipo === 'Ciclo' ? `
-                                    <div class="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-white rounded-2xl border border-slate-100">
-                                        <div class="space-y-3">
+                                    <div class="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-white rounded-[2.5rem] border border-slate-100">
+                                        <div class="space-y-4">
                                             <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Sesión 1</p>
-                                            <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
-                                            <input name="hora" type="time" value="${conv.hora || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="fecha" type="date" value="${conv.fecha}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-blue-500">
+                                            <div class="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">LLegada</label>
+                                                    <input name="hl" type="time" value="${conv.hl || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</label>
+                                                    <input name="hi" type="time" value="${conv.hi || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</label>
+                                                    <input name="hs" type="time" value="${conv.hs || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                            </div>
                                             <input name="lugar" value="${conv.lugar || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 1">
                                         </div>
-                                        <div class="space-y-3">
+                                        <div class="space-y-4">
                                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión 2</p>
-                                            <input name="fecha2" type="date" value="${conv.fecha2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
-                                            <input name="hora2" type="time" value="${conv.hora2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="fecha2" type="date" value="${conv.fecha2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-blue-500">
+                                            <div class="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">LLegada</label>
+                                                    <input name="hl2" type="time" value="${conv.hl2 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</label>
+                                                    <input name="hi2" type="time" value="${conv.hi2 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</label>
+                                                    <input name="hs2" type="time" value="${conv.hs2 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                            </div>
                                             <input name="lugar2" value="${conv.lugar2 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 2">
                                         </div>
-                                        <div class="space-y-3">
+                                        <div class="space-y-4">
                                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión 3</p>
-                                            <input name="fecha3" type="date" value="${conv.fecha3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
-                                            <input name="hora3" type="time" value="${conv.hora3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                            <input name="fecha3" type="date" value="${conv.fecha3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:ring-2 ring-blue-500">
+                                            <div class="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">LLegada</label>
+                                                    <input name="hl3" type="time" value="${conv.hl3 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Inicio</label>
+                                                    <input name="hi3" type="time" value="${conv.hi3 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                                <div>
+                                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Salida</label>
+                                                    <input name="hs3" type="time" value="${conv.hs3 || ''}" class="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold outline-none">
+                                                </div>
+                                            </div>
                                             <input name="lugar3" value="${conv.lugar3 || ''}" class="w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none" placeholder="Lugar 3">
                                         </div>
                                     </div>
@@ -8034,6 +4418,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (window.lucide) lucide.createIcons();
     };
 
+    
+    window.previewConvocatoriaPDF = async (id) => {
+        const url = await window.exportConvocatoria(id, 'preview');
+        if (url) window.previewDocument(url, 'Convocatoria');
+    };
     window.previewTorneoPDF = async (id) => {
         const url = await window.exportConvocatoria(id, 'preview');
         if (url) window.previewDocument(url, 'Ficha de Torneo');
@@ -8912,6 +5301,192 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderView('torneos');
     };
 
+    let convocatoriaSearchTerm = '';
+    let currentConvocatoriaTeamId = 'all';
+
+    window.updateConvocatoriaSearch = (val) => {
+        convocatoriaSearchTerm = val;
+        window.renderView('convocatorias');
+    };
+
+    window.switchConvocatoriaTeamTab = (tid) => {
+        currentConvocatoriaTeamId = tid;
+        window.renderView('convocatorias');
+    };
+
+    window.renderConvocatorias = async function(container) {
+        const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').not('tipo', 'in', '("Torneo", "TORNEO")').order('fecha', { ascending: false }).order('hora', { ascending: false });
+        if (error) {
+            container.innerHTML = `<p class="p-10 text-red-500 font-bold uppercase tracking-tight">Error de Sincronización: ${error.message}</p>`;
+            return;
+        }
+
+        const teams = await db.getAll('equipos');
+        const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
+
+        const filtered = convs.filter(c => {
+            const { extra } = window.parseLugarMetadata(c.lugar);
+            const matchesTeam = currentConvocatoriaTeamId === 'all' || 
+                              (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
+                              (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
+
+            const matchesSearch = !convocatoriaSearchTerm || 
+                (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
+                (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
+            return matchesTeam && matchesSearch;
+        });
+
+        const renderConvCard = (c) => {
+            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+            return `
+                <div onclick="window.viewConvocatoria(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                            </div>
+                        </div>
+                        <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest">${teamName}</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-4">
+                        <div class="flex items-center gap-2 text-blue-600 font-black">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            <span class="text-xs uppercase">${playerCount} Jugadores</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        };
+
+        const renderConvRow = (c) => {
+            let displayLugar = window.cleanLugar(c.lugar) || '--';
+            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+            const { extra } = window.parseLugarMetadata(c.lugar);
+            
+            return `
+                <tr class="hover:bg-slate-50 transition-colors group cursor-pointer" onclick="window.viewConvocatoria(${c.id})">
+                    <td class="p-6">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
+                            <div>
+                                <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                                <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${c.tipo}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-6">
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
+                            <span class="text-[9px] font-black text-slate-400 uppercase">
+                                ${extra.hi ? `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}` : (c.hora || '--:--')}
+                            </span>
+                        </div>
+                    </td>
+                    <td class="p-6">
+                        <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamName}</span>
+                    </td>
+                    <td class="p-6">
+                        <p class="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[150px]">${displayLugar}</p>
+                    </td>
+                    <td class="p-6 text-center">
+                        <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-4 py-2 rounded-2xl border border-blue-100/50">
+                            <i data-lucide="users" class="w-4 h-4"></i>
+                            <span class="text-sm font-black tracking-tight">${playerCount}</span>
+                        </div>
+                    </td>
+                    <td class="p-6 text-right">
+                        <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        };
+
+        const teamsWithConvs = teams.filter(t => 
+            convs.some(c => {
+                const { extra } = window.parseLugarMetadata(c.lugar);
+                return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
+                       (extra.eids && extra.eids.map(String).includes(t.id.toString()));
+            })
+        );
+
+        container.innerHTML = `
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="window.switchConvocatoriaTeamTab('all')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                        TODOS LOS EQUIPOS
+                    </button>
+                    ${teamsWithConvs.map(t => `
+                        <button onclick="window.switchConvocatoriaTeamTab('${t.id}')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
+                            ${t.nombre}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <div class="relative w-full md:w-80">
+                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                    <input type="text" 
+                        id="convocatoria-search-input"
+                        placeholder="Buscar convocatoria..." 
+                        value="${convocatoriaSearchTerm}"
+                        oninput="window.updateConvocatoriaSearch(this.value)"
+                        class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                </div>
+            </div>
+
+            <!-- Mobile View -->
+            <div class="md:hidden space-y-4">
+                ${filtered.map(c => renderConvCard(c)).join('') || `<div class="py-20 text-center italic text-slate-400">No hay convocatorias registradas</div>`}
+            </div>
+
+            <!-- Desktop View -->
+            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-100">
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Convocatoria</th>
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha / Horario</th>
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Jugadores</th>
+                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        ${filtered.map(c => renderConvRow(c)).join('') || `
+                            <tr><td colspan="6" class="p-12 text-center text-slate-300 italic text-xs">No se han encontrado convocatorias.</td></tr>
+                        `}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mt-8 flex justify-between items-center px-4">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Listado de Convocatorias y Citas · ${filtered.length} registros</p>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        
+        const searchInput = document.getElementById('convocatoria-search-input');
+        if (searchInput && convocatoriaSearchTerm) {
+            searchInput.focus();
+            searchInput.setSelectionRange(convocatoriaSearchTerm.length, convocatoriaSearchTerm.length);
+        }
+    }
+
     window.renderTorneos = async function(container) {
         const { data: convs, error } = await supabaseClient.from('convocatorias').select('*').in('tipo', ['Torneo', 'TORNEO']).order('fecha', { ascending: false }).order('hora', { ascending: false });
         if (error) {
@@ -8922,17 +5497,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
-        const safeGetExtra = (lugarStr) => {
-            if (!lugarStr || !lugarStr.includes(' ||| ')) return {};
-            try { return JSON.parse(lugarStr.split(' ||| ')[1]); } catch (e) { return {}; }
-        };
-
         const userRes = await supabaseClient.auth.getUser();
         const currentUser = userRes.data?.user;
         const isGlobal = window.currentVisibilityMode === 'global';
 
         const filtered = convs.filter(c => {
-            const extra = safeGetExtra(c.lugar);
+            const { extra } = window.parseLugarMetadata(c.lugar);
 
             const matchesTeam = currentTorneoTeamId === 'all' || 
                               (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
@@ -9011,12 +5581,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
                             <span class="text-[9px] font-black text-slate-400 uppercase">
                                 ${(() => {
-                                    if (c.lugar && c.lugar.includes(' ||| ')) {
-                                        try {
-                                            const ex = JSON.parse(c.lugar.split(' ||| ')[1]);
-                                            if (ex.hi) return `${ex.hl ? `${ex.hl} > ` : ''}${ex.hi}${ex.hs ? ` > ${ex.hs}` : ''}`;
-                                        } catch(e) {}
-                                    }
+                                    const { extra } = window.parseLugarMetadata(c.lugar);
+                                    if (extra.hi) return `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}`;
                                     return c.hora || '--:--';
                                 })()}
                             </span>
@@ -9050,7 +5616,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const teamsWithTorneos = teams.filter(t => 
             convs.some(c => {
-                const extra = safeGetExtra(c.lugar);
+                const { extra } = window.parseLugarMetadata(c.lugar);
                 return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
                        (extra.eids && extra.eids.map(String).includes(t.id.toString()));
             })
@@ -9236,7 +5802,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </thead>
                                             <tbody id="torneo-table-body">
                                                 ${convocados.map(p => {
-                                                    const evalData = rendimiento[p.id] || { score: '', comment: '' };
+                                                    const { extra: meta } = window.parseLugarMetadata(conv.lugar);
+                                                    const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '' };
                                                     return `
                                                         <tr class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
                                                             <td class="p-4">
