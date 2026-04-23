@@ -3642,17 +3642,77 @@ await db.update('sesiones', { ...data, id: session.id });
                     const { error } = await supabaseClient.from('convocatorias').update(data).eq('id', conv.id);
                     if (error) throw error;
                     await db.saveLocal('convocatorias', { ...data, id: conv.id });
-                    window.customAlert('¡Actualizado!', 'Los cambios se han guardado.', 'success');
+
+                    // Sincronización automática con Asistencia al editar
+                    try {
+                        const allAttendance = await db.getAll('asistencia');
+                        const linkedAttendance = allAttendance.filter(a => a.convocatoriaid?.toString() === conv.id.toString());
+                        
+                        for (const att of linkedAttendance) {
+                            const currentPlayers = att.players || att.data || {};
+                            const updatedPlayers = {};
+                            const newPids = Array.isArray(data.playerids) ? data.playerids : [];
+                            
+                            newPids.forEach(pid => {
+                                if (currentPlayers[pid]) {
+                                    updatedPlayers[pid] = currentPlayers[pid];
+                                } else {
+                                    updatedPlayers[pid] = { status: 'asiste' };
+                                }
+                            });
+
+                            const attUpdate = {
+                                fecha: data.fecha,
+                                nombre: (data.nombre || 'SIN NOMBRE').toUpperCase(),
+                                tipo: data.tipo,
+                                equipoid: data.equipoid,
+                                players: updatedPlayers
+                            };
+
+                            await supabaseClient.from('asistencia').update(attUpdate).eq('id', att.id);
+                            await db.saveLocal('asistencia', { ...att, ...attUpdate });
+                        }
+                    } catch (syncErr) {
+                        console.error("Error sincronizando asistencia:", syncErr);
+                    }
+
+                    window.customAlert('¡Actualizado!', 'Los cambios se han guardado y la asistencia se ha sincronizado.', 'success');
                 } else {
                     const { data: savedArray, error } = await supabaseClient.from('convocatorias').insert([data]).select();
                     if (error) throw error;
                     
+                    const convSaved = (savedArray && savedArray[0]) || { ...data, id: Date.now() };
                     if (savedArray && savedArray[0]) {
-                        await db.saveLocal('convocatorias', savedArray[0]);
+                        await db.saveLocal('convocatorias', convSaved);
                     } else {
                         await db.add('convocatorias', data);
                     }
-                    window.customAlert('¡Creado!', 'La convocatoria ha sido guardada.', 'success');
+
+                    // Automatización: Generar parte de asistencia automáticamente
+                    try {
+                        const playersData = {};
+                        const pids = Array.isArray(data.playerids) ? data.playerids : [];
+                        pids.forEach(pid => {
+                            playersData[pid] = { status: 'asiste' };
+                        });
+
+                        const attendanceData = {
+                            fecha: data.fecha || new Date().toISOString().split('T')[0],
+                            nombre: (data.nombre || 'SIN NOMBRE').toUpperCase(),
+                            tipo: data.tipo || 'Convocatoria',
+                            equipoid: data.equipoid || null,
+                            convocatoriaid: convSaved.id,
+                            players: playersData,
+                            createdBy: currentUser?.id
+                        };
+
+                        // Usar db.add para que se encargue de la sincronización y persistencia local
+                        await db.add('asistencia', attendanceData);
+                    } catch (attErr) {
+                        console.error("Error creating auto-attendance:", attErr);
+                    }
+
+                    window.customAlert('¡Creado!', 'La convocatoria ha sido guardada y se ha generado su parte de asistencia.', 'success');
                 }
 
                 closeModal();
@@ -6874,7 +6934,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         const dateParts = baseData.fecha.split('-');
                         const dateShort = (dateParts.length === 3) ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0].slice(-2)}` : baseData.fecha;
                         
-                        const fullName = `ASISTENCIA ${dateShort}_${teamName.toUpperCase()} ||| ${JSON.stringify({ eids: [baseData.conv_equipoid] })}`;
+                        const fullName = `ASISTENCIA ${dateShort}_${teamName.toUpperCase()}`;
 
                         await db.add('asistencia', {
                             nombre: fullName,
@@ -7659,7 +7719,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                                             let statusBadge = '';
                                             if (statusValue === 'asiste') statusBadge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
-                                            else if (statusValue === 'falta') statusBadge = '<span class="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-[8px] font-black uppercase">Ausente</span>';
+                                            else if (statusValue === 'falta') statusBadge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
+                                             else if (statusValue === 'zubieta') statusBadge = '<span class="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[8px] font-black uppercase">Zubieta</span>';
+                                             else if (statusValue === 'estudios') statusBadge = '<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Estudios</span>';
                                             else if (statusValue === 'lesion') statusBadge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
                                             else statusBadge = `<span class="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
@@ -8428,7 +8490,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 ${team ? team.nombre.split(' ||| ')[0] : 'General'}
                                             </td>
                                             <td class="px-8 py-5 text-xs font-black text-slate-800 uppercase">
-                                                ${a.nombre || 'Entrenamiento'}
+                                                ${a.nombre?.split(' ||| ')[0] || 'Entrenamiento'}
                                             </td>
                                             <td class="px-8 py-5">
                                                 <div class="flex flex-col items-center gap-1">
@@ -8441,8 +8503,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                             <td class="px-8 py-5 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <button onclick="window.viewAsistenciaDetail('${a.id}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all"><i data-lucide="eye" class="w-4 h-4"></i></button>
-                                                    <button onclick="window.deleteAsistencia('${a.id}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                                    <button onclick="console.log('View ID:', '${String(a.id)}'); window.viewAsistenciaDetail('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all" title="Ver Detalle">
+                                                        <i data-lucide="eye" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="console.log('Edit ID:', '${String(a.id)}'); window.editAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all" title="Editar Asistencia">
+                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button onclick="window.deleteAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all" title="Eliminar">
+                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -8558,6 +8627,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         };
     };
 
+    window.setAttendance = (pid, value) => {
+        const ausenteBtn = document.getElementById(`aus-btn-${pid}`);
+        const asisteBtn = document.getElementById(`as-btn-${pid}`);
+        const opts = document.getElementById(`abs-opts-${pid}`);
+        if (!ausenteBtn || !asisteBtn || !opts) return;
+        
+        if (value === 'asiste') {
+            ausenteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+            asisteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
+            opts.classList.add('hidden');
+        } else {
+            asisteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+            ausenteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
+            opts.classList.remove('hidden');
+        }
+    };
+
     window.showAsistenciaRosterModal = async (preData) => {
         const players = await db.getAll('jugadores');
         const allConvs = await db.getAll('convocatorias');
@@ -8608,23 +8694,37 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                     </td>
                     <td class="py-4">
-                        <div class="flex justify-center gap-1 bg-slate-100/50 p-1 rounded-xl">
-                            <label class="flex-1">
-                                <input type="radio" name="p_${p.id}" value="asiste" checked class="hidden peer">
-                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-emerald-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">SI</div>
-                            </label>
-                            <label class="flex-1">
-                                <input type="radio" name="p_${p.id}" value="no_asiste" class="hidden peer">
-                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">NO</div>
-                            </label>
-                            <label class="flex-1">
-                                <input type="radio" name="p_${p.id}" value="justificado" class="hidden peer">
-                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-amber-500 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">JUS</div>
-                            </label>
-                            <label class="flex-1">
-                                <input type="radio" name="p_${p.id}" value="lesionado" class="hidden peer">
-                                <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-slate-800 peer-checked:text-white text-slate-400 hover:bg-white hover:shadow-sm transition-all">LES</div>
-                            </label>
+                        <div class="flex flex-col gap-2">
+                            <!-- Selector Principal -->
+                            <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                                <label class="flex-1">
+                                    <input type="radio" name="p_${p.id}" value="asiste" checked 
+                                           onclick="window.setAttendance('${p.id}', 'asiste')" class="hidden">
+                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all">Asiste</div>
+                                </label>
+                                <label class="flex-1">
+                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" 
+                                           onclick="window.setAttendance('${p.id}', 'falta')" class="hidden">
+                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50">Ausente</div>
+                                </label>
+                            </div>
+                            <!-- Sub-opciones de Ausente -->
+                                <div id="abs-opts-${p.id}" class="hidden grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
+                                ${[
+                                    {v:'falta', l:'Sin Mot.'}, 
+                                    {v:'zubieta', l:'Zub'}, 
+                                    {v:'estudios', l:'Est'}, 
+                                    {v:'lesion', l:'Les'}, 
+                                    {v:'enfermo', l:'Enf'}, 
+                                    {v:'seleccion', l:'Sel'}
+                                ].map(opt => `
+                                    <label class="flex-1">
+                                        <input type="radio" name="p_${p.id}" value="${opt.v}" 
+                                               onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
+                                        <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
+                                    </label>
+                                `).join('')}
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -8733,17 +8833,52 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.viewAsistenciaDetail = async (id) => {
-        const a = await db.getById('asistencia', id);
-        if (!a) return;
+        const a = await db.get('asistencia', Number(id) || id);
+        if (!a) {
+            console.error("No se encontró el registro de asistencia con ID:", id);
+            return;
+        }
+        
+        const pls = a.players || a.data || {};
+        const pids = Object.keys(pls);
         
         const teams = await db.getAll('equipos');
         const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
         const players = await db.getAll('jugadores');
-        const teamPlayers = players.filter(p => p.equipoid?.toString() === a.equipoid?.toString());
         
-        const pls = a.players || a.data || {};
+        const allConvs = await db.getAll('convocatorias');
+        const allSesiones = await db.getAll('sesiones');
+        
+        const matchingConvs = allConvs.filter(c => 
+            String(c.equipoid) === String(a.equipoid) && 
+            c.fecha === a.fecha
+        );
+        const matchingSesiones = allSesiones.filter(s => 
+            String(s.equipoid) === String(a.equipoid) && 
+            s.fecha === a.fecha
+        );
 
-        modalContainer.innerHTML = `
+        const expectedPlayerIds = new Set();
+        matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        
+        const teamPlayers = players.filter(p => {
+            const isConvocado = expectedPlayerIds.has(String(p.id));
+            
+            if (expectedPlayerIds.size > 0) {
+                return isConvocado;
+            }
+            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
+            const isTeamMember = a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
+            return isRecorded || isTeamMember;
+        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        const mContainer = document.getElementById('modal-container');
+        const mOverlay = document.getElementById('modal-overlay');
+
+        if (!mContainer || !mOverlay) return;
+
+        mContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] flex flex-col">
                 <div class="flex justify-between items-start mb-8 shrink-0">
                     <div>
@@ -8751,25 +8886,42 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'General'}</span>
                             <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${a.fecha}</span>
                         </div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre || 'Control de Asistencia'}</h3>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre?.split(' ||| ')[0] || 'Control de Asistencia'}</h3>
                     </div>
                     <div class="flex gap-2">
+                        <button onclick="window.generateAsistenciaPDF('${a.id}')" class="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all" title="Descargar PDF"><i data-lucide="download" class="w-5 h-5"></i></button>
                         <button onclick="window.editAsistencia('${a.id}')" class="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all"><i data-lucide="edit-3" class="w-5 h-5"></i></button>
                         <button onclick="window.deleteAsistencia('${a.id}')" class="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
                         <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-4 gap-4 mb-8 shrink-0">
-                    ${['asiste', 'no_asiste', 'justificado', 'lesionado'].map(status => {
+                <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
+                    ${['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion'].map(status => {
                         const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
-                        const label = status === 'asiste' ? 'PRESENTES' : (status === 'no_asiste' ? 'AUSENTES' : (status === 'justificado' ? 'JUSTIFIC.' : 'LESION.'));
-                        const color = status === 'asiste' ? 'emerald' : (status === 'no_asiste' ? 'rose' : (status === 'justificado' ? 'amber' : 'slate'));
+                        const labelMap = {
+                            'asiste': 'PRESENTES',
+                            'falta': 'SIN MOTIVO',
+                            'zubieta': 'ZUBIETA',
+                            'estudios': 'ESTUDIOS',
+                            'lesion': 'LESION.',
+                            'enfermo': 'ENFERMOS',
+                            'seleccion': 'SELECCIÓN'
+                        };
+                        const colorMap = {
+                            'asiste': 'emerald',
+                            'falta': 'rose',
+                            'zubieta': 'indigo',
+                            'estudios': 'blue',
+                            'lesion': 'amber',
+                            'enfermo': 'orange',
+                            'seleccion': 'sky'
+                        };
                         
                         return `
-                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
-                                <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">${label}</p>
-                                <p class="text-xl font-black text-${color}-600">${count}</p>
+                            <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
+                                <p class="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-1">${labelMap[status]}</p>
+                                <p class="text-lg font-black text-${colorMap[status]}-600">${count}</p>
                             </div>
                         `;
                     }).join('')}
@@ -8785,18 +8937,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${teamPlayers.map(p => {
-                                const status = pls[p.id]?.status || pls[p.id] || 'N/A';
+                                const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
+                                const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' : 
+                                              (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
+
                                 let statusLabel = 'Presente';
                                 let colorClass = 'bg-emerald-100 text-emerald-700';
                                 
-                                if (status === 'no_asiste') { statusLabel = 'Ausente'; colorClass = 'bg-rose-100 text-rose-700'; }
-                                else if (status === 'justificado') { statusLabel = 'Justificado'; colorClass = 'bg-amber-100 text-amber-700'; }
-                                else if (status === 'lesionado') { statusLabel = 'Lesionado'; colorClass = 'bg-slate-200 text-slate-700'; }
+                                if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
+                                else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
+                                else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
+                                else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
+                                else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
+                                else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
                                 else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
 
                                 return `
                                     <tr class="group hover:bg-slate-50 transition-all">
-                                        <td class="py-3 font-bold text-slate-700 uppercase group-hover:pl-2 transition-all">${p.nombre} ${p.apellidos || ''}</td>
+                                        <td class="py-3">
+                                            <p class="font-bold text-slate-700 uppercase transition-all">${p.nombre} ${p.apellidos || ''}</p>
+                                            <p class="text-[8px] font-bold text-blue-500 uppercase tracking-tight">${p.equipoConvenido || 'Sin Club'}</p>
+                                        </td>
                                         <td class="py-3 text-right">
                                             <span class="px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${colorClass}">${statusLabel}</span>
                                         </td>
@@ -8810,22 +8971,55 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         `;
 
         if (window.lucide) lucide.createIcons();
+        mOverlay.classList.add('active');
     };
 
     window.editAsistencia = async (id) => {
-        const a = await db.getById('asistencia', id);
+        const a = await db.get('asistencia', Number(id) || id);
         if (!a) return;
 
-        const players = await db.getAll('jugadores');
-        const teamPlayers = players.filter(p => p.equipoid?.toString() === a.equipoid?.toString());
         const pls = a.players || a.data || {};
+        const pids = Object.keys(pls);
+        const players = await db.getAll('jugadores');
+        
+        const allConvs = await db.getAll('convocatorias');
+        const allSesiones = await db.getAll('sesiones');
+        
+        const matchingConvs = allConvs.filter(c => 
+            String(c.equipoid) === String(a.equipoid) && 
+            c.fecha === a.fecha
+        );
+        const matchingSesiones = allSesiones.filter(s => 
+            String(s.equipoid) === String(a.equipoid) && 
+            s.fecha === a.fecha
+        );
 
-        modalContainer.innerHTML = `
+        const expectedPlayerIds = new Set();
+        matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        
+        const teamPlayers = players.filter(p => {
+            const isConvocado = expectedPlayerIds.has(String(p.id));
+            
+            if (expectedPlayerIds.size > 0) {
+                return isConvocado;
+            }
+            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
+            const isTeamMember = a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
+            return isRecorded || isTeamMember;
+        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        const mContainer = document.getElementById('modal-container');
+        const mOverlay = document.getElementById('modal-overlay');
+
+        if (!mContainer || !mOverlay) return;
+
+        mContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] flex flex-col">
                 <div class="flex justify-between items-center mb-8 shrink-0">
                     <div>
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre || 'Sesión'} - ${a.fecha}</p>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre?.split(' ||| ')[0] || 'Sesión'} - ${a.fecha}</p>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
@@ -8852,23 +9046,31 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </div>
                                         </td>
                                         <td class="py-4">
-                                            <div class="flex justify-center gap-1 bg-slate-50 p-1 rounded-xl">
-                                                <label class="flex-1">
-                                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} class="hidden peer">
-                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-emerald-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">SI</div>
-                                                </label>
-                                                <label class="flex-1">
-                                                    <input type="radio" name="p_${p.id}" value="no_asiste" ${status === 'no_asiste' ? 'checked' : ''} class="hidden peer">
-                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">NO</div>
-                                                </label>
-                                                <label class="flex-1">
-                                                    <input type="radio" name="p_${p.id}" value="justificado" ${status === 'justificado' ? 'checked' : ''} class="hidden peer">
-                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-amber-500 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">JUS</div>
-                                                </label>
-                                                <label class="flex-1">
-                                                    <input type="radio" name="p_${p.id}" value="lesionado" ${status === 'lesionado' ? 'checked' : ''} class="hidden peer">
-                                                    <div class="py-2 text-center text-[9px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-slate-800 peer-checked:text-white text-slate-400 hover:bg-slate-100 transition-all">LES</div>
-                                                </label>
+                                            <div class="flex flex-col gap-2">
+                                                <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                                                    <label class="flex-1">
+                                                        <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'asiste')" class="hidden">
+                                                        <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
+                                                    </label>
+                                                    <label class="flex-1">
+                                                        <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden">
+                                                        <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
+                                                    </label>
+                                                </div>
+                                                <div id="abs-opts-${p.id}" class="${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? '' : 'hidden'} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
+                                                    ${[
+                                                        {v:'falta', l:'S.M'}, 
+                                                        {v:'zubieta', l:'Zub'}, 
+                                                        {v:'estudios', l:'Est'}, 
+                                                        {v:'lesion', l:'Les'}, 
+                                                        {v:'enfermo', l:'Enf'}
+                                                    ].map(opt => `
+                                                        <label class="flex-1">
+                                                            <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
+                                                            <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
+                                                        </label>
+                                                    `).join('')}
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
@@ -8890,7 +9092,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         document.getElementById('update-asistencia-btn').onclick = async () => {
             const playersStatus = {};
             teamPlayers.forEach(p => {
-                const checked = modalContainer.querySelector(`input[name="p_${p.id}"]:checked`);
+                const checked = mContainer.querySelector(`input[name="p_${p.id}"]:checked`);
                 playersStatus[p.id] = checked ? checked.value : 'asiste';
             });
 
@@ -8903,19 +9105,22 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 window.customAlert('Error', 'No se pudo actualizar la asistencia.', 'error');
             }
         };
+
+        mOverlay.classList.add('active');
     };
 
     window.deleteAsistencia = async (id) => {
-        if (confirm('¿Seguro que deseas eliminar este registro de asistencia?')) {
+        window.customConfirm('¿Eliminar Registro?', '¿Estás seguro de que quieres borrar este parte de asistencia permanentemente?', async () => {
             try {
-                await db.delete('asistencia', id);
-                window.customAlert('¡Eliminado!', 'El registro de asistencia ha sido borrado.', 'success');
+                await db.delete('asistencia', Number(id) || id);
+                window.customAlert('¡Eliminado!', 'El registro de asistencia ha sido borrado correctamente.', 'success');
                 closeModal();
-                window.renderAsistencia(document.getElementById('content-container'));
+                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
             } catch (err) {
+                console.error("Error al eliminar asistencia:", err);
                 window.customAlert('Error', 'No se pudo eliminar el registro.', 'error');
             }
-        }
+        });
     };
 
     window.updateClubShield = async (clubName, file) => {
@@ -9033,7 +9238,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                                     <div class="relative group">
                                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Jugador a convocar</label>
-                                        <select name="playerid" id="pdf-player-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer" required>
+                                        <select name="playerid" id="pdf-player-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
                                             <option value="">Selecciona un jugador...</option>
                                             ${players.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
                                         </select>
@@ -9212,9 +9417,14 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     }
                 };
 
+                let currentAction = 'single';
+                container.querySelectorAll('button[type="submit"]').forEach(btn => {
+                    btn.onclick = () => { currentAction = btn.value; };
+                });
+
                 container.querySelector('#convocatoria-pdf-form').onsubmit = async (e) => {
                     e.preventDefault();
-                    const action = e.submitter ? e.submitter.value : 'single';
+                    const action = currentAction;
                     const data = Object.fromEntries(new FormData(e.target));
                     const status = container.querySelector('#pdf-preview-status');
                     const statusText = status.querySelector('p');
@@ -9489,9 +9699,78 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         finalY = drawSection("NOTAS:", info.notas || defaultNotas, finalY);
         finalY = drawSection("MUY IMPORTANTE:", info.muy_importante || defaultImp, finalY);
 
-        doc.save(`Convocatoria_${pName.replace(/\s+/g, '_')}.pdf`);
+        doc.save(`${pName}.pdf`);
         console.log("PDF generado con éxito para:", pName);
     }
+
+    window.generateAsistenciaPDF = async (id) => {
+        const a = await db.get('asistencia', Number(id) || id);
+        if (!a) return window.customAlert('Error', 'No se encontró la asistencia.', 'error');
+
+        const pls = a.players || a.data || {};
+        const players = await db.getAll('jugadores');
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => String(t.id) === String(a.equipoid));
+
+        const teamPlayers = players.filter(p => Object.keys(pls).includes(String(p.id)));
+
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            return window.customAlert('Error', 'Librería PDF no disponible.', 'error');
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Header
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(20);
+        doc.text("CONTROL DE ASISTENCIA", 105, 20, { align: "center" });
+        
+        doc.setFontSize(12);
+        doc.setTextColor(100);
+        doc.text(`${team?.nombre || 'EQUIPO'} - ${a.fecha}`, 105, 30, { align: "center" });
+
+        const tableData = teamPlayers.map(p => {
+            const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
+            const statusLabelMap = {
+                'asiste': 'Presente',
+                'falta': 'Sin Motivo',
+                'zubieta': 'Zubieta',
+                'estudios': 'Estudios',
+                'lesion': 'Lesionado',
+                'enfermo': 'Enfermo',
+                'seleccion': 'Selección'
+            };
+            return [
+                (p.nombre + ' ' + (p.apellidos || '')).toUpperCase(),
+                p.posicion_siglas || 'PJ',
+                statusLabelMap[statusRaw] || statusRaw
+            ];
+        });
+
+        doc.autoTable({
+            startY: 40,
+            head: [['JUGADOR', 'POS', 'ESTADO']],
+            body: tableData,
+            headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            styles: { fontSize: 9, cellPadding: 4 },
+            columnStyles: {
+                0: { fontStyle: 'bold' },
+                1: { halign: 'center' },
+                2: { fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                if (data.section === 'body' && data.column.index === 2) {
+                    const status = data.cell.raw;
+                    if (status === 'Presente') data.cell.styles.textColor = [16, 185, 129];
+                    else if (status === 'Sin Motivo' || status === 'Falta') data.cell.styles.textColor = [225, 29, 72];
+                }
+            }
+        });
+
+        doc.save(`ASISTENCIA_${a.fecha}_${team?.nombre || 'EQUIPO'}.pdf`);
+    };
 
     initNotifications();
 
