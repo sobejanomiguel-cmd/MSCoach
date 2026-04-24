@@ -1905,6 +1905,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
                     <div class="flex gap-3 w-full md:w-auto">
+                        <button onclick="window.previewSessionPDF('${id}')" class="flex-1 md:flex-none p-4 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2 px-6" title="Previsualizar PDF">
+                            <i data-lucide="eye" class="w-5 h-5"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Previsualizar</span>
+                        </button>
                         <button onclick="window.printSession('${id}')" class="flex-1 md:flex-none p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 transition-all flex items-center justify-center gap-2 px-6">
                             <i data-lucide="printer" class="w-5 h-5"></i>
                             <span class="text-[10px] font-black uppercase tracking-widest">Imprimir</span>
@@ -3323,6 +3327,38 @@ await db.update('sesiones', { ...data, id: session.id });
             closeModal();
             window.switchView('sesiones');
         };
+    };
+
+    window.viewSession = async (id) => {
+        const session = await db.get('sesiones', id);
+        if (session) await window.renderSessionModal(session);
+    };
+
+    window.duplicateSession = async (id) => {
+        const session = await db.get('sesiones', id);
+        if (session) {
+            const copy = { ...session };
+            delete copy.id;
+            copy.titulo = (copy.titulo || '') + " (COPIA)";
+            copy.fecha = new Date().toISOString().split('T')[0];
+            await window.renderSessionModal(copy);
+        }
+    };
+
+    window.printSession = async (id) => {
+        if (window.exportSessionPDF) {
+            await window.exportSessionPDF(id);
+        } else {
+            window.customAlert('Error', 'La función de exportación PDF no está disponible.', 'error');
+        }
+    };
+
+    window.deleteSession = async (id) => {
+        if (confirm('¿Estás seguro de que deseas eliminar esta sesión?')) {
+            await db.delete('sesiones', id);
+            window.customAlert('Eliminado', 'Sesión eliminada correctamente.', 'success');
+            window.switchView('sesiones');
+        }
     };
 
     window.openConvocatoriaForm = async (convData = null, defaultType = 'Sesión') => {
@@ -5211,149 +5247,223 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.exportSessionPDF = async (id) => {
+    window.exportSessionPDF = async (id, mode = 'download') => {
         const { jsPDF } = window.jspdf;
         const session = (await db.getAll('sesiones')).find(s => s.id == id);
         if (!session) return;
         
         const allTasks = await db.getAll('tareas');
         const teams = await db.getAll('equipos');
+        const players = await db.getAll('jugadores');
+        
         const currentTeam = teams.find(t => t.id == session.equipoid);
         const sessionTasks = (session.taskids || []).map(taskId => allTasks.find(t => t.id == taskId)).filter(Boolean);
+        const sessionPlayers = players.filter(p => (session.playerids || []).includes(p.id.toString()));
+
+        // Aggregate materials from tasks
+        const materials = [...new Set(sessionTasks.flatMap(t => (t.material || '').split(',').map(m => m.trim()).filter(m => m)))].join(', ').toUpperCase();
 
         const doc = new jsPDF();
         const blue = [37, 99, 235];
         const slate = [30, 41, 59];
+        const gray = [100, 116, 139];
         const lightGray = [241, 245, 249];
 
-        // --- PAGE 1: HEADER & INFO ---
-        if (currentTeam && currentTeam.escudo) {
-            try { doc.addImage(currentTeam.escudo, 'PNG', 15, 12, 20, 20); } catch (e) {}
-        }
-        
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.setTextColor(blue[0], blue[1], blue[2]);
-        doc.text("RS CENTRO", 40, 22);
-        
-        doc.setFontSize(10);
-        doc.setTextColor(100, 116, 139);
-        doc.text("PLAN DE ENTRENAMIENTO PROFESIONAL", 40, 28);
-
-        // Session Box
-        doc.setFillColor(lightGray[0], lightGray[1], lightGray[2]);
-        doc.roundedRect(15, 38, 180, 25, 3, 3, 'F');
-        
+        // --- PAGE 1: HEADER & SUMMARY ---
+        // Header info
         doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text("NOMBRE DE LA SESIÓN", 20, 45);
-        doc.text("EQUIPO / CATEGORÍA", 100, 45);
-        doc.text("FECHA / HORA", 155, 45);
+        doc.setTextColor(gray[0], gray[1], gray[2]);
+        doc.setFont("helvetica", "bold");
+        
+        // Main Labels
+        doc.text("NOMBRE DE LA SESIÓN", 20, 25);
+        doc.text("EQUIPO", 100, 25);
+        doc.text("FECHA / HORA", 135, 25);
+        
+        // Lugar with blue bracket
+        doc.setDrawColor(blue[0], blue[1], blue[2]);
+        doc.setLineWidth(1.5);
+        doc.line(165, 22, 165, 38);
+        doc.line(165, 22, 167, 22);
+        doc.line(165, 38, 167, 38);
+        doc.text("LUGAR", 170, 25);
 
+        // Values
+        doc.setFontSize(9);
+        doc.setTextColor(slate[0], slate[1], slate[2]);
+        
+        // Use maxWidth to prevent overlapping
+        const sessionTitle = (session.titulo || 'S/N').toUpperCase();
+        doc.text(sessionTitle, 20, 32, { maxWidth: 75 });
+        
+        doc.text((session.equiponombre || 'GENERACIÓN').toUpperCase(), 100, 32, { maxWidth: 30 });
+        doc.text(`${session.fecha}\n${session.hora || '--:--'}`, 135, 32);
+        doc.text((window.cleanLugar(session.lugar) || 'ZUBIETA').toUpperCase(), 170, 32, { maxWidth: 25 });
+
+        // Summary Boxes
+        let boxY = 48;
+        doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
+        doc.setLineWidth(0.5);
+        
+        // Convocatoria & Material Box
+        doc.roundedRect(15, boxY, 110, 25, 5, 5, 'D');
+        doc.setFontSize(7);
+        doc.setTextColor(gray[0], gray[1], gray[2]);
+        doc.text("CONVOCATORIA", 22, boxY + 8);
+        doc.text("MATERIAL REQUERIDO", 60, boxY + 8);
+        
         doc.setFontSize(10);
         doc.setTextColor(slate[0], slate[1], slate[2]);
-        doc.text((session.titulo || session.nombre || 'SESIÓN').toUpperCase(), 20, 52);
-        doc.text((session.equiponombre || 'GENERAL').toUpperCase(), 100, 52);
-        doc.text(`${session.fecha} | ${session.hora || '--:--'}`, 155, 52);
-
-        // Tasks Summary
-        let currentY = 75;
-        doc.setFontSize(12);
-        doc.setTextColor(blue[0], blue[1], blue[2]);
-        doc.text(`CONTENIDO DE LA SESIÓN (${sessionTasks.length} EJERCICIOS)`, 15, currentY);
+        doc.text(`${sessionPlayers.length}`, 22, boxY + 15);
+        doc.setFontSize(8);
+        doc.text("JUGADORES", 22, boxY + 20);
         
-        currentY += 10;
-        sessionTasks.forEach((t, i) => {
-            doc.setFontSize(10);
-            doc.setTextColor(slate[0], slate[1], slate[2]);
-            doc.text(`${i + 1}. ${(t.name || 'Tarea').toUpperCase()}`, 20, currentY);
-            doc.setFontSize(8);
-            doc.setTextColor(148, 163, 184);
-            const typeText = `${t.type || 'FÚTBOL'} | ${t.duration || '15'} min`;
-            doc.text(typeText, 140, currentY);
-            currentY += 8;
+        doc.setFontSize(8);
+        const materialLines = doc.splitTextToSize(materials || 'BALONES, CHINOS, PETOS', 65);
+        doc.text(materialLines, 60, boxY + 15);
+
+        // Ejercicios Count Box
+        doc.roundedRect(130, boxY, 65, 25, 5, 5, 'D');
+        doc.setFontSize(16);
+        doc.setTextColor(blue[0], blue[1], blue[2]);
+        doc.text(`${sessionTasks.length}`, 145, boxY + 16);
+        doc.setFontSize(8);
+        doc.setTextColor(gray[0], gray[1], gray[2]);
+        doc.text("EJERCICIOS", 155, boxY + 15);
+
+        // Player List
+        let listY = 85;
+        doc.roundedRect(15, listY, 180, 45, 8, 8, 'D');
+        doc.setFontSize(8);
+        doc.setTextColor(gray[0], gray[1], gray[2]);
+        doc.text("LISTADO DE JUGADORES CONVOCADOS", 22, listY + 8);
+        
+        doc.setFontSize(6.5);
+        doc.setTextColor(slate[0], slate[1], slate[2]);
+        let colW = 60; // Increased width
+        let startX = 22;
+        sessionPlayers.forEach((p, i) => {
+            let col = i % 3; // 3 columns instead of 4 to give more space
+            let row = Math.floor(i / 3);
+            if (row > 4) return; // Cap at 15 for this box layout
+            
+            // Format: Nombre. Inicial del 1er Apellido + (Club)
+            const nameParts = p.nombre.trim().split(/\s+/);
+            const shortName = (nameParts.length > 1 ? `${nameParts[0]}. ${nameParts[1][0]}` : nameParts[0]).toUpperCase();
+            const club = p.equipoConvenido ? `(${p.equipoConvenido})` : '';
+            const playerStr = `${shortName} ${club}`.toUpperCase();
+            
+            doc.text(playerStr, startX + (col * colW), listY + 18 + (row * 6), { maxWidth: 58 });
         });
 
-        // --- TASKS PAGES ---
-        sessionTasks.forEach((t, i) => {
-            doc.addPage();
-            
-            // Header Mini
-            doc.setFillColor(blue[0], blue[1], blue[2]);
-            doc.rect(15, 15, 2, 8, 'F');
-            doc.setFontSize(14);
-            doc.setTextColor(slate[0], slate[1], slate[2]);
-            doc.setFont("helvetica", "bold");
-            doc.text(`${i + 1}. ${(t.name || 'Tarea').toUpperCase()}`, 20, 21);
+        // --- TASK BREAKDOWN ---
+        let currentY = 140;
+        doc.setFontSize(10);
+        doc.setTextColor(slate[0], slate[1], slate[2]);
+        doc.text("DESGLOSE DE TAREAS - PARTE I", 15, currentY);
+        doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
+        doc.line(15, currentY + 3, 195, currentY + 3);
 
-            // Image Area
-            let imageY = 30;
-            const imgWidth = 180;
-            const imgHeight = 110;
-            
-            if (t.image) {
-                try {
-                    doc.addImage(t.image, 'JPEG', 15, imageY, imgWidth, imgHeight);
-                } catch (e) {
-                    doc.setDrawColor(226, 232, 240);
-                    doc.rect(15, imageY, imgWidth, imgHeight);
-                    doc.text("Imagen no disponible en PDF", 15 + imgWidth/2, imageY + imgHeight/2, { align: 'center' });
-                }
-            } else {
-                doc.setDrawColor(226, 232, 240);
-                doc.rect(15, imageY, imgWidth, imgHeight);
-                doc.setTextColor(203, 213, 225);
-                doc.text("Ejercicio sin gráfico táctico", 15 + imgWidth/2, imageY + imgHeight/2, { align: 'center' });
+        currentY += 15;
+
+        sessionTasks.forEach((t, i) => {
+            // Pagination logic: Task 1 (i=0) on Page 1. Task 2 (i=1) starts Page 2. 
+            // Then every 2 tasks start a new page (i=3, 5, etc.)
+            if (i === 1 || (i > 1 && (i - 1) % 2 === 0)) {
+                doc.addPage();
+                currentY = 25;
+                doc.setFontSize(9);
+                doc.setTextColor(gray[0], gray[1], gray[2]);
+                doc.text(`DESGLOSE DE TAREAS - PARTE ${Math.floor((i-1)/2) + 2}`, 15, currentY);
+                doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
+                doc.line(15, currentY + 3, 195, currentY + 3);
+                currentY += 15;
             }
 
-            // Description
-            let descY = imageY + imgHeight + 15;
-            doc.setFontSize(9);
-            doc.setTextColor(100, 116, 139);
-            doc.setFont("helvetica", "bold");
-            doc.text("EXPLICACIÓN TÉCNICA", 15, descY);
-            
-            descY += 6;
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(51, 65, 85);
-            const splitDesc = doc.splitTextToSize(t.description || 'Sin descripción detallada.', 180);
-            doc.text(splitDesc, 15, descY);
+            // Task Header with Blue Bar
+            doc.setFillColor(blue[0], blue[1], blue[2]);
+            doc.rect(15, currentY - 5, 2, 8, 'F');
+            doc.setFontSize(11);
+            doc.setTextColor(slate[0], slate[1], slate[2]);
+            doc.text(`${i + 1}. ${(t.name || 'Tarea').toUpperCase()}`, 20, currentY + 1);
 
-            // INTERACTIVE VIDEO BUTTON
+            // Task Box
+            let taskBoxY = currentY + 8;
+            doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
+            doc.roundedRect(15, taskBoxY, 180, 65, 5, 5, 'D');
+
+            // Image (Left)
+            if (t.image) {
+                try { doc.addImage(t.image, 'JPEG', 18, taskBoxY + 5, 85, 55); } catch (e) {
+                    doc.setDrawColor(240, 240, 240);
+                    doc.rect(18, taskBoxY + 5, 85, 55);
+                }
+            } else {
+                doc.setDrawColor(240, 240, 240);
+                doc.rect(18, taskBoxY + 5, 85, 55);
+            }
+
+            // Description (Right)
+            doc.setFontSize(8);
+            doc.setTextColor(gray[0], gray[1], gray[2]);
+            doc.text("EXPLICACIÓN TÉCNICA", 110, taskBoxY + 10);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(slate[0], slate[1], slate[2]);
+            const splitDesc = doc.splitTextToSize(t.description || 'Sin descripción.', 80);
+            doc.text(splitDesc, 110, taskBoxY + 18);
+
+            // Video Button (Interactive)
             if (t.video) {
                 const videoUrl = t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`;
-                const buttonY = 250;
+                const vidX = 110;
+                const vidY = taskBoxY + 45;
                 
-                // Button box
+                doc.setFillColor(239, 246, 255); 
+                doc.roundedRect(vidX - 2, vidY - 2, 75, 18, 3, 3, 'F');
+                
                 doc.setFillColor(blue[0], blue[1], blue[2]);
-                doc.roundedRect(15, buttonY, 60, 12, 2, 2, 'F');
-                
-                // Button text
+                doc.roundedRect(vidX, vidY, 12, 12, 2, 2, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(10);
-                doc.setFont("helvetica", "bold");
-                doc.text("VER VIDEO", 45, buttonY + 7.5, { align: 'center' });
+                doc.text(">", vidX + 6, vidY + 8.5, { align: 'center' });
                 
-                // CLICKABLE LINK OVER BUTTON
-                doc.link(15, buttonY, 60, 12, { url: videoUrl });
+                doc.setTextColor(blue[0], blue[1], blue[2]);
+                doc.setFontSize(7);
+                doc.setFont("helvetica", "bold");
+                doc.text("VER VIDEO INTERACTIVO", vidX + 16, vidY + 7);
+                
+                doc.link(vidX, vidY, 75, 18, { url: videoUrl });
 
-                // QR Code
                 try {
                     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(videoUrl)}`;
-                    doc.addImage(qrUrl, 'PNG', 165, buttonY - 5, 30, 30);
-                    doc.setFontSize(7);
-                    doc.setTextColor(148, 163, 184);
-                    doc.text("ESCANEA QR", 180, buttonY + 28, { align: 'center' });
+                    doc.addImage(qrUrl, 'PNG', vidX + 60, vidY - 2, 14, 14);
                 } catch (e) {}
             }
 
-            // Page Footer
-            doc.setFontSize(8);
-            doc.setTextColor(203, 213, 225);
-            doc.text(`RS CENTRO • ${session.titulo || 'Sesión'} • Tarea ${i + 1}/${sessionTasks.length}`, 15, 285);
+            currentY += 85;
         });
 
-        doc.save(`Sesion_${session.titulo || 'Entrenamiento'}_${session.fecha}.pdf`);
+        // Final Footer & Page Numbers
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(gray[0], gray[1], gray[2]);
+            doc.text("https://rs-centro.vercel.app", 15, 285);
+            doc.text(`${i}/${pageCount}`, 190, 285, { align: 'right' });
+        }
+
+        if (mode === 'preview') {
+            const blob = doc.output('blob');
+            return URL.createObjectURL(blob);
+        } else {
+            doc.save(`Sesion_${session.titulo || 'Entrenamiento'}_${session.fecha}.pdf`);
+        }
+    };
+
+    window.previewSessionPDF = async (id) => {
+        const url = await window.exportSessionPDF(id, 'preview');
+        if (url) window.previewDocument(url, 'Ficha de Sesión');
     };
 
     // PDF Generation Utilities
