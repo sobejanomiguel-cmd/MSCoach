@@ -1499,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     const color = palette[idx % palette.length];
                                     return `
                                         <div class="${color.bg} p-5 rounded-3xl border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
-                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center truncate w-full group-hover/item:text-slate-600">${team}</p>
+                                            <p class="text-[10px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full group-hover/item:text-slate-900 transition-colors">${team}</p>
                                             <p class="text-3xl font-black ${color.text} transition-colors">${count}</p>
                                         </div>
                                     `;
