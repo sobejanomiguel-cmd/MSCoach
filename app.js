@@ -170,6 +170,47 @@ window.getSortedTeams = (teams) => {
         return window.parseLugarMetadata(l).base;
     };
 
+    window.renderStars = (rating = 3) => {
+        const stars = [];
+        for (let i = 1; i <= 5; i++) {
+            const color = i <= rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200';
+            stars.push(`<i data-lucide="star" class="w-3 h-3 ${color}"></i>`);
+        }
+        return `<div class="flex items-center gap-0.5 justify-center">${stars.join('')}</div>`;
+    };
+
+    window.initStarRating = (containerId, initialValue = 3) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        
+        const updateStars = (val) => {
+            const stars = container.querySelectorAll('i[data-lucide="star"]');
+            stars.forEach((star, idx) => {
+                if (idx < val) {
+                    star.classList.add('text-amber-400', 'fill-amber-400');
+                    star.classList.remove('text-slate-200', 'fill-slate-200');
+                } else {
+                    star.classList.remove('text-amber-400', 'fill-amber-400');
+                    star.classList.add('text-slate-200', 'fill-slate-200');
+                }
+            });
+            const input = container.querySelector('input[name="nivel"]');
+            if (input) input.value = val;
+        };
+
+        container.innerHTML = `
+            <input type="hidden" name="nivel" value="${initialValue}">
+            <div class="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl justify-center">
+                ${[1,2,3,4,5].map(i => `
+                    <button type="button" onclick="this.parentElement.parentElement.querySelector('input').value = ${i}; const stars = this.parentElement.querySelectorAll('i'); stars.forEach((s, idx) => { if (idx < ${i}) { s.classList.add('text-amber-400', 'fill-amber-400'); s.classList.remove('text-slate-200', 'fill-slate-200'); } else { s.classList.remove('text-amber-400', 'fill-amber-400'); s.classList.add('text-slate-200', 'fill-slate-200'); } });" class="p-1 hover:scale-110 transition-transform">
+                        <i data-lucide="star" class="w-6 h-6 ${i <= initialValue ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}"></i>
+                    </button>
+                `).join('')}
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+    };
+
 window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCallback = "") => {
     const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
                  selectedPositions.length === 1 ? selectedPositions[0] : 
@@ -7615,6 +7656,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sexo</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
@@ -7644,6 +7686,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <span class="text-[10px] font-bold text-slate-500">
                                                     ${p.anionacimiento || '----'}
                                                 </span>
+                                            </td>
+                                            <td class="px-6 py-4 text-center">
+                                                ${window.renderStars(p.nivel || 3)}
                                             </td>
                                             <td class="px-6 py-4 text-center">
                                                 <span class="text-[9px] font-black uppercase tracking-tight ${p.lateralidad === 'Zurdo' ? 'text-amber-600' : (p.lateralidad === 'Ambidiestro' ? 'text-emerald-600' : 'text-slate-400')}">
@@ -7797,13 +7842,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Inicial</label>
-                                <select name="nivel" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                    <option value="1">1 - Iniciación</option>
-                                    <option value="2">2 - Medio</option>
-                                    <option value="3" selected>3 - Avanzado</option>
-                                    <option value="4">4 - Elite</option>
-                                    <option value="5">5 - Top</option>
-                                </select>
+                                <div id="star-rating-new"></div>
                             </div>
                         </div>
                     </div>
@@ -7817,6 +7856,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         `;
 
         if (window.lucide) lucide.createIcons();
+        window.initStarRating('star-rating-new', 3);
         modalOverlay.classList.add('active');
 
         const photoInput = document.getElementById('player-photo-input');
@@ -8098,13 +8138,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Actual</label>
-                                <select name="nivel" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                    <option value="1" ${player.nivel == 1 ? 'selected' : ''}>1 - Iniciación</option>
-                                    <option value="2" ${player.nivel == 2 ? 'selected' : ''}>2 - Medio</option>
-                                    <option value="3" ${player.nivel == 3 ? 'selected' : ''}>3 - Avanzado</option>
-                                    <option value="4" ${player.nivel == 4 ? 'selected' : ''}>4 - Elite</option>
-                                    <option value="5" ${player.nivel == 5 ? 'selected' : ''}>5 - Top</option>
-                                </select>
+                                <div id="star-rating-edit"></div>
                             </div>
                         </div>
                     </div>
@@ -8121,6 +8155,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         `;
 
         if (window.lucide) lucide.createIcons();
+        window.initStarRating('star-rating-edit', player.nivel || 3);
         modalOverlay.classList.add('active');
 
         const photoInput = document.getElementById('player-photo-input');
