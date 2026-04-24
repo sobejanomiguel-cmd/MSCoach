@@ -2886,7 +2886,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             listContainer.innerHTML = `
                 <!-- Desktop View -->
                 <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                    <table class="w-full">
+                    <div class="table-container">
+                        <table class="w-full">
                         <thead>
                             <tr class="bg-slate-50/50 text-left border-b border-slate-100">
                                 <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Objetivo de Sesión</th>
@@ -2965,6 +2966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }).join('') || '<tr><td colspan="5" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
                         </tbody>
                     </table>
+                    </div>
                 </div>
 
                 <!-- Mobile View -->
@@ -6054,6 +6056,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             <!-- Desktop View -->
             <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+            <div class="table-container">
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-slate-50 border-b border-slate-100">

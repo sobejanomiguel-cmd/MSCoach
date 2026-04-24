@@ -24,9 +24,17 @@
 body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     background-color: var(--bg-main);
-    text-transform: uppercase; /* Global uppercase transformation */
+    text-transform: uppercase;
+    height: 100%;
+}
+
+@media (min-width: 768px) {
+    body {
+        overflow: hidden;
+    }
 }
 
 input, select, textarea {
@@ -278,6 +286,26 @@ body.role-tecnico .nav-link[data-view="jugadores"] {
         min-height: 48px;
     }
 
+    /* Ensure scrolling works on touch devices */
+    #content-container {
+        -webkit-overflow-scrolling: touch;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    /* Table horizontal scroll wrapper */
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin-bottom: 1rem;
+    }
+
+    /* Prevent wide elements from breaking layout */
+    .view-header, .grid, .flex {
+        max-width: 100vw;
+    }
+
     /* Adjust specific elements */
     /* Calendar Mobile Fixes */
     .calendar-grid {
@@ -298,6 +326,23 @@ body.role-tecnico .nav-link[data-view="jugadores"] {
     .pitch-player {
         width: 35px !important;
         height: 35px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    #app {
+        height: 100dvh !important;
+        height: 100vh; /* Fallback */
+    }
+
+    /* Fix scrolling in content container */
+    #content-container {
+        display: block !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        height: auto !important;
+        min-height: calc(100dvh - 120px);
     }
 }
 
