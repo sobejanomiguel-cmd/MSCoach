@@ -1083,7 +1083,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     await supabaseClient.from('convocatorias').update(convData).eq('id', existing.id);
                                     updatedCount++;
                                 } else {
-                                    await supabaseClient.from('convocatorias').insert(convData);
+                                    const { data: remoteData, error: insErr } = await supabaseClient.from('convocatorias').insert([convData]).select();
+                                    if (insErr) throw insErr;
+                                    
+                                    const savedConv = (remoteData && remoteData[0]) || { ...convData, id: Date.now() };
+                                    
+                                    // Auto-crear asistencia para la importación
+                                    try {
+                                        const playersData = {};
+                                        (convData.playerids || []).forEach(pid => { playersData[pid] = { status: 'asiste' }; });
+                                        
+                                        const attendanceData = {
+                                            fecha: convData.fecha,
+                                            nombre: window.formatAttendanceName(convData.fecha, team ? team.nombre : 'EQUIPO', convData.tipo, convData.nombre),
+                                            tipo: convData.tipo,
+                                            equipoid: convData.equipoid,
+                                            convocatoriaid: savedConv.id,
+                                            players: playersData
+                                        };
+                                        await db.add('asistencia', attendanceData);
+                                    } catch (attErr) {
+                                        console.error("Error auto-creating attendance in CSV import:", attErr);
+                                    }
+                                    
                                     importedCount++;
                                 }
                             }
@@ -4127,9 +4149,12 @@ await db.update('sesiones', { ...data, id: session.id });
                                 }
                             });
 
+                            const team = teams.find(t => t.id == data.equipoid);
+                            const teamName = team ? team.nombre : 'EQUIPO';
+
                             const attUpdate = {
                                 fecha: data.fecha,
-                                nombre: (data.nombre || 'SIN NOMBRE').toUpperCase(),
+                                nombre: window.formatAttendanceName(data.fecha, teamName, data.tipo, data.nombre),
                                 tipo: data.tipo,
                                 equipoid: data.equipoid,
                                 players: updatedPlayers
@@ -7635,26 +7660,25 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     const newConv = await db.add('convocatorias', conv);
 
                     // Auto-crear asistencia para el planificador
-                    if (playerIds.length > 0) {
+                    try {
                         const playersData = {};
-                        playerIds.forEach(pid => { playersData[pid] = 'asiste'; });
+                        playerIds.forEach(pid => { playersData[pid] = { status: 'asiste' }; });
                         
                         const team = teams.find(t => t.id.toString() === (baseData.conv_equipoid || '').toString());
-                        const teamName = team ? team.nombre.split(' ||| ')[0] : '';
+                        const teamName = team ? team.nombre : 'EQUIPO';
 
-                        const dateParts = baseData.fecha.split('-');
-                        const dateShort = (dateParts.length === 3) ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0].slice(-2)}` : baseData.fecha;
-                        
-                        const fullName = `ASISTENCIA ${dateShort}_${teamName.toUpperCase()}`;
-
-                        await db.add('asistencia', {
-                            nombre: fullName,
+                        const attendanceData = {
+                            fecha: baseData.fecha || new Date().toISOString().split('T')[0],
+                            nombre: window.formatAttendanceName(baseData.fecha, teamName, baseData.conv_tipo, baseData.nombre),
+                            tipo: baseData.conv_tipo || 'Convocatoria',
                             equipoid: baseData.conv_equipoid ? parseInt(baseData.conv_equipoid) : null,
-                            fecha: baseData.fecha,
+                            convocatoriaid: newConv.id,
                             players: playersData,
-                            createdBy: currentUser.id,
-                            convocatoriaid: newConv.id
-                        });
+                            createdBy: currentUser.id
+                        };
+                        await db.add('asistencia', attendanceData);
+                    } catch (attErr) {
+                        console.error("Error auto-creating attendance in planner:", attErr);
                     }
                 }
 
