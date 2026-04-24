@@ -7947,9 +7947,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const currentAno = window.currentJugadoresAno || 'all';
         const currentSexo = window.currentJugadoresSexo || 'all';
         const currentPosicion = window.currentJugadoresPosicion || 'all';
+        const currentClub = window.currentJugadoresClub || 'all';
 
-        // Obtener años únicos para el filtro
+        // Obtener años y clubes únicos para los filtros
         const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => b - a);
+        const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a,b) => a.localeCompare(b));
 
         const filtered = players.filter(p => {
             const matchesTeam = currentTeamId === 'all' || p.equipoid?.toString() === currentTeamId.toString();
@@ -7959,7 +7961,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 (currentSexo === 'none' ? !(p.sexo || '').trim() : 
                                 (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0,1)));
             const matchesPosicion = currentPosicion === 'all' || window.parsePosition(p.posicion).includes(currentPosicion);
-            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion;
+            const matchesClub = currentClub === 'all' || p.equipoConvenido === currentClub;
+            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub;
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         container.innerHTML = `
@@ -8018,6 +8021,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>MASCULINO</option>
                                 <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>FEMENINO</option>
                                 <option value="none" ${currentSexo === 'none' ? 'selected' : ''}>SIN ASIGNAR</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
+                        </div>
+
+                        <!-- Club Filter -->
+                        <div class="relative flex-1 lg:min-w-[160px]">
+                            <select onchange="window.switchJugadoresClub(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentClub === 'all' ? 'selected' : ''}>CLUBES: TODOS</option>
+                                ${uniqueClubs.map(c => `<option value="${c}" ${currentClub === c ? 'selected' : ''}>${c}</option>`).join('')}
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
                         </div>
@@ -8141,6 +8153,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.switchJugadoresPosicion = (val) => {
         window.currentJugadoresPosicion = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.switchJugadoresClub = (val) => {
+        window.currentJugadoresClub = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
@@ -8312,9 +8329,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         playerAttendance.forEach(a => {
             if (a.convocatoriaid) {
                 const c = convocatorias.find(cv => cv.id == a.convocatoriaid);
-                if (c?.tipo === 'Ciclo') categorized.ciclos.push(a);
-                else if (c?.tipo === 'Torneo' || c?.tipo === 'Partido') categorized.torneos.push(a);
-                // Omit Convocatoria-based sessions here to avoid duplication if a standalone record exists
+                const score = (c?.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
+                const item = { ...a, rating: score };
+
+                if (c?.tipo === 'Ciclo') categorized.ciclos.push(item);
+                else if (c?.tipo === 'Torneo' || c?.tipo === 'Partido') categorized.torneos.push(item);
             } else {
                 categorized.sesiones.push(a);
             }
@@ -8323,14 +8342,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         // 2. Bidirectional sync: Add convocatorias without attendance records
         playerConvs.forEach(c => {
             const hasAttendance = playerAttendance.some(a => a.convocatoriaid == c.id);
+            const score = (c.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
+            
             if (!hasAttendance) {
-                const item = { nombre: c.nombre, fecha: c.fecha, convocatoriaid: c.id, players: { [playerId]: 'Convocado' } };
+                const item = { 
+                    nombre: c.nombre, 
+                    fecha: c.fecha, 
+                    convocatoriaid: c.id, 
+                    players: { [playerId]: 'Convocado' },
+                    rating: score
+                };
                 if (c.tipo === 'Ciclo') categorized.ciclos.push(item);
                 else if (c.tipo === 'Torneo' || c.tipo === 'Partido') categorized.torneos.push(item);
                 else if (c.tipo === 'Sesión' || c.tipo === 'Zubieta') {
-                    // Avoid duplication by date
                     if (!categorized.sesiones.some(s => s.fecha === c.fecha)) categorized.sesiones.push(item);
                 }
+            } else if (score) {
+                // If it HAS attendance, but also has a score in the convocatoria, 
+                // make sure that score is reflected in the already added categorized item
+                const target = [...categorized.ciclos, ...categorized.sesiones, ...categorized.torneos]
+                    .find(item => item.convocatoriaid == c.id);
+                if (target) target.rating = score;
             }
         });
 
@@ -8441,7 +8473,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         })()}
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                         ${(() => {
                             const attendance = (window.allAttendanceData || []).filter(a => a.players && a.players[playerId]);
                             const convs = window.allConvocatoriasData || [];
@@ -8489,6 +8521,59 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </div>
                                     </div>
                                     <p class="text-[9px] font-bold text-blue-500/60 mt-4 leading-relaxed uppercase italic">Ciclos de tecnificación y seguimiento.</p>
+                                </div>
+
+                                <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100/50 flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
+                                        ${(() => {
+                                            const allEvents = [...categorized.sesiones, ...categorized.ciclos, ...categorized.torneos];
+                                            const ratings = allEvents.map(t => {
+                                                return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
+                                            }).filter(r => r.rating && r.rating !== '--');
+
+                                            if (ratings.length === 0) return `
+                                                <div class="flex items-center gap-4 mb-4">
+                                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                                        <i data-lucide="award" class="w-6 h-6 text-rose-300"></i>
+                                                    </div>
+                                                    <div>
+                                                        <span class="text-3xl font-black text-slate-300">--</span>
+                                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Media Torneos</p>
+                                                    </div>
+                                                </div>
+                                                <div class="py-6 text-center bg-white/30 rounded-xl border border-dashed border-rose-100"><p class="text-[8px] text-slate-300 italic uppercase">Sin puntuaciones</p></div>
+                                            `;
+
+                                            const average = (ratings.reduce((acc, curr) => acc + parseFloat(curr.rating), 0) / ratings.length).toFixed(1);
+
+                                            return `
+                                                <div class="flex items-center gap-4 mb-6">
+                                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                                        <i data-lucide="award" class="w-6 h-6 text-rose-600"></i>
+                                                    </div>
+                                                    <div>
+                                                        <span class="text-3xl font-black text-slate-800">${average}</span>
+                                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Media en ${ratings.length} Torneos</p>
+                                                    </div>
+                                                </div>
+                                                <div class="space-y-3 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+                                                    ${ratings.map(r => `
+                                                        <div class="flex justify-between items-center py-2 border-b border-rose-100/30">
+                                                            <div>
+                                                                <p class="text-[9px] font-black text-slate-700 uppercase truncate max-w-[100px]">${r.nombre}</p>
+                                                                <p class="text-[7px] font-bold text-slate-400 uppercase">${r.fecha}</p>
+                                                            </div>
+                                                            <div class="flex items-center gap-1.5">
+                                                                <span class="text-xs font-black text-rose-600">${r.rating}</span>
+                                                            </div>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            `;
+                                        })()}
+                                    </div>
+                                    <p class="text-[9px] font-bold text-rose-500/60 mt-4 leading-relaxed uppercase italic">Media histórica en competición.</p>
                                 </div>
                             `;
                         })()}
@@ -10194,11 +10279,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </div>
                                     `}
 
-                                    <div class="space-y-3">
-                                        <input name="lugar" id="pdf-lugar" placeholder="LUGAR" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div class="space-y-3">
+                                            <input name="lugar" id="pdf-lugar" placeholder="LUGAR" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                                        </div>
+                                        <div class="space-y-3">
+                                            <select name="superficie" id="pdf-superficie" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none appearance-none cursor-pointer">
+                                                <option value="HIERBA ARTIFICIAL">HIERBA ARTIFICIAL / BELAR ARTIFIZIALA</option>
+                                                <option value="HIERBA NATURAL">HIERBA NATURAL / BELAR NATURALA</option>
+                                                <option value="PABELLÓN / SALA">PABELLÓN / ARETOA</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div class="space-y-3">
-                                        <input name="ubicacion" id="pdf-ubicacion" placeholder="MAPS" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                        <input name="ubicacion" id="pdf-ubicacion" placeholder="LINK GOOGLE MAPS" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
                                     </div>
                                     <div class="space-y-3 col-span-2">
                                         <textarea name="extra" id="pdf-extra" rows="4" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-sm outline-none resize-none">Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
@@ -10490,9 +10584,9 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         safeAddImage(clubShield, 110, logoY, 15, 15);
 
         // --- PLAYER NAME ---
-        doc.setFontSize(24);
+        doc.setFontSize(20);
         const pName = (player.nombre || 'JUGADOR').toUpperCase();
-        doc.text(pName, 105, 65, { align: "center" });
+        doc.text(pName, 105, 60, { align: "center" });
 
         // --- INVITATION TEXT ---
         doc.setFont("helvetica", "normal");
@@ -10502,7 +10596,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de la EF Arnedo en Arnedo (La Rioja)`;
         const invitation = info.extra && info.extra !== 'Invitación oficial...' ? info.extra : defaultInvitation;
         const splitInvitation = doc.splitTextToSize(invitation, 170);
-        doc.text(splitInvitation, 20, 80);
+        doc.text(splitInvitation, 20, 75);
 
         // --- TABLE ---
         const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -10521,6 +10615,7 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
         let body = [
             ['Día / Eguna'],
             ['Lugar / Lekua'],
+            ['Superficie / Gainazala'],
             ['Hora / Ordua']
         ];
         
@@ -10535,35 +10630,38 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
                     body[0].push(getSafeDayLabel(f));
                     
                     body[1].push({
-                        content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
-                        data: { url: info.ubicacion || '#' },
-                        styles: { fontStyle: 'bold', textColor: [0, 50, 200] }
+                        content: `${(info.lugar || '').toUpperCase()}\n\nVER UBICACIÓN EN GOOGLE MAPS`,
+                        data: { url: (info.ubicacion || '').trim() },
+                        styles: { fontStyle: 'bold', textColor: [0, 50, 200], fontSize: 7.5 }
                     });
+
+                    body[2].push(info.superficie || 'HIERBA ARTIFICIAL');
 
                     const hl = info[`hl_${i}`] || '--:--';
                     const hi = info[`hi_${i}`] || '--:--';
                     const hs = info[`hs_${i}`] || '';
-                    body[2].push(`${hl} (Llegada)\n\n${hi} (Comienzo)\n\n${hs ? `${hs} (Salida)` : ''}`);
+                    body[3].push(`${hl} (Llegada)\n\n${hi} (Comienzo)\n\n${hs ? `${hs} (Salida)` : ''}`);
                 }
             });
         } else {
             head[0].push('DATOS / DATUAK');
             body[0].push(getSafeDayLabel(info.fecha));
             body[1].push({
-                content: `${info.lugar || ''}\n\nUBICACIÓN CAMPO`,
-                data: { url: info.ubicacion || '#' },
-                styles: { fontStyle: 'bold', textColor: [0, 50, 200] }
+                content: `${(info.lugar || '').toUpperCase()}\n\nVER UBICACIÓN EN GOOGLE MAPS`,
+                data: { url: (info.ubicacion || '').trim() },
+                styles: { fontStyle: 'bold', textColor: [0, 50, 200], fontSize: 7.5 }
             });
-            body[2].push(`${info.hl || '--:--'} (Llegada)\n\n${info.hi || '--:--'} (Comienzo)\n\n${info.hs ? `${info.hs} (Salida)` : ''}`);
+            body[2].push(info.superficie || 'HIERBA ARTIFICIAL');
+            body[3].push(`${info.hl || '--:--'} (Llegada)\n\n${info.hi || '--:--'} (Comienzo)\n\n${info.hs ? `${info.hs} (Salida)` : ''}`);
         }
 
         try {
             doc.autoTable({
-                startY: 105,
+                startY: 100,
                 head: head,
                 body: body,
                 theme: 'grid',
-                styles: { fontSize: 9, cellPadding: 6, lineColor: [180, 180, 180], textColor: [0, 0, 0], halign: 'center', valign: 'middle', overflow: 'linebreak' },
+                styles: { fontSize: 8, cellPadding: 3, lineColor: [180, 180, 180], textColor: [0, 0, 0], halign: 'center', valign: 'middle', overflow: 'linebreak' },
                 headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 10 },
                 columnStyles: colStyles,
                 margin: { left: 20, right: 20 },
@@ -10579,27 +10677,33 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
             throw new Error("Error técnico al generar la tabla del PDF.");
         }
 
-        let finalY = (doc.lastAutoTable?.finalY || 150) + 15;
+        let finalY = (doc.lastAutoTable?.finalY || 140) + 10;
 
         // --- SECTIONS (NOTAS / IMPORTANTE) ---
-        const drawSection = (title, content, y) => {
+        const drawSection = (title, content, y, fullHighlight = false) => {
             if (!content || content === 'Notas...' || content === 'Importante...') return y;
             if (y > 270) doc.addPage();
             
-            doc.setFillColor(255, 241, 118);
-            const titleWidth = doc.getTextWidth(title + " ") + 4;
-            doc.rect(20, y - 5, titleWidth, 7, 'F');
+            const splitContent = doc.splitTextToSize(content, 170);
+
+            if (fullHighlight) {
+                doc.setFillColor(255, 241, 118);
+                doc.rect(20, y - 5, 170, (splitContent.length * 4.5) + 12, 'F');
+            } else {
+                doc.setFillColor(255, 241, 118);
+                const titleWidth = doc.getTextWidth(title + " ") + 4;
+                doc.rect(20, y - 5, titleWidth, 7, 'F');
+            }
             
             doc.setFont("helvetica", "bold");
             doc.setFontSize(11);
             doc.text(title, 22, y);
             
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(10);
-            const splitContent = doc.splitTextToSize(content, 170);
-            doc.text(splitContent, 20, y + 10);
+            doc.setFontSize(8.5);
+            doc.text(splitContent, 20, y + 6);
             
-            return y + (splitContent.length * 6) + 18;
+            return y + (splitContent.length * 4.5) + 10;
         };
 
         const defaultNotas = `La sesión de tecnificación será de 1 hora y 15 minutos.
