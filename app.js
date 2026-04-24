@@ -170,13 +170,123 @@ window.getSortedTeams = (teams) => {
         return window.parseLugarMetadata(l).base;
     };
 
-    window.renderStars = (rating = 3) => {
+    window.renderStars = (rating = 3, playerId = null) => {
         const stars = [];
         for (let i = 1; i <= 5; i++) {
             const color = i <= rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200';
-            stars.push(`<i data-lucide="star" class="w-3 h-3 ${color}"></i>`);
+            if (playerId) {
+                stars.push(`
+                    <button type="button" onclick="event.stopPropagation(); window.updatePlayerLevel('${playerId}', ${i})" class="p-0.5 hover:scale-125 transition-transform">
+                        <i data-lucide="star" class="w-3 h-3 ${color}"></i>
+                    </button>
+                `);
+            } else {
+                stars.push(`<i data-lucide="star" class="w-3 h-3 ${color}"></i>`);
+            }
         }
         return `<div class="flex items-center gap-0.5 justify-center">${stars.join('')}</div>`;
+    };
+
+    window.updatePlayerLevel = async (playerId, newLevel) => {
+        await window.updatePlayerField(playerId, 'nivel', newLevel);
+    };
+
+    window.updatePlayerField = async (playerId, field, value) => {
+        try {
+            const player = await db.get('jugadores', playerId);
+            if (!player) return;
+            
+            player[field] = value;
+            await db.update('jugadores', player);
+            
+            // Refresh current view if applicable
+            if (window.currentView === 'jugadores') {
+                window.renderJugadores(document.getElementById('content-container'));
+            } else if (window.currentView === 'campograma') {
+                window.renderView('campograma');
+            }
+            
+            // If the profile modal is open, refresh its content
+            const profileHeader = document.querySelector('h3.text-3xl.font-black');
+            if (profileHeader && profileHeader.innerText.includes(player.nombre?.toUpperCase() || '')) {
+                window.viewPlayerProfile(playerId);
+            }
+        } catch (err) {
+            console.error(`Error updating player ${field}:`, err);
+        }
+    };
+
+    window.togglePlayerLateralidad = async (playerId, current) => {
+        const cycle = ['', 'Derecho', 'Zurdo', 'Ambidiestro'];
+        let nextIdx = cycle.indexOf(current) + 1;
+        if (nextIdx >= cycle.length) nextIdx = 0;
+        await window.updatePlayerField(playerId, 'lateralidad', cycle[nextIdx]);
+    };
+
+    window.togglePlayerSexo = async (playerId, current) => {
+        const next = (current === 'Masculino') ? 'Femenino' : (current === 'Femenino' ? '' : 'Masculino');
+        await window.updatePlayerField(playerId, 'sexo', next);
+    };
+
+    window.toggleInlinePosSelector = (playerId, event) => {
+        event.stopPropagation();
+        const existing = document.getElementById(`pos-selector-${playerId}`);
+        if (existing) {
+            existing.remove();
+            return;
+        }
+
+        // Close others
+        document.querySelectorAll('.inline-pos-selector').forEach(el => el.remove());
+
+        const rect = event.currentTarget.getBoundingClientRect();
+        const div = document.createElement('div');
+        div.id = `pos-selector-${playerId}`;
+        div.className = 'inline-pos-selector fixed bg-white shadow-2xl rounded-2xl border border-slate-100 p-4 z-[9999] w-64 animate-in zoom-in-95 duration-200';
+        div.style.top = `${rect.bottom + window.scrollY + 8}px`;
+        div.style.left = `${rect.left + window.scrollX}px`;
+
+        db.get('jugadores', playerId).then(player => {
+            const current = window.parsePosition(player.posicion);
+            div.innerHTML = `
+                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Seleccionar Posiciones</p>
+                <div class="grid grid-cols-3 gap-1.5">
+                    ${PLAYER_POSITIONS.map(pos => `
+                        <button onclick="window.toggleInlinePosItem('${playerId}', '${pos}', this)" class="px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all ${current.includes(pos) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400 border-slate-100 hover:border-blue-200'}">
+                            ${pos}
+                        </button>
+                    `).join('')}
+                </div>
+                <div class="mt-4 pt-3 border-t border-slate-50 flex justify-end">
+                    <button onclick="this.parentElement.parentElement.remove()" class="px-4 py-2 bg-slate-900 text-white text-[9px] font-black uppercase rounded-xl hover:bg-black transition-all">Hecho</button>
+                </div>
+            `;
+            document.body.appendChild(div);
+        });
+
+        // Click outside listener
+        const closeOnOutside = (e) => {
+            if (!div.contains(e.target) && !event.currentTarget.contains(e.target)) {
+                div.remove();
+                document.removeEventListener('click', closeOnOutside);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeOnOutside), 10);
+    };
+
+    window.toggleInlinePosItem = async (playerId, pos, btn) => {
+        const player = await db.get('jugadores', playerId);
+        let current = window.parsePosition(player.posicion);
+        
+        if (current.includes(pos)) {
+            current = current.filter(p => p !== pos);
+            btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-white text-slate-400 border-slate-100 hover:border-blue-200';
+        } else {
+            current.push(pos);
+            btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-blue-600 text-white border-blue-600';
+        }
+        
+        await window.updatePlayerField(playerId, 'posicion', current);
     };
 
     window.initStarRating = (containerId, initialValue = 3) => {
@@ -184,7 +294,7 @@ window.getSortedTeams = (teams) => {
         if (!container) return;
         
         const updateStars = (val) => {
-            const stars = container.querySelectorAll('i[data-lucide="star"]');
+            const stars = container.querySelectorAll('[data-lucide="star"]');
             stars.forEach((star, idx) => {
                 if (idx < val) {
                     star.classList.add('text-amber-400', 'fill-amber-400');
@@ -202,7 +312,7 @@ window.getSortedTeams = (teams) => {
             <input type="hidden" name="nivel" value="${initialValue}">
             <div class="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl justify-center">
                 ${[1,2,3,4,5].map(i => `
-                    <button type="button" onclick="this.parentElement.parentElement.querySelector('input').value = ${i}; const stars = this.parentElement.querySelectorAll('i'); stars.forEach((s, idx) => { if (idx < ${i}) { s.classList.add('text-amber-400', 'fill-amber-400'); s.classList.remove('text-slate-200', 'fill-slate-200'); } else { s.classList.remove('text-amber-400', 'fill-amber-400'); s.classList.add('text-slate-200', 'fill-slate-200'); } });" class="p-1 hover:scale-110 transition-transform">
+                    <button type="button" onclick="this.parentElement.parentElement.querySelector('input').value = ${i}; const stars = this.parentElement.querySelectorAll('[data-lucide=\\'star\\']'); stars.forEach((s, idx) => { if (idx < ${i}) { s.classList.add('text-amber-400', 'fill-amber-400'); s.classList.remove('text-slate-200', 'fill-slate-200'); } else { s.classList.remove('text-amber-400', 'fill-amber-400'); s.classList.add('text-slate-200', 'fill-slate-200'); } });" class="p-1 hover:scale-110 transition-transform">
                         <i data-lucide="star" class="w-6 h-6 ${i <= initialValue ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}"></i>
                     </button>
                 `).join('')}
@@ -3412,18 +3522,28 @@ await db.update('sesiones', { ...data, id: session.id });
         players.forEach(p => {
             const raw = (p.equipoConvenido || '').trim();
             if (raw) {
-                // Normalización para agrupar clubes similares (ej. Balsas y UD Balsas, Baztan y Baztán)
+                // Normalización robusta para agrupar clubes
                 const normalized = raw.toUpperCase()
-                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Quitar acentos
-                    .replace(/^(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF)\s+/i, '')
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .replace(/^(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC)\s+/i, '')
+                    .replace(/\s+(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC|KE|K\.E\.|KJKE|KKE|FB)$/i, '')
                     .trim();
                 
-                if (!clubsMap[normalized] || raw.length > clubsMap[normalized].length) {
-                    clubsMap[normalized] = raw;
+                if (!clubsMap[normalized]) {
+                    clubsMap[normalized] = {
+                        original: raw,
+                        players: []
+                    };
+                }
+                // Si encontramos un nombre más completo/largo para el mismo club, lo usamos como display
+                if (raw.length > clubsMap[normalized].original.length) {
+                    clubsMap[normalized].original = raw;
                 }
             }
         });
-        const clubs = Object.values(clubsMap).sort((a,b) => a.localeCompare(b));
+        const sortedClubs = Object.entries(clubsMap)
+            .map(([id, data]) => ({ id, name: data.original }))
+            .sort((a,b) => a.name.localeCompare(b.name));
 
         const isEdit = convData !== null;
         const activeTab = isEdit ? convData.tipo : defaultType;
@@ -3600,8 +3720,8 @@ await db.update('sesiones', { ...data, id: session.id });
                             <div class="relative">
                                 <i data-lucide="building-2" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300"></i>
                                 <select id="unified-conv-club-filter" class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all uppercase appearance-none">
-                                    <option value="all">TODOS LOS CLUBES</option>
-                                    ${clubs.map(c => `<option value="${c}">${c.toUpperCase()}</option>`).join('')}
+                                    <option value="all">TODOS LOS CLUBES CONVENIDOS</option>
+                                    ${sortedClubs.map(c => `<option value="${c.id}">${c.name.toUpperCase()}</option>`).join('')}
                                 </select>
                             </div>
                         </div>
@@ -3629,24 +3749,59 @@ await db.update('sesiones', { ...data, id: session.id });
         const updatePlayers = () => {
             const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
             const searchText = (searchInput.value || '').toLowerCase();
-            const clubFilter = document.getElementById('unified-conv-club-filter')?.value || 'all';
+            const clubFilterId = document.getElementById('unified-conv-club-filter')?.value || 'all';
             
             let filtered = players;
             if (checkedTeamIds.length > 0) filtered = filtered.filter(p => checkedTeamIds.includes(String(p.equipoid)));
             if (searchText) filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
-            if (clubFilter !== 'all') filtered = filtered.filter(p => p.equipoConvenido === clubFilter);
             
-            playerList.innerHTML = filtered.length > 0 ? filtered.map(p => `
-                <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
-                    <div class="flex items-center gap-3">
-                        <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
-                        <div>
-                            <span class="block text-sm font-bold text-slate-700 uppercase">${p.nombre}</span>
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</span>
-                        </div>
+            if (clubFilterId !== 'all') {
+                filtered = filtered.filter(p => {
+                    const raw = (p.equipoConvenido || '').trim().toUpperCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                        .replace(/^(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC)\s+/i, '')
+                        .replace(/\s+(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC|KE|K\.E\.|KJKE|KKE|FB)$/i, '')
+                        .trim();
+                    return raw === clubFilterId;
+                });
+            }
+            
+            // Grouping logic for the list
+            const grouped = {};
+            filtered.forEach(p => {
+                let groupName = 'Sin Club';
+                if (clubFilterId !== 'all') {
+                    // Group by Team if a Club is selected
+                    const team = teams.find(t => String(t.id) === String(p.equipoid));
+                    groupName = team ? team.nombre.split(' ||| ')[0] : 'JUGADORES LIBRES';
+                } else {
+                    // Group by Club if looking at all clubs
+                    groupName = (p.equipoConvenido || 'SIN CLUB ASIGNADO').toUpperCase();
+                }
+                if (!grouped[groupName]) grouped[groupName] = [];
+                grouped[groupName].push(p);
+            });
+
+            playerList.innerHTML = filtered.length > 0 ? Object.entries(grouped).map(([groupName, groupPlayers]) => `
+                <div class="mb-4">
+                    <p class="text-[9px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg uppercase tracking-widest mb-2 inline-block">${groupName}</p>
+                    <div class="space-y-1">
+                        ${groupPlayers.sort((a,b) => a.nombre.localeCompare(b.nombre)).map(p => `
+                            <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
+                                <div class="flex items-center gap-3">
+                                    <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
+                                    <div>
+                                        <span class="block text-sm font-bold text-slate-700 uppercase">${p.nombre}</span>
+                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                            ${p.equipoConvenido || 'Sin Club'} ${clubFilterId !== 'all' ? '' : ` • ${teams.find(t => String(t.id) === String(p.equipoid))?.nombre.split(' ||| ')[0] || 'Libre'}`}
+                                        </p>
+                                    </div>
+                                </div>
+                                <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || '--'}</span>
+                            </label>
+                        `).join('')}
                     </div>
-                    <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || '--'}</span>
-                </label>
+                </div>
             `).join('') : '<p class="text-center py-6 text-slate-400 text-xs font-black uppercase">No se encontraron jugadores</p>';
 
             playerList.querySelectorAll('.player-check').forEach(chk => {
@@ -7668,37 +7823,39 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-4">
                                                 <div class="flex items-center gap-4">
-                                                    <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all">
+                                                    <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer" onclick="window.editPlayer('${p.id}')">
                                                         <img src="${p.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                                                     </div>
                                                     <div>
-                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${p.nombre}</p>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
                                                         <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
                                                     </div>
                                                 </div>
                                             </td>
                                             <td class="px-6 py-4">
-                                                <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em]">
-                                                    ${window.parsePosition(p.posicion).join(', ') || '--'}
-                                                </span>
+                                                <div class="cursor-pointer" onclick="window.toggleInlinePosSelector('${p.id}', event)">
+                                                    <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em] border-b border-blue-200/30 hover:border-blue-600 transition-all">
+                                                        ${window.parsePosition(p.posicion).join(', ') || '--'}
+                                                    </span>
+                                                </div>
                                             </td>
                                             <td class="px-6 py-4 text-center">
-                                                <span class="text-[10px] font-bold text-slate-500">
-                                                    ${p.anionacimiento || '----'}
-                                                </span>
+                                                <div class="inline-block px-2 py-1 bg-slate-50 border border-slate-100 rounded-lg">
+                                                    <p class="text-[10px] font-black text-slate-500 cursor-text outline-none focus:text-blue-600" contenteditable="true" onblur="if(this.innerText !== '${p.anionacimiento || ''}') window.updatePlayerField('${p.id}', 'anionacimiento', parseInt(this.innerText))" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.anionacimiento || ''}</p>
+                                                </div>
                                             </td>
                                             <td class="px-6 py-4 text-center">
-                                                ${window.renderStars(p.nivel || 3)}
+                                                ${window.renderStars(p.nivel || 3, p.id)}
                                             </td>
                                             <td class="px-6 py-4 text-center">
-                                                <span class="text-[9px] font-black uppercase tracking-tight ${p.lateralidad === 'Zurdo' ? 'text-amber-600' : (p.lateralidad === 'Ambidiestro' ? 'text-emerald-600' : 'text-slate-400')}">
+                                                <button onclick="window.togglePlayerLateralidad('${p.id}', '${p.lateralidad || ''}')" class="text-[9px] font-black uppercase tracking-tight transition-all hover:scale-110 ${p.lateralidad === 'Zurdo' ? 'text-amber-600' : (p.lateralidad === 'Ambidiestro' ? 'text-emerald-600' : 'text-slate-400')}">
                                                     ${p.lateralidad || '--'}
-                                                </span>
+                                                </button>
                                             </td>
                                             <td class="px-6 py-4 text-center">
-                                                <span class="text-[10px] font-black uppercase tracking-widest ${p.sexo?.toUpperCase().startsWith('F') ? 'text-rose-500' : (p.sexo?.toUpperCase().startsWith('M') ? 'text-blue-500' : 'text-slate-300')}">
+                                                <button onclick="window.togglePlayerSexo('${p.id}', '${p.sexo || ''}')" class="text-[10px] font-black uppercase tracking-widest transition-all hover:scale-110 ${p.sexo?.toUpperCase().startsWith('F') ? 'text-rose-500' : (p.sexo?.toUpperCase().startsWith('M') ? 'text-blue-500' : 'text-slate-300')}">
                                                     ${p.sexo?.substring(0,1).toUpperCase() || '?'}
-                                                </span>
+                                                </button>
                                             </td>
                                             <td class="px-6 py-4 text-right">
                                                 <div class="flex justify-end gap-2">
@@ -7971,16 +8128,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                         </div>
 
-                        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Evaluación Técnica</p>
-                            <div class="flex items-end gap-1 mb-4">
-                                <span class="text-4xl font-black text-slate-800">${player.nivel || '3'}</span>
-                                <span class="text-xs font-black text-slate-400 mb-1.5">/ 5</span>
+                        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex flex-col justify-between">
+                            <div>
+                                <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Evaluación Técnica</p>
+                                <div class="flex items-center gap-3 mb-6">
+                                    <span class="text-4xl font-black text-slate-800">${player.nivel || '3'}</span>
+                                    <div class="flex-1">
+                                        <div class="flex gap-1">
+                                            ${window.renderStars(player.nivel || 3, playerId)}
+                                        </div>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase mt-1">Haz clic para editar nivel</p>
+                                    </div>
+                                </div>
                             </div>
                             <div class="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div class="h-full bg-blue-600 rounded-full" style="width: ${(player.nivel || 3) * 20}%"></div>
+                                <div class="h-full bg-blue-600 rounded-full transition-all duration-500" style="width: ${(player.nivel || 3) * 20}%"></div>
                             </div>
-                            <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual en sesiones y torneos.</p>
+                            <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual.</p>
                         </div>
 
                         <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
