@@ -562,7 +562,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'clubes': { title: 'Clubes Convenidos', subtitle: 'Gestión y vinculación de equipos por club.', addButtonLabel: 'Nuevo Club', addButtonEnabled: true },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
-        'asistencia': { title: 'Control de Asistencia', subtitle: 'Histórico de asistencia por día y equipo.', addButtonLabel: 'Asistencia', addButtonEnabled: true },
+        'asistencia': { 
+            title: 'Control de Asistencia', 
+            subtitle: 'Histórico de asistencia por día y equipo.', 
+            addButtonLabel: 'Asistencia', 
+            addButtonEnabled: true, 
+            secondaryButtonEnabled: true, 
+            secondaryButtonLabel: 'Reparar Asistencias' 
+        },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
         'convocatorias-pdf': { title: 'CONVOCATORIAS PDF', subtitle: 'Generación de convocatorias individuales.', addButtonEnabled: false },
@@ -792,6 +799,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     fileInput.click();
                 };
+            } else if (viewId === 'asistencia') {
+                secondaryAddBtn.onclick = (e) => window.repairAttendance(e);
             } else if (viewId === 'jugadores') {
                 secondaryAddBtn.onclick = () => window.showPlayerImportModal();
             } else if (viewId === 'convocatorias') {
@@ -1061,6 +1070,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const totalMale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('m')).length;
         const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
+        const totalOther = players.length - (totalMale + totalFemale);
  
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
@@ -1103,11 +1113,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><i data-lucide="users-round"></i></div>
                     </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Género (F / M)</h3>
+                    <h3 class="text-slate-500 text-sm font-medium">Género (F / M / ?)</h3>
                     <div class="flex items-center gap-2">
-                        <p class="text-3xl font-bold text-rose-500">${totalFemale}</p>
+                        <p class="text-3xl font-bold text-rose-500" title="Femenino">${totalFemale}</p>
                         <span class="text-slate-200 text-xl font-thin">/</span>
-                        <p class="text-3xl font-bold text-blue-500">${totalMale}</p>
+                        <p class="text-3xl font-bold text-blue-500" title="Masculino">${totalMale}</p>
+                        ${totalOther > 0 ? `
+                            <span class="text-slate-200 text-xl font-thin">/</span>
+                            <p class="text-3xl font-bold text-slate-400" title="Sin asignar">${totalOther}</p>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -1563,7 +1577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 nombre: rawNombre,
                                 nivel: idxNivel !== -1 ? (parseInt(row[idxNivel]) || 3) : 3,
                                 equipoid: team ? team.id : null,
-                                posicion: idxPosicion !== -1 ? (row[idxPosicion] || 'PO') : 'PO',
+                                posicion: idxPosicion !== -1 ? window.parsePosition(row[idxPosicion]) : ['PO'],
                                 anionacimiento: idxAnio !== -1 ? (parseInt(row[idxAnio]) || null) : null,
                                 sexo: idxSexo !== -1 ? (row[idxSexo] || 'Masculino') : 'Masculino',
                                 pie: idxPie !== -1 ? (row[idxPie] || 'DIESTRO') : 'DIESTRO',
@@ -3706,8 +3720,14 @@ await db.update('sesiones', { ...data, id: session.id });
                             createdBy: currentUser?.id
                         };
 
-                        // Usar db.add para que se encargue de la sincronización y persistencia local
-                        await db.add('asistencia', attendanceData);
+                        // Intentamos añadir la asistencia. Si falla (ej: falta columna), lo logueamos pero no bloqueamos la convocatoria
+                        try {
+                            await db.add('asistencia', attendanceData);
+                        } catch (innerErr) {
+                            console.error("Critical: Could not sync attendance to Supabase. Checking local fallback.", innerErr);
+                            // Fallback local si falla Supabase (ej: falta columna convocatoriaid)
+                            await db.saveLocal('asistencia', { ...attendanceData, id: Date.now() });
+                        }
                     } catch (attErr) {
                         console.error("Error creating auto-attendance:", attErr);
                     }
@@ -5558,10 +5578,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             campogramaFilters.clubesConvenidos.length > 0 || 
             campogramaFilters.niveles.length > 0;
 
-        const filteredPlayers = !hasActiveFilters ? [] : players.filter(p => {
+            const filteredPlayers = !hasActiveFilters ? [] : players.filter(p => {
             const teamMatch = campogramaFilters.equipos.length === 0 || campogramaFilters.equipos.includes((p.equipoid || "").toString());
             const levelMatch = campogramaFilters.niveles.length === 0 || campogramaFilters.niveles.includes(Number(p.nivel || 3));
-            const posMatch = campogramaFilters.posiciones.length === 0 || campogramaFilters.posiciones.includes(p.posicion);
+            
+            const playerPositions = window.parsePosition(p.posicion);
+            const posMatch = campogramaFilters.posiciones.length === 0 || playerPositions.some(pos => campogramaFilters.posiciones.includes(pos));
+            
             const yearMatch = campogramaFilters.years.length === 0 || campogramaFilters.years.includes(p.anionacimiento?.toString());
             const clubMatch = campogramaFilters.clubesConvenidos.length === 0 || campogramaFilters.clubesConvenidos.includes(p.equipoConvenido);
             return teamMatch && levelMatch && posMatch && yearMatch && clubMatch;
@@ -7320,6 +7343,83 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
+    window.autoDetectLateralidad = () => {
+        const checked = Array.from(document.querySelectorAll('input[name="posicion"]:checked')).map(i => i.value);
+        const select = document.querySelector('select[name="lateralidad"]');
+        if (!select) return;
+        
+        let hasD = checked.some(p => p.endsWith('D'));
+        let hasZ = checked.some(p => p.endsWith('Z'));
+        
+        if (hasD && hasZ) select.value = 'Ambidiestro';
+        else if (hasD) select.value = 'Derecho';
+        else if (hasZ) select.value = 'Zurdo';
+    };
+
+    window.parsePosition = (pos) => {
+        if (!pos) return [];
+        if (Array.isArray(pos)) return pos;
+        if (typeof pos !== 'string') return [pos];
+        
+        // Handle JSON strings like '["ACD"]'
+        if (pos.startsWith('[') && pos.endsWith(']')) {
+            try {
+                const parsed = JSON.parse(pos);
+                if (Array.isArray(parsed)) return parsed;
+            } catch (e) {}
+        }
+        
+        // Handle comma-separated strings like "MBZ, DBZ"
+        return pos.split(/[,/]/).map(s => s.trim()).filter(Boolean);
+    };
+
+    window.bulkUpdateLateralidad = async (e) => {
+        const btn = e?.currentTarget || document.querySelector('button[onclick*="bulkUpdateLateralidad"]');
+        if (!btn) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.style.pointerEvents = 'none';
+
+        try {
+            const players = await db.getAll('jugadores');
+            const total = players.length;
+            let updatedCount = 0;
+
+            for (let i = 0; i < total; i++) {
+                const p = players[i];
+                
+                // Actualizar progreso visual en el botón
+                btn.innerHTML = `<i class="w-4 h-4 animate-spin text-amber-600"></i> ${i + 1}/${total}`;
+                
+                const positions = window.parsePosition(p.posicion);
+                if (positions.length === 0) continue;
+                
+                let hasD = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('D'));
+                let hasZ = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('Z'));
+                
+                let newPie = '';
+                if (hasD && hasZ) newPie = 'Ambidiestro';
+                else if (hasD) newPie = 'Derecho';
+                else if (hasZ) newPie = 'Zurdo';
+                
+                if (newPie && (!p.lateralidad || p.lateralidad.trim() === '')) {
+                    p.lateralidad = newPie;
+                    await db.update('jugadores', p);
+                    updatedCount++;
+                }
+            }
+            window.customAlert('Proceso Completado', `Se ha analizado a ${total} jugadores y se ha asignado el pie a ${updatedCount} de ellos.`, 'success');
+            window.renderJugadores(document.getElementById('content-container'));
+        } catch (err) {
+            console.error("Bulk update error:", err);
+            window.customAlert('Error', 'No se pudo completar el proceso: ' + err.message, 'error');
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.style.pointerEvents = 'auto';
+            if (window.lucide) lucide.createIcons();
+        }
+    };
+
     window.renderJugadores = async function(container) {
         const players = await db.getAll('jugadores');
         const teams = await db.getAll('equipos');
@@ -7329,6 +7429,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const searchTerm = window.jugadoresSearchTerm || '';
         const currentAno = window.currentJugadoresAno || 'all';
         const currentSexo = window.currentJugadoresSexo || 'all';
+        const currentPosicion = window.currentJugadoresPosicion || 'all';
 
         // Obtener años únicos para el filtro
         const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => b - a);
@@ -7337,8 +7438,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const matchesTeam = currentTeamId === 'all' || p.equipoid?.toString() === currentTeamId.toString();
             const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesAno = currentAno === 'all' || p.anionacimiento?.toString() === currentAno.toString();
-            const matchesSexo = currentSexo === 'all' || (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0,1));
-            return matchesTeam && matchesSearch && matchesAno && matchesSexo;
+            const matchesSexo = currentSexo === 'all' || 
+                                (currentSexo === 'none' ? !(p.sexo || '').trim() : 
+                                (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0,1)));
+            const matchesPosicion = currentPosicion === 'all' || window.parsePosition(p.posicion).includes(currentPosicion);
+            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion;
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         container.innerHTML = `
@@ -7371,11 +7475,22 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
                         </select>
 
+                        <select onchange="window.switchJugadoresPosicion(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[100px]">
+                            <option value="all" ${currentPosicion === 'all' ? 'selected' : ''}>Pos: TODAS</option>
+                            ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPosicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                        </select>
+
                         <select onchange="window.switchJugadoresSexo(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[120px]">
                             <option value="all" ${currentSexo === 'all' ? 'selected' : ''}>Sexo: TODOS</option>
                             <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
                             <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
+                            <option value="none" ${currentSexo === 'none' ? 'selected' : ''}>Sin asignar</option>
                         </select>
+
+                        <button onclick="window.bulkUpdateLateralidad(event)" class="flex items-center gap-2 px-4 py-4 bg-amber-50 text-amber-600 border border-amber-100 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all shadow-sm group" title="Auto-asignar pie por posición">
+                            <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i>
+                            Auto-Pie
+                        </button>
                     </div>
                 </div>
 
@@ -7387,6 +7502,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sexo</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
@@ -7408,7 +7524,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                             <td class="px-6 py-4">
                                                 <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em]">
-                                                    ${Array.isArray(p.posicion) ? p.posicion.join(', ') : (p.posicion || '--')}
+                                                    ${window.parsePosition(p.posicion).join(', ') || '--'}
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 text-center">
@@ -7417,8 +7533,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 text-center">
-                                                <span class="text-[10px] font-black uppercase tracking-widest ${p.sexo?.startsWith('F') ? 'text-rose-500' : 'text-blue-500'}">
-                                                    ${p.sexo?.substring(0,1) || 'M'}
+                                                <span class="text-[9px] font-black uppercase tracking-tight ${p.lateralidad === 'Zurdo' ? 'text-amber-600' : (p.lateralidad === 'Ambidiestro' ? 'text-emerald-600' : 'text-slate-400')}">
+                                                    ${p.lateralidad || '--'}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 text-center">
+                                                <span class="text-[10px] font-black uppercase tracking-widest ${p.sexo?.toUpperCase().startsWith('F') ? 'text-rose-500' : (p.sexo?.toUpperCase().startsWith('M') ? 'text-blue-500' : 'text-slate-300')}">
+                                                    ${p.sexo?.substring(0,1).toUpperCase() || '?'}
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 text-right">
@@ -7477,6 +7598,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderJugadores(document.getElementById('content-container'));
     };
 
+    window.switchJugadoresPosicion = (val) => {
+        window.currentJugadoresPosicion = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
     window.showNewPlayerModal = async () => {
         const teams = await db.getAll('equipos');
         const clubs = await db.getAll('clubes');
@@ -7520,7 +7646,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                                     ${PLAYER_POSITIONS.map(pos => `
                                         <label class="cursor-pointer group">
-                                            <input type="checkbox" name="posicion" value="${pos}" class="hidden peer">
+                                            <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" onchange="window.autoDetectLateralidad(this)">
                                             <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
                                                 ${pos}
                                             </span>
@@ -7535,8 +7661,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sexo</label>
                                 <select name="sexo" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="" selected>Sin asignar</option>
                                     <option value="Masculino">Masculino</option>
                                     <option value="Femenino">Femenino</option>
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lateralidad (Pie)</label>
+                                <select name="lateralidad" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="" selected>Sin asignar</option>
+                                    <option value="Derecho">Derecho</option>
+                                    <option value="Zurdo">Zurdo</option>
+                                    <option value="Ambidiestro">Ambidiestro</option>
                                 </select>
                             </div>
                             <div class="space-y-2">
@@ -7806,10 +7942,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Posiciones</label>
                                 <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                                     ${PLAYER_POSITIONS.map(pos => {
-                                        const isSelected = Array.isArray(player.posicion) ? player.posicion.includes(pos) : player.posicion === pos;
+                                        const playerPositions = window.parsePosition(player.posicion);
+                                        const isSelected = playerPositions.includes(pos);
                                         return `
                                             <label class="cursor-pointer group">
-                                                <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" ${isSelected ? 'checked' : ''}>
+                                                <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" ${isSelected ? 'checked' : ''} onchange="window.autoDetectLateralidad(this)">
                                                 <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
                                                     ${pos}
                                                 </span>
@@ -7825,8 +7962,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sexo</label>
                                 <select name="sexo" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="" ${!player.sexo ? 'selected' : ''}>Sin asignar</option>
                                     <option value="Masculino" ${player.sexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
                                     <option value="Femenino" ${player.sexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
+                                </select>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lateralidad (Pie)</label>
+                                <select name="lateralidad" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="" ${!player.lateralidad ? 'selected' : ''}>Sin asignar</option>
+                                    <option value="Derecho" ${player.lateralidad === 'Derecho' ? 'selected' : ''}>Derecho</option>
+                                    <option value="Zurdo" ${player.lateralidad === 'Zurdo' ? 'selected' : ''}>Zurdo</option>
+                                    <option value="Ambidiestro" ${player.lateralidad === 'Ambidiestro' ? 'selected' : ''}>Ambidiestro</option>
                                 </select>
                             </div>
                             <div class="space-y-2">
@@ -7922,13 +8069,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Equipos</h3>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Gestión de categorías y plantillas</p>
-                    </div>
-                </div>
-
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -8090,13 +8230,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Clubes Convenidos</h3>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Red de colaboración y gestión de canteras</p>
-                    </div>
-                </div>
-
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -8441,28 +8574,109 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderAsistencia(document.getElementById('content-container'));
     };
 
+    window.repairAttendance = async (e) => {
+        const btn = e?.currentTarget || document.querySelector('button[onclick*="repairAttendance"]');
+        if (!btn) return;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="w-4 h-4 animate-spin"></i> Reparando...';
+        btn.style.pointerEvents = 'none';
+
+        try {
+            const convocatorias = await db.getAll('convocatorias');
+            const asistencias = await db.getAll('asistencia');
+            const linkedIds = new Set(asistencias.map(a => a.convocatoriaid?.toString()).filter(id => id));
+
+            let count = 0;
+            for (const conv of convocatorias) {
+                if (!linkedIds.has(conv.id.toString())) {
+                    const playersData = {};
+                    const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
+                    pids.forEach(pid => {
+                        playersData[pid] = { status: 'asiste' };
+                    });
+
+                    const attendanceData = {
+                        fecha: conv.fecha || new Date().toISOString().split('T')[0],
+                        nombre: (conv.nombre || 'SIN NOMBRE').toUpperCase(),
+                        tipo: conv.tipo || 'Sesión', // Forzamos un tipo válido si falta
+                        equipoid: conv.equipoid || null,
+                        convocatoriaid: conv.id,
+                        players: playersData
+                    };
+
+                    try {
+                        await db.add('asistencia', attendanceData);
+                        count++;
+                    } catch (err) {
+                        // Si falla Supabase, guardamos local para no perder el registro
+                        await db.saveLocal('asistencia', { ...attendanceData, id: Date.now() });
+                        count++;
+                    }
+                }
+            }
+            window.customAlert('¡Hecho!', `Se han reparado ${count} asistencias faltantes.`, 'success');
+            window.renderAsistencia(document.getElementById('content-container'));
+        } catch (err) {
+            console.error("Repair error:", err);
+            window.customAlert('Error', 'No se pudo completar la reparación: ' + err.message, 'error');
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.style.pointerEvents = 'auto';
+        }
+    };
+
     window.renderAsistencia = async function(container) {
         const teams = await db.getAll('equipos');
         const attendance = await db.getAll('asistencia');
         const sortedTeams = window.getSortedTeams(teams);
         
+        // Inicializar filtros si no existen
+        if (!window.asistenciaFilters) window.asistenciaFilters = { activeTeamId: 'TODOS', activeType: 'Sesión' };
+        
+        const activeType = window.asistenciaFilters.activeType || 'Sesión';
         const activeTeamId = window.asistenciaFilters.activeTeamId || 'TODOS';
         
         const filteredAttendance = attendance.filter(a => {
-            if (activeTeamId === 'TODOS') return true;
-            return a.equipoid?.toString() === activeTeamId.toString();
+            if (activeType === 'all') {
+                return activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
+            }
+
+            const clean = (t) => (t || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            const target = clean(activeType);
+            let item = clean(a.tipo);
+            
+            let matchesType = false;
+            if (target === 'sesion') {
+                matchesType = item === 'sesion' || item === 'convocatoria' || item === '' || (item !== 'ciclo' && item !== 'torneo');
+            } else {
+                matchesType = item === target;
+            }
+            
+            const matchesTeam = activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
+            return matchesType && matchesTeam;
         }).sort((a,b) => b.fecha.localeCompare(a.fecha));
 
         container.innerHTML = `
             <div class="space-y-6 animate-in fade-in duration-500">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Control de Asistencia</h3>
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Seguimiento de presencia y puntualidad</p>
-                    </div>
+                <!-- Primary Tabs: Tipo de Evento -->
+                <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-[2rem] w-fit">
+                    <button onclick="window.filterAsistenciaType('all')" 
+                        class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                        TODAS
+                    </button>
+                    ${[
+                        { id: 'Sesión', label: 'SESIONES' },
+                        { id: 'Ciclo', label: 'CICLOS' },
+                        { id: 'Torneo', label: 'TORNEOS' }
+                    ].map(type => `
+                        <button onclick="window.filterAsistenciaType('${type.id}')" 
+                            class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === type.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                            ${type.label}
+                        </button>
+                    `).join('')}
                 </div>
 
-                <!-- Team Tabs -->
+                <!-- Secondary Tabs: Equipos -->
                 <div class="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar no-scrollbar">
                     <button onclick="window.filterAsistencia('TODOS')" 
                         class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTeamId === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
@@ -8921,7 +9135,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
 
                 <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
-                    ${['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion'].map(status => {
+                    ${['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion', 'viaje', 'vacaciones'].map(status => {
                         const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
                         const labelMap = {
                             'asiste': 'PRESENTES',
@@ -8930,7 +9144,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             'estudios': 'ESTUDIOS',
                             'lesion': 'LESION.',
                             'enfermo': 'ENFERMOS',
-                            'seleccion': 'SELECCIÓN'
+                            'seleccion': 'SELECCIÓN',
+                            'viaje': 'VIAJE COL.',
+                            'vacaciones': 'VACACIONES'
                         };
                         const colorMap = {
                             'asiste': 'emerald',
@@ -8939,7 +9155,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             'estudios': 'blue',
                             'lesion': 'amber',
                             'enfermo': 'orange',
-                            'seleccion': 'sky'
+                            'seleccion': 'sky',
+                            'viaje': 'cyan',
+                            'vacaciones': 'purple'
                         };
                         
                         return `
@@ -8974,6 +9192,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
                                 else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
                                 else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
+                                else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
+                                else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
                                 else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
 
                                 return `
@@ -9087,7 +9307,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                         {v:'zubieta', l:'Zub'}, 
                                                         {v:'estudios', l:'Est'}, 
                                                         {v:'lesion', l:'Les'}, 
-                                                        {v:'enfermo', l:'Enf'}
+                                                        {v:'enfermo', l:'Enf'},
+                                                        {v:'viaje', l:'Viaj'},
+                                                        {v:'vacaciones', l:'Vac'}
                                                     ].map(opt => `
                                                         <label class="flex-1">
                                                             <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
@@ -9210,10 +9432,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <div class="flex items-center gap-5">
                                     <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center shadow-inner">
                                         <i data-lucide="file-text" class="w-8 h-8"></i>
-                                    </div>
-                                    <div>
-                                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Convocatoria PDF</h3>
-                                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Generador de documentos oficiales</p>
                                     </div>
                                 </div>
                                 <button onclick="window.switchView('dashboard')" class="p-4 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 hover:text-slate-600 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
@@ -9763,7 +9981,9 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 'estudios': 'Estudios',
                 'lesion': 'Lesionado',
                 'enfermo': 'Enfermo',
-                'seleccion': 'Selección'
+                'seleccion': 'Selección',
+                'viaje': 'Viaje Colegio',
+                'vacaciones': 'Vacaciones'
             };
             return [
                 (p.nombre + ' ' + (p.apellidos || '')).toUpperCase(),
@@ -9831,6 +10051,12 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             </div>
         `;
         if (window.lucide) lucide.createIcons();
+    };
+
+    window.filterAsistenciaType = (type) => {
+        if (!window.asistenciaFilters) window.asistenciaFilters = {};
+        window.asistenciaFilters.activeType = type;
+        window.renderAsistencia(document.getElementById('content-container'));
     };
 
     initNotifications();

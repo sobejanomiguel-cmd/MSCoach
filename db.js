@@ -111,13 +111,42 @@ class CoachDB {
     }
 
     async syncLocal(storeName, remoteData) {
-        if (!this.db) return;
+        if (!this.db || !remoteData) return;
+
+        // Abrimos una transacción para obtener los datos locales actuales
+        const localData = await new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readonly');
+            const store = tx.objectStore(storeName);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve([]);
+        });
+
+        const localMap = new Map(localData.map(item => [item.id, item]));
+        const remoteIds = new Set(remoteData.map(item => item.id));
+
         const tx = this.db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
-        store.clear();
-        if (remoteData && remoteData.length > 0) {
-            remoteData.forEach(item => store.put(item));
-        }
+
+        // 1. Eliminar locales que ya no existen en remoto
+        localData.forEach(localItem => {
+            if (!remoteIds.has(localItem.id)) {
+                store.delete(localItem.id);
+            }
+        });
+
+        // 2. Actualizar o insertar remotos mezclando con los locales existentes
+        remoteData.forEach(remoteItem => {
+            const localItem = localMap.get(remoteItem.id);
+            // Mezclamos: los datos remotos mandan, pero preservamos campos locales que no vengan en el JSON remoto
+            const merged = localItem ? { ...localItem, ...remoteItem } : remoteItem;
+            store.put(merged);
+        });
+
+        return new Promise((resolve) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        });
     }
 
     async add(storeName, data) {
@@ -169,8 +198,8 @@ class CoachDB {
             const tx = this.db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);
             const request = store.put(data);
-            request.onsuccess = () => resolve(data);
-            request.onerror = (e) => {
+            tx.oncomplete = () => resolve(data);
+            tx.onerror = (e) => {
                 console.error(`Local save failed (${storeName}):`, e);
                 reject(e.target.error);
             };
@@ -179,7 +208,9 @@ class CoachDB {
 
     async update(storeName, data) {
         if (!this.db) await this.init();
-        if (supabaseClient && data.id) {
+        const id = Number(data.id);
+        
+        if (supabaseClient && id) {
             // Sanitize data for Supabase: convert empty strings to null
             const toUpdate = {};
             Object.keys(data).forEach(key => {
@@ -191,7 +222,7 @@ class CoachDB {
             const { error } = await supabaseClient
                 .from(storeName)
                 .update(toUpdate)
-                .eq('id', Number(data.id));
+                .eq('id', id);
 
             if (error) {
                 console.error(`Supabase update error (${storeName}):`, error);
@@ -202,8 +233,10 @@ class CoachDB {
         }
         
         // Merge with existing local data to avoid wiping fields during partial update
-        const existing = await this.get(storeName, data.id);
-        const merged = { ...existing, ...data };
+        const existing = await this.get(storeName, id);
+        if (!existing) throw new Error(`Record with id ${id} not found in ${storeName}`);
+        
+        const merged = { ...existing, ...data, id: id }; // Ensure ID remains a number
         return this.saveLocal(storeName, merged);
     }
 
