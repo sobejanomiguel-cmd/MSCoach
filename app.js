@@ -149,6 +149,34 @@ window.getSortedTeams = (teams) => {
     });
 };
 
+window.formatAttendanceName = (dateStr, teamName, type, eventName) => {
+    if (!dateStr) dateStr = new Date().toISOString().split('T')[0];
+    let formattedDate = dateStr;
+    try {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+            const [y, m, d] = parts;
+            const shortYear = y.substring(2);
+            formattedDate = `${d}.${m}.${shortYear}`;
+        }
+    } catch (e) {}
+
+    const cleanTeam = String(teamName || 'EQUIPO').split(' ||| ')[0].toUpperCase();
+    let base = `Asistencia ${formattedDate}_${cleanTeam}_`;
+    
+    const cleanType = String(type || '').toLowerCase();
+    const cleanEvent = String(eventName || '').split(' ||| ')[0].toUpperCase();
+
+    if (cleanType.includes('torneo') || cleanType.includes('ciclo')) {
+        if (cleanEvent && cleanEvent !== 'SIN NOMBRE' && cleanEvent !== 'ENTRENAMIENTO') {
+            base += `${cleanEvent}_`;
+        }
+    }
+
+    return base;
+};
+
+
 
     window.getConvMetadata = (conv) => {
         return window.parseLugarMetadata(conv?.lugar).extra;
@@ -1202,147 +1230,266 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // View Renderers
     async function renderDashboard(container) {
-        const [allTasks, allSessions, teams, allConvocatorias, players, attendance] = await Promise.all([
-            db.getAll('tareas'),
-            db.getAll('sesiones'),
-            db.getAll('equipos'),
-            db.getAll('convocatorias'),
-            db.getAll('jugadores'),
-            db.getAll('asistencia')
-        ]);
-        
-        const userRes = await supabaseClient.auth.getUser();
-        const currentUser = userRes.data?.user;
-
-        const isGlobal = window.currentVisibilityMode === 'global';
-        const filterByVisibility = (items) => {
-            if (isGlobal) return items;
-            return items.filter(i => i.createdBy === currentUser?.id || (i.sharedWith && i.sharedWith.includes(currentUser?.id)));
-        };
-
-        const tasks = allTasks; // Tareas are always global (library)
-        const sessions = filterByVisibility(allSessions);
-        const convocatorias = filterByVisibility(allConvocatorias);
-        const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
-        const todayStr = new Date().toISOString().split('T')[0];
-        const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
-        const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
-        
-        // Calculate dynamic attendance for each team
-        teams.forEach(t => {
-            const teamReports = attendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
-            let totalPresent = 0;
-            let totalPossible = 0;
-            teamReports.forEach(r => {
-                const pData = Object.values(r.players || r.data || {});
-                totalPresent += pData.filter(s => {
-                    const status = typeof s === 'object' ? s.status : s;
-                    return status === 'asiste' || status === 'presente';
-                }).length;
-                totalPossible += pData.length;
-            });
-            t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
-        });
-
-        // Sort teams using global utility
-        const teamsToRender = window.getSortedTeams(teams);
-
-        const totalMale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('m')).length;
-        const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
-        const totalOther = players.length - (totalMale + totalFemale);
- 
-        container.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="clipboard-list"></i></div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Tareas totales</h3>
-                    <p class="text-3xl font-bold text-slate-800">${tasks.length}</p>
-                </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><i data-lucide="calendar"></i></div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Sesiones</h3>
-                    <p class="text-3xl font-bold text-slate-800">${sessions.length}</p>
-                </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center"><i data-lucide="trophy"></i></div>
-                        <div class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Balance</div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium mb-1">Torneos</h3>
-                    <div class="flex items-end gap-2 mb-2">
-                        <p class="text-3xl font-black text-slate-800">${torneos.length}</p>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-1">Totales</p>
-                    </div>
-                    <div class="flex items-center gap-4 border-t border-slate-50 pt-3">
-                        <div>
-                            <p class="text-xs font-black text-emerald-500">${torneosJugados}</p>
-                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Jugados</p>
-                        </div>
-                        <div class="w-px h-4 bg-slate-100"></div>
-                        <div>
-                            <p class="text-xs font-black text-amber-500">${torneosPendientes}</p>
-                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Pendientes</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="users"></i></div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Equipos</h3>
-                    <p class="text-3xl font-bold text-slate-800">${teams.length}</p>
-                </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><i data-lucide="user-check"></i></div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Total Jugadores</h3>
-                    <p class="text-3xl font-bold text-slate-800">${players.length}</p>
-                </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><i data-lucide="users-round"></i></div>
-                    </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Género (F / M / ?)</h3>
-                    <div class="flex items-center gap-2">
-                        <p class="text-3xl font-bold text-rose-500" title="Femenino">${totalFemale}</p>
-                        <span class="text-slate-200 text-xl font-thin">/</span>
-                        <p class="text-3xl font-bold text-blue-500" title="Masculino">${totalMale}</p>
-                        ${totalOther > 0 ? `
-                            <span class="text-slate-200 text-xl font-thin">/</span>
-                            <p class="text-3xl font-bold text-slate-400" title="Sin asignar">${totalOther}</p>
-                        ` : ''}
-                    </div>
-                </div>
-            </div>
+        try {
+            const [allTasks, allSessions, teams, allConvocatorias, players, attendance, clubes] = await Promise.all([
+                db.getAll('tareas'),
+                db.getAll('sesiones'),
+                db.getAll('equipos'),
+                db.getAll('convocatorias'),
+                db.getAll('jugadores'),
+                db.getAll('asistencia'),
+                db.getAll('clubes')
+            ]);
             
-            <div class="grid grid-cols-1 gap-8 mb-8">
-                <div class="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
-                    <h3 class="text-xl font-black text-slate-800 mb-10 flex items-center gap-3 uppercase tracking-tight">
-                        <i data-lucide="trending-up" class="w-8 h-8 text-blue-600"></i>
-                        Rendimiento Asistencia por Equipo
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                        ${teamsToRender.map(e => `
-                            <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                                <div class="flex justify-between items-center mb-4 px-1">
-                                    <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${e.nombre}</span>
-                                    <span class="text-xs font-black text-blue-600">${e.computedAsistencia || 0}%</span>
-                                </div>
-                                <div class="h-3 bg-white rounded-full overflow-hidden border border-slate-200">
-                                    <div class="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.3)]" style="width: ${e.computedAsistencia || 0}%"></div>
+            const userRes = await supabaseClient.auth.getUser();
+            const currentUser = userRes.data?.user;
+
+            const isGlobal = window.currentVisibilityMode === 'global';
+            const filterByVisibility = (items) => {
+                if (isGlobal) return items;
+                return items.filter(i => i.createdBy === currentUser?.id || (i.sharedWith && i.sharedWith.includes(currentUser?.id)));
+            };
+
+            const tasks = allTasks; // Tareas are always global (library)
+            const sessions = filterByVisibility(allSessions);
+            const convocatorias = filterByVisibility(allConvocatorias);
+            const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
+            const todayStr = new Date().toISOString().split('T')[0];
+            const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
+            const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
+            
+            // Calculate dynamic attendance for each team
+            teams.forEach(t => {
+                const teamReports = attendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
+                let totalPresent = 0;
+                let totalPossible = 0;
+                teamReports.forEach(r => {
+                    const pData = Object.values(r.players || r.data || {});
+                    totalPresent += pData.filter(s => {
+                        const status = typeof s === 'object' ? s.status : s;
+                        return status === 'asiste' || status === 'presente';
+                    }).length;
+                    totalPossible += pData.length;
+                });
+                t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
+            });
+
+            // Sort teams using global utility
+            const teamsToRender = window.getSortedTeams(teams);
+
+            const totalMale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('m')).length;
+            const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
+            const totalOther = players.length - (totalMale + totalFemale);
+
+            // Task counts by type
+            const taskTypeCounts = {};
+            tasks.forEach(t => {
+                const type = String(t.type || 'Fútbol').toUpperCase();
+                taskTypeCounts[type] = (taskTypeCounts[type] || 0) + 1;
+            });
+            const sortedTaskTypes = Object.entries(taskTypeCounts).sort((a,b) => b[1] - a[1]).slice(0, 6);
+
+            // Session counts by team
+            const sessionTeamCounts = {};
+            sessions.forEach(s => {
+                const team = teams.find(t => t.id == s.equipoid);
+                if (team && team.nombre) {
+                    const name = String(team.nombre).split(' ||| ')[0].toUpperCase();
+                    sessionTeamCounts[name] = (sessionTeamCounts[name] || 0) + 1;
+                }
+            });
+            const sortedSessionTeams = Object.entries(sessionTeamCounts).sort((a,b) => b[1] - a[1]).slice(0, 6);
+
+            // Team counts by gender
+            const teamsFemaleCount = teams.filter(t => {
+                const nameStr = String(t.nombre || '').toUpperCase();
+                const catStr = String(t.categoria || '').toUpperCase();
+                return nameStr.includes('FEM') || catStr.includes('FEM');
+            }).length;
+            const teamsMaleCount = teams.length - teamsFemaleCount;
+    
+            container.innerHTML = `
+                <!-- Row 1: Heavy Stats -->
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
+                    <!-- Tareas Widget -->
+                    <div class="lg:col-span-3 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center justify-between mb-8">
+                            <div class="flex items-center gap-5">
+                                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform"><i data-lucide="clipboard-list" class="w-8 h-8"></i></div>
+                                <div>
+                                    <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Biblioteca de Ejercicios</h3>
+                                    <p class="text-4xl font-black text-slate-800">${tasks.length} <span class="text-sm font-bold text-slate-300 ml-1">TOTALES</span></p>
                                 </div>
                             </div>
-                        `).join('')}
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 border-t border-slate-50 pt-8">
+                            ${sortedTaskTypes.map(([type, count]) => `
+                                <div class="flex items-center justify-between group/item p-2 hover:bg-slate-50 rounded-xl transition-colors">
+                                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-tight truncate mr-4">${type}</span>
+                                    <span class="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">${count}</span>
+                                </div>
+                            `).join('') || '<p class="text-[10px] text-slate-300 italic">Sin datos</p>'}
+                        </div>
+                    </div>
+
+                    <!-- Sesiones Widget -->
+                    <div class="lg:col-span-2 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center justify-between mb-8">
+                            <div class="flex items-center gap-5">
+                                <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:-rotate-6 transition-transform"><i data-lucide="calendar" class="w-8 h-8"></i></div>
+                                <div>
+                                    <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Sesiones Planificadas</h3>
+                                    <p class="text-4xl font-black text-slate-800">${sessions.length} <span class="text-sm font-bold text-slate-300 ml-1">SESIONES</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-3 border-t border-slate-50 pt-8">
+                            ${sortedSessionTeams.map(([team, count]) => `
+                                <div class="flex items-center justify-between group/item p-2 hover:bg-slate-50 rounded-xl transition-colors">
+                                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-tight truncate mr-4">${team}</span>
+                                    <span class="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${count}</span>
+                                </div>
+                            `).join('') || '<p class="text-[10px] text-slate-300 italic">Sin datos</p>'}
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
-        if (window.lucide) lucide.createIcons();
+
+                <!-- Row 2: Secondary Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Torneos Widget -->
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center gap-5 mb-8">
+                            <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"><i data-lucide="trophy" class="w-7 h-7"></i></div>
+                            <div>
+                                <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Competición</h3>
+                                <p class="text-3xl font-black text-slate-800">${torneos.length}</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4 border-t border-slate-50 pt-8">
+                            <div class="flex-1 bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
+                                <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 text-center">Jugados</p>
+                                <p class="text-2xl font-black text-emerald-600 text-center">${torneosJugados}</p>
+                            </div>
+                            <div class="flex-1 bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
+                                <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1 text-center">Pendientes</p>
+                                <p class="text-2xl font-black text-amber-600 text-center">${torneosPendientes}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Equipos Widget -->
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center gap-5 mb-8">
+                            <div class="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><i data-lucide="users" class="w-7 h-7"></i></div>
+                            <div>
+                                <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Estructura</h3>
+                                <p class="text-3xl font-black text-slate-800">${teams.length}</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4 border-t border-slate-50 pt-8">
+                            <div class="flex-1 bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 text-center">Masculinos</p>
+                                <p class="text-2xl font-black text-blue-600 text-center">${teamsMaleCount}</p>
+                            </div>
+                            <div class="flex-1 bg-rose-50/50 p-4 rounded-2xl border border-rose-100">
+                                <p class="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1 text-center">Femeninos</p>
+                                <p class="text-2xl font-black text-rose-600 text-center">${teamsFemaleCount}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Jugadores Widget -->
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center gap-5 mb-8">
+                            <div class="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i data-lucide="user-check" class="w-7 h-7"></i></div>
+                            <div>
+                                <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Jugadores</h3>
+                                <p class="text-3xl font-black text-slate-800">${players.length}</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 border-t border-slate-50 pt-8">
+                            <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-center">
+                                <p class="text-[8px] font-black text-blue-600 uppercase mb-1">Masc.</p>
+                                <p class="text-xl font-black text-blue-600">${totalMale}</p>
+                            </div>
+                            <div class="bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-center">
+                                <p class="text-[8px] font-black text-rose-600 uppercase mb-1">Fem.</p>
+                                <p class="text-xl font-black text-rose-600">${totalFemale}</p>
+                            </div>
+                            ${totalOther > 0 ? `
+                                <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center">
+                                    <p class="text-[8px] font-black text-slate-400 uppercase mb-1">S.A.</p>
+                                    <p class="text-xl font-black text-slate-500">${totalOther}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+                    <!-- Attendance Widget -->
+                    <div class="lg:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-md">
+                        <div class="flex items-center justify-between mb-10">
+                            <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4 uppercase tracking-tight">
+                                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><i data-lucide="trending-up" class="w-7 h-7"></i></div>
+                                Rendimiento Asistencia
+                            </h3>
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">Media Global: ${teamsToRender.length > 0 ? Math.round(teamsToRender.reduce((acc, t) => acc + (t.computedAsistencia || 0), 0) / teamsToRender.length) : 0}%</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            ${teamsToRender.map(e => `
+                                <div class="bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100/50 hover:bg-white hover:shadow-xl hover:border-blue-100 transition-all group/item">
+                                    <div class="flex justify-between items-center mb-6">
+                                        <span class="text-xs font-black text-slate-600 uppercase tracking-widest truncate mr-4">${e.nombre.split(' ||| ')[0]}</span>
+                                        <span class="text-lg font-black text-blue-600 group-hover/item:scale-110 transition-transform">${e.computedAsistencia || 0}%</span>
+                                    </div>
+                                    <div class="h-3 bg-slate-200/50 rounded-full overflow-hidden p-0.5">
+                                        <div class="h-full bg-blue-600 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(37,99,235,0.3)]" style="width: ${e.computedAsistencia || 0}%"></div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Clubs Widget -->
+                    <div class="lg:col-span-4 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col transition-all hover:shadow-md">
+                        <div class="flex items-center justify-between mb-10">
+                            <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4 uppercase tracking-tight">
+                                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="building-2" class="w-7 h-7"></i></div>
+                                Clubes
+                            </h3>
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">${clubes.length}</span>
+                        </div>
+                        <div class="flex-1 space-y-3 overflow-y-auto max-h-[450px] pr-2 custom-scrollbar">
+                            ${clubes.length === 0 ? `
+                                <div class="py-20 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
+                                    <i data-lucide="building-2" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
+                                    <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin clubes registrados</p>
+                                </div>
+                            ` : clubes.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => `
+                                <div onclick="window.switchView('clubes')" class="group flex items-center gap-5 p-5 bg-slate-50/50 rounded-[2rem] border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl transition-all cursor-pointer">
+                                    <div class="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm overflow-hidden p-2 group-hover:scale-105 transition-transform duration-500">
+                                        ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-6 h-6 text-indigo-400"></i>`}
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-black text-slate-800 uppercase tracking-tight truncate">${club.nombre}</p>
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate mt-0.5">${club.lugar || 'Ubicación no def.'}</p>
+                                    </div>
+                                    <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-slate-100">
+                                        <i data-lucide="chevron-right" class="w-5 h-5 text-indigo-600"></i>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button onclick="window.switchView('clubes')" class="mt-8 w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Clubes</button>
+                    </div>
+                </div>
+            `;
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error("Dashboard error:", err);
+            container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-3xl font-bold uppercase tracking-widest text-xs border border-red-100">Error al cargar el panel de control: ${err.message}</div>`;
+        }
     }
 
     let currentCalendarDate = new Date();
@@ -1462,13 +1609,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ];
 
                                 const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+                                const todayDate = new Date();
+                                todayDate.setHours(0,0,0,0);
+                                const cellDate = new Date(year, month, day);
+                                const isPast = cellDate < todayDate;
                                 
                                 return `
-                                    <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-4 min-h-0 cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-2 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''}">
+                                    <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-4 min-h-0 cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-2 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''} ${isPast ? 'bg-slate-50/30' : ''}">
                                         <div class="flex justify-between items-center w-full">
-                                            <span class="text-sm font-black transition-all ${isToday ? 'w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600')}">${day}</span>
+                                            <span class="text-sm font-black transition-all ${isToday ? 'w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600')} ${isPast ? 'text-slate-300' : ''}">${day}</span>
                                         </div>
-                                        <div class="w-full flex-1 overflow-hidden flex flex-wrap gap-1 mt-1">
+                                        <div class="w-full flex-1 overflow-hidden flex flex-wrap gap-1 mt-1 ${isPast ? 'opacity-40 grayscale' : ''}">
                                             ${combined.slice(0, 8).map(item => `
                                                 <div class="w-2 h-2 rounded-full ${item.completada ? 'bg-slate-300' : item.color} shadow-sm"></div>
                                             `).join('')}
@@ -1487,33 +1638,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
                         </div>
                         <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10 min-h-[200px]">
-                            ${combinedItems.length > 0 ? combinedItems.map(item => {
-                                const isSession = item.type === 'sesion';
-                                const isConv = item.type === 'convocatoria';
-                                let accent = 'blue';
-                                let icon = 'calendar';
-                                let action = `window.viewEventoFicha('${item.id}')`;
-                                if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
-                                else if (isConv) { 
-                                    accent = item.tipo?.toUpperCase() === 'TORNEO' ? 'slate' : 'blue'; 
-                                    icon = item.tipo?.toUpperCase() === 'TORNEO' ? 'trophy' : 'users';
-                                    action = (item.tipo?.toUpperCase() === 'TORNEO') ? `window.viewTorneoRendimiento('${item.id}')` : `window.viewConvocatoria('${item.id}')`; 
-                                }
+                            ${combinedItems.length > 0 ? (() => {
+                                const todayDate = new Date();
+                                todayDate.setHours(0,0,0,0);
+                                const isPastDay = selectedCalendarDate < todayDate;
+                                
+                                return combinedItems.map(item => {
+                                    const isSession = item.type === 'sesion';
+                                    const isConv = item.type === 'convocatoria';
+                                    let accent = 'blue';
+                                    let icon = 'calendar';
+                                    let action = `window.viewEventoFicha('${item.id}')`;
+                                    if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
+                                    else if (isConv) { 
+                                        accent = item.tipo?.toUpperCase() === 'TORNEO' ? 'slate' : 'blue'; 
+                                        icon = item.tipo?.toUpperCase() === 'TORNEO' ? 'trophy' : 'users';
+                                        action = (item.tipo?.toUpperCase() === 'TORNEO') ? `window.viewTorneoRendimiento('${item.id}')` : `window.viewConvocatoria('${item.id}')`; 
+                                    }
 
-                                const isChecked = item.completada;
+                                    const isChecked = item.completada || isPastDay;
 
-                                return `
-                                    <div onclick="${action}" class="p-5 rounded-2xl border border-slate-100 bg-white hover:border-${accent}-300 hover:shadow-xl hover:shadow-${accent}-500/10 transition-all cursor-pointer group ${isChecked ? 'opacity-40' : ''}">
-                                        <div class="flex items-center gap-3 mb-3">
-                                            <div class="w-8 h-8 rounded-lg bg-${accent}-50 flex items-center justify-center group-hover:bg-${accent}-600 transition-colors">
-                                                <i data-lucide="${icon}" class="w-4 h-4 text-${accent}-600 group-hover:text-white transition-colors"></i>
+                                    return `
+                                        <div onclick="${action}" class="p-5 rounded-2xl border border-slate-100 bg-white hover:border-${accent}-300 hover:shadow-xl hover:shadow-${accent}-500/10 transition-all cursor-pointer group ${isChecked ? 'opacity-40 grayscale bg-slate-50/50' : ''}">
+                                            <div class="flex items-center gap-3 mb-3">
+                                                <div class="w-8 h-8 rounded-lg ${isChecked ? 'bg-slate-100' : `bg-${accent}-50`} flex items-center justify-center group-hover:bg-${accent}-600 transition-colors">
+                                                    <i data-lucide="${icon}" class="w-4 h-4 ${isChecked ? 'text-slate-400' : `text-${accent}-600`} group-hover:text-white transition-colors"></i>
+                                                </div>
+                                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${item.hora || '--:--'}</span>
                                             </div>
-                                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${item.hora || '--:--'}</span>
+                                            <p class="text-xs font-black text-slate-800 uppercase leading-snug ${isChecked ? 'text-slate-400' : ''}">${item.titulo || item.nombre}</p>
                                         </div>
-                                        <p class="text-xs font-black text-slate-800 uppercase leading-snug ${isChecked ? 'line-through' : ''}">${item.titulo || item.nombre}</p>
-                                    </div>
-                                `;
-                            }).join('') : `
+                                    `;
+                                }).join('');
+                            })() : `
                                 <div class="py-10 text-center flex flex-col items-center gap-3">
                                     <div class="w-12 h-12 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center">
                                         <i data-lucide="coffee" class="w-6 h-6 text-slate-200"></i>
@@ -4005,13 +4162,17 @@ await db.update('sesiones', { ...data, id: session.id });
                             playersData[pid] = { status: 'asiste' };
                         });
 
+                        const teams = await db.getAll('equipos');
+                        const team = teams.find(t => t.id == data.equipoid);
+                        const teamName = team ? team.nombre : 'EQUIPO';
+
                         const attendanceData = {
                             fecha: data.fecha || new Date().toISOString().split('T')[0],
-                            nombre: (data.nombre || 'SIN NOMBRE').toUpperCase(),
+                            nombre: window.formatAttendanceName(data.fecha, teamName, data.tipo, data.nombre),
                             tipo: data.tipo || 'Convocatoria',
                             equipoid: data.equipoid || null,
                             convocatoriaid: convSaved.id,
-                            lugar: data.lugar || '', // Added lugar
+                            lugar: data.lugar || '', 
                             players: playersData,
                             createdBy: currentUser?.id
                         };
@@ -7558,7 +7719,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         window.refreshNotifications = async () => {
             try {
-                const today = new Date().toISOString().split('T')[0];
+                const now = new Date();
+                const today = now.toISOString().split('T')[0];
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
                 const tomorrowStr = tomorrow.toISOString().split('T')[0];
@@ -7572,6 +7734,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 if (!currentUser) return;
 
                 const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
+                const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
 
                 const allItems = [
                     ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock', view: 'eventos' })),
@@ -7584,23 +7747,24 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         view: c.tipo === 'Torneo' ? 'torneos' : 'convocatorias'
                     }))
                 ];
+
                 const agendaItems = allItems.filter(item => {
-                    const now = new Date();
-                    const itemDateTime = new Date(`${item.fecha}T${item.hora || '00:00'}`);
+                    const defaultTime = '09:00';
+                    const itemDateTime = new Date(`${item.fecha}T${item.hora || defaultTime}`);
                     
                     const isTime = itemDateTime <= now;
                     const isMine = item.createdBy === currentUser.id;
                     const isSharedWithMe = item.sharedWith && item.sharedWith.includes(currentUser.id);
                     const notSeen = !seenNotifs.includes(`${item.type}_${item.id}`);
-                    const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
                     const isDismissed = dismissedNotifs.includes(`${item.type}_${item.id}`);
                     
                     const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
                     
                     return (isTime || isUpcomingShared) && !item.completada && !isDismissed;
                 }).sort((a, b) => {
-                    if (a.fecha === b.fecha) return (a.hora || '00:00').localeCompare(b.hora || '00:00');
-                    return a.fecha.localeCompare(b.fecha);
+                    const timeA = new Date(`${a.fecha}T${a.hora || '09:00'}`).getTime();
+                    const timeB = new Date(`${b.fecha}T${b.hora || '09:00'}`).getTime();
+                    return timeB - timeA;
                 });
 
                 if (agendaItems.length > 0) {
@@ -7619,8 +7783,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         if (ringIcon) ringIcon.classList.add('animate-ring');
                     }
 
-                    notifCount.textContent = `${agendaItems.length} pendientes`;
-                    
+                    notifCount.textContent = `${agendaItems.length} avisos`;
                     notifList.innerHTML = agendaItems.map(item => {
                         const isSeen = seenNotifs.includes(`${item.type}_${item.id}`);
                         const isShared = item.sharedWith && item.sharedWith.includes(currentUser.id) && item.createdBy !== currentUser.id;
@@ -7744,34 +7907,48 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const actionRight = container.querySelector('.notif-swipe-action-right');
                 const fullId = container.dataset.notifId;
                 
+                if (!content) return;
+
                 let startX = 0;
                 let currentTranslate = 0;
                 let isDragging = false;
                 const threshold = 80;
 
                 const onStart = (e) => {
-                    startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                    startX = (e.type === 'touchstart') ? e.touches[0].clientX : e.clientX;
                     isDragging = true;
                     content.style.transition = 'none';
-                    content.style.cursor = 'grabbing';
+                    
+                    // Attach global listeners for move and end
+                    if (e.type === 'touchstart') {
+                        document.addEventListener('touchmove', onMove, { passive: false });
+                        document.addEventListener('touchend', onEnd);
+                    } else {
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup', onEnd);
+                    }
                 };
 
                 const onMove = (e) => {
                     if (!isDragging) return;
-                    const x = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                    
+                    // Prevent default scrolling if swiping horizontally
+                    const x = (e.type === 'touchmove') ? e.touches[0].clientX : e.clientX;
                     currentTranslate = x - startX;
                     
+                    if (Math.abs(currentTranslate) > 10) {
+                        if (e.cancelable) e.preventDefault();
+                    }
+
                     if (currentTranslate > 120) currentTranslate = 120;
                     if (currentTranslate < -120) currentTranslate = -120;
 
                     content.style.transform = `translateX(${currentTranslate}px)`;
                     
                     if (currentTranslate > 20) {
-                        // Deslizando a la derecha -> Revela acción izquierda (Leído)
                         actionLeft.style.opacity = Math.min(1, currentTranslate / 60);
                         actionRight.style.opacity = 0;
                     } else if (currentTranslate < -20) {
-                        // Deslizando a la izquierda -> Revela acción derecha (Borrar)
                         actionRight.style.opacity = Math.min(1, Math.abs(currentTranslate) / 60);
                         actionLeft.style.opacity = 0;
                     } else {
@@ -7780,34 +7957,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     }
                 };
 
-                const onEnd = () => {
+                const onEnd = (e) => {
                     if (!isDragging) return;
                     isDragging = false;
+                    
                     content.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
-                    content.style.cursor = 'pointer';
                     
                     if (currentTranslate > threshold) {
-                        // Swipe Right: Mark Read
                         content.style.transform = 'translateX(0px)';
                         const isSeen = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]').includes(fullId);
                         window.toggleNotifSeen(fullId, isSeen);
                     } else if (currentTranslate < -threshold) {
-                        // Swipe Left: Delete
                         content.style.transform = 'translateX(-100%)';
                         setTimeout(() => window.dismissIndividualNotif(fullId), 200);
                     } else {
                         content.style.transform = 'translateX(0px)';
+                        actionLeft.style.opacity = 0;
+                        actionRight.style.opacity = 0;
                     }
+                    
+                    // Clean up global listeners
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onEnd);
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onEnd);
+                    
                     currentTranslate = 0;
                 };
 
-                content.addEventListener('touchstart', onStart, { passive: true });
-                content.addEventListener('touchmove', onMove, { passive: true });
-                content.addEventListener('touchend', onEnd);
-                
-                content.addEventListener('mousedown', onStart);
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onEnd);
+                content.onmousedown = onStart;
+                content.ontouchstart = onStart;
             });
         };
 
@@ -9381,15 +9560,37 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const btn = e?.currentTarget || document.querySelector('button[onclick*="repairAttendance"]');
         if (!btn) return;
         const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="w-4 h-4 animate-spin"></i> Reparando...';
+        btn.innerHTML = '<i class="w-4 h-4 animate-spin"></i> Reparando Nombres y Registros...';
         btn.style.pointerEvents = 'none';
 
         try {
             const convocatorias = await db.getAll('convocatorias');
             const asistencias = await db.getAll('asistencia');
+            const teams = await db.getAll('equipos');
             const linkedIds = new Set(asistencias.map(a => a.convocatoriaid?.toString()).filter(id => id));
 
-            let count = 0;
+            let createdCount = 0;
+            let renamedCount = 0;
+
+            // 1. Rename existing records to standard format
+            for (const asist of asistencias) {
+                const team = teams.find(t => t.id == asist.equipoid);
+                const teamName = team ? team.nombre : 'EQUIPO';
+                
+                // Intentamos sacar el nombre y tipo original (de la convocatoria vinculada si existe)
+                const linkedConv = convocatorias.find(c => c.id.toString() === asist.convocatoriaid?.toString());
+                const eventName = linkedConv ? linkedConv.nombre : asist.nombre;
+                const eventType = linkedConv ? linkedConv.tipo : asist.tipo;
+
+                const newName = window.formatAttendanceName(asist.fecha, teamName, eventType, eventName);
+                
+                if (asist.nombre !== newName) {
+                    await db.update('asistencia', { id: asist.id, nombre: newName });
+                    renamedCount++;
+                }
+            }
+
+            // 2. Create missing records from convocatorias
             for (const conv of convocatorias) {
                 if (!linkedIds.has(conv.id.toString())) {
                     const playersData = {};
@@ -9398,10 +9599,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         playersData[pid] = { status: 'asiste' };
                     });
 
+                    const team = teams.find(t => t.id == conv.equipoid);
+                    const teamName = team ? team.nombre : 'EQUIPO';
+
                     const attendanceData = {
                         fecha: conv.fecha || new Date().toISOString().split('T')[0],
-                        nombre: (conv.nombre || 'SIN NOMBRE').toUpperCase(),
-                        tipo: conv.tipo || 'Sesión', // Forzamos un tipo válido si falta
+                        nombre: window.formatAttendanceName(conv.fecha, teamName, conv.tipo, conv.nombre),
+                        tipo: conv.tipo || 'Sesión', 
                         equipoid: conv.equipoid || null,
                         convocatoriaid: conv.id,
                         players: playersData
@@ -9409,15 +9613,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                     try {
                         await db.add('asistencia', attendanceData);
-                        count++;
+                        createdCount++;
                     } catch (err) {
-                        // Si falla Supabase, guardamos local para no perder el registro
                         await db.saveLocal('asistencia', { ...attendanceData, id: Date.now() });
-                        count++;
+                        createdCount++;
                     }
                 }
             }
-            window.customAlert('¡Hecho!', `Se han reparado ${count} asistencias faltantes.`, 'success');
+            window.customAlert('¡Hecho!', `Se han reparado ${createdCount} asistencias faltantes y normalizado ${renamedCount} nombres.`, 'success');
             window.renderAsistencia(document.getElementById('content-container'));
         } catch (err) {
             console.error("Repair error:", err);
