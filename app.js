@@ -8290,9 +8290,51 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const teams = await db.getAll('equipos');
         const attendance = await db.getAll('asistencia');
-        window.allAttendanceData = attendance; // Cache for the inner function
+        const convocatorias = await db.getAll('convocatorias');
+        
+        // Cache for inner scopes
+        const playerConvs = convocatorias.filter(c => {
+            const pids = c.playerids || [];
+            return pids.map(String).includes(String(playerId));
+        });
+
+        window.allAttendanceData = attendance; 
+        window.allConvocatoriasData = convocatorias;
+        window.currentPlayerConvs = playerConvs;
         
         const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
+
+        // --- PRE-CALCULATE CATEGORIZED DATA ---
+        const playerAttendance = attendance.filter(a => a.players && a.players[playerId]);
+        const categorized = { ciclos: [], sesiones: [], torneos: [] };
+
+        // 1. Process explicit attendance records
+        playerAttendance.forEach(a => {
+            if (a.convocatoriaid) {
+                const c = convocatorias.find(cv => cv.id == a.convocatoriaid);
+                if (c?.tipo === 'Ciclo') categorized.ciclos.push(a);
+                else if (c?.tipo === 'Torneo' || c?.tipo === 'Partido') categorized.torneos.push(a);
+                // Omit Convocatoria-based sessions here to avoid duplication if a standalone record exists
+            } else {
+                categorized.sesiones.push(a);
+            }
+        });
+
+        // 2. Bidirectional sync: Add convocatorias without attendance records
+        playerConvs.forEach(c => {
+            const hasAttendance = playerAttendance.some(a => a.convocatoriaid == c.id);
+            if (!hasAttendance) {
+                const item = { nombre: c.nombre, fecha: c.fecha, convocatoriaid: c.id, players: { [playerId]: 'Convocado' } };
+                if (c.tipo === 'Ciclo') categorized.ciclos.push(item);
+                else if (c.tipo === 'Torneo' || c.tipo === 'Partido') categorized.torneos.push(item);
+                else if (c.tipo === 'Sesión' || c.tipo === 'Zubieta') {
+                    // Avoid duplication by date
+                    if (!categorized.sesiones.some(s => s.fecha === c.fecha)) categorized.sesiones.push(item);
+                }
+            }
+        });
+
+        const uniqueTorneoNames = [...new Set(categorized.torneos.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
 
         modalContainer.innerHTML = `
             <div class="relative overflow-hidden">
@@ -8313,9 +8355,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${player.nombre}</h3>
                                     <div class="flex flex-wrap items-center gap-3 mt-2">
                                         <div class="flex gap-1">
-                                            ${(Array.isArray(player.posicion) ? player.posicion : [player.posicion || 'SIN POSICIÓN']).map(pos => `
+                                            ${window.parsePosition(player.posicion).length > 0 ? window.parsePosition(player.posicion).map(pos => `
                                                 <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[9px] font-black uppercase tracking-widest">${pos}</span>
-                                            `).join('')}
+                                            `).join('') : '<span class="px-3 py-1 bg-slate-50 text-slate-400 rounded-full text-[9px] font-black uppercase tracking-widest">SIN POSICIÓN</span>'}
                                         </div>
                                         <span class="w-1 h-1 bg-slate-200 rounded-full"></span>
                                         <span class="text-slate-400 text-[10px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'JUGADOR LIBRE'}</span>
@@ -8373,64 +8415,154 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual.</p>
                         </div>
 
-                        <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
-                            <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
-                                <i data-lucide="check-circle" class="w-6 h-6"></i>
-                            </div>
-                            <h4 class="text-[11px] font-black text-slate-800 uppercase mb-1">Estado de Ficha</h4>
-                            <p class="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">Activo y Verificado</p>
-                        </div>
+                        ${(() => {
+                            return `
+                                <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-3">Competiciones</p>
+                                        <div class="flex items-center gap-4 mb-4">
+                                            <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                                <i data-lucide="trophy" class="w-6 h-6 text-indigo-600"></i>
+                                            </div>
+                                            <div>
+                                                <span class="text-3xl font-black text-slate-800">${uniqueTorneoNames.length}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Torneos / Partidos</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-2 custom-scrollbar">
+                                            ${uniqueTorneoNames.map(t => `
+                                                <span class="px-2 py-1 bg-white/80 border border-indigo-100 rounded-lg text-[8px] font-black text-indigo-600 uppercase truncate max-w-[120px] shadow-sm">${t}</span>
+                                            `).join('') || '<span class="text-[8px] text-slate-300 italic uppercase">Sin participaciones registradas</span>'}
+                                        </div>
+                                    </div>
+                                    <p class="text-[9px] font-bold text-indigo-400/70 mt-4 leading-relaxed uppercase italic">Participación en eventos competitivos.</p>
+                                </div>
+                            `;
+                        })()}
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        ${(() => {
+                            const attendance = (window.allAttendanceData || []).filter(a => a.players && a.players[playerId]);
+                            const convs = window.allConvocatoriasData || [];
+                            
+                            const sesionesAttended = attendance.filter(a => {
+                                if (!a.convocatoriaid) return true;
+                                const c = convs.find(cv => cv.id == a.convocatoriaid);
+                                return c?.tipo === 'Sesión' || c?.tipo === 'Zubieta';
+                            }).length;
+
+                            const ciclosAttended = attendance.filter(a => {
+                                if (!a.convocatoriaid) return false;
+                                const c = convs.find(cv => cv.id == a.convocatoriaid);
+                                return c?.tipo === 'Ciclo';
+                            }).length;
+
+                            return `
+                                <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/50 flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-3">Entrenamientos</p>
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                                <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i>
+                                            </div>
+                                            <div>
+                                                <span class="text-3xl font-black text-slate-800">${categorized.sesiones.length}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Sesiones Totales</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-[9px] font-bold text-amber-500/60 mt-4 leading-relaxed uppercase italic">Sesiones ordinarias y específicas.</p>
+                                </div>
+
+                                <div class="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/50 flex flex-col justify-between">
+                                    <div>
+                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-3">Ciclos de Trabajo</p>
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                                <i data-lucide="refresh-ccw" class="w-6 h-6 text-blue-500"></i>
+                                            </div>
+                                            <div>
+                                                <span class="text-3xl font-black text-slate-800">${categorized.ciclos.length}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Ciclos Completados</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-[9px] font-bold text-blue-500/60 mt-4 leading-relaxed uppercase italic">Ciclos de tecnificación y seguimiento.</p>
+                                </div>
+                            `;
+                        })()}
                     </div>
 
                     <div class="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-                        <div class="flex items-center justify-between mb-6">
-                            <h4 class="text-sm font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                                <i data-lucide="calendar-check" class="w-5 h-5 text-emerald-500"></i>
+                        <div class="flex items-center justify-between mb-8">
+                            <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-3">
+                                <div class="p-2 bg-emerald-50 rounded-xl">
+                                    <i data-lucide="calendar-check" class="w-5 h-5 text-emerald-600"></i>
+                                </div>
                                 Historial de Asistencia
                             </h4>
                         </div>
                         
-                        <div class="overflow-x-auto -mx-8 px-8">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="bg-slate-50/50 border-b border-slate-100">
-                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Fecha / Sesión</th>
-                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Estado</th>
-                                        <th class="py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Observaciones / Motivo</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${(() => {
-                                        const attendance = (window.allAttendanceData || []).filter(a => a.players && a.players[playerId]);
-                                        if (attendance.length === 0) return '<tr><td colspan="3" class="py-8 text-center text-[10px] text-slate-300 uppercase font-black italic">No hay registros de asistencia</td></tr>';
-                                        
-                                        return attendance.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(a => {
-                                            const status = a.players[playerId];
-                                            const reason = (typeof status === 'object') ? status.reason : '';
-                                            const statusValue = (typeof status === 'object') ? status.status : status;
+                        <div class="space-y-12">
+                            ${(() => {
+                                if (categorized.sesiones.length === 0 && categorized.ciclos.length === 0 && categorized.torneos.length === 0) {
+                                    return '<div class="py-20 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-100"><p class="text-xs font-black text-slate-300 uppercase tracking-widest italic">No hay registros de asistencia</p></div>';
+                                }
+                                
+                                const renderGroup = (title, items, icon, colorClass) => {
+                                    if (items.length === 0) return '';
+                                    return `
+                                        <div class="space-y-4">
+                                            <div class="flex items-center gap-3 pb-2 border-b-2 border-slate-50">
+                                                <i data-lucide="${icon}" class="w-4 h-4 ${colorClass}"></i>
+                                                <h5 class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">${title} (${items.length})</h5>
+                                            </div>
+                                            <div class="overflow-hidden bg-white">
+                                                <table class="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr class="bg-slate-50/30">
+                                                            <th class="py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Fecha / Evento</th>
+                                                            <th class="py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 text-center">Estado</th>
+                                                            <th class="py-3 text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">Observaciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody class="divide-y divide-slate-50">
+                                                        ${items.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(a => {
+                                                            const status = a.players[playerId];
+                                                            const reason = (typeof status === 'object') ? status.reason : '';
+                                                            const statusValue = (typeof status === 'object') ? status.status : status;
+                                                            let badge = '';
+                                                            if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
+                                                            else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
+                                                            else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
+                                                            else if (statusValue === 'Convocado') badge = '<span class="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[8px] font-black uppercase italic">Convocado</span>';
+                                                            else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
-                                            let statusBadge = '';
-                                            if (statusValue === 'asiste') statusBadge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
-                                            else if (statusValue === 'falta') statusBadge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
-                                             else if (statusValue === 'zubieta') statusBadge = '<span class="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[8px] font-black uppercase">Zubieta</span>';
-                                             else if (statusValue === 'estudios') statusBadge = '<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Estudios</span>';
-                                            else if (statusValue === 'lesion') statusBadge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
-                                            else statusBadge = `<span class="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
+                                                            return `
+                                                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                                                    <td class="py-4 px-4">
+                                                                        <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Evento'}</p>
+                                                                        <p class="text-[8px] font-black text-slate-400 uppercase">${a.fecha}</p>
+                                                                    </td>
+                                                                    <td class="py-4 px-4 text-center">${badge}</td>
+                                                                    <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : '...') }</td>
+                                                                </tr>
+                                                            `;
+                                                        }).join('')}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    `;
+                                };
 
-                                            return `
-                                                <tr class="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                                    <td class="py-4 px-4">
-                                                        <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Sesión'}</p>
-                                                        <p class="text-[8px] font-black text-slate-400 uppercase">${a.fecha}</p>
-                                                    </td>
-                                                    <td class="py-4 px-4">${statusBadge}</td>
-                                                    <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : 'Sin motivo especificado')}</td>
-                                                </tr>
-                                            `;
-                                        }).join('');
-                                    })()}
-                                </tbody>
-                            </table>
+                                return `
+                                    ${renderGroup('Ciclos de Perfeccionamiento', categorized.ciclos, 'refresh-ccw', 'text-blue-500')}
+                                    ${renderGroup('Sesiones de Entrenamiento', categorized.sesiones, 'calendar', 'text-amber-500')}
+                                    ${renderGroup('Torneos y Partidos', categorized.torneos, 'trophy', 'text-indigo-500')}
+                                `;
+                            })()}
                         </div>
                     </div>
                 </div>
