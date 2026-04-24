@@ -51,8 +51,23 @@ window.currentVisibilityMode = 'personal';
 
 window.ensureClubesInitialized = async () => {
     try {
+        // Migración: Unificar variaciones de BALSAS
+        const players = await db.getAll('jugadores');
+        for (const p of players) {
+            if (p.equipoConvenido && p.equipoConvenido.toUpperCase().includes('BALSAS') && p.equipoConvenido !== 'UD BALSAS PICARRAL') {
+                await db.update('jugadores', { ...p, equipoConvenido: 'UD BALSAS PICARRAL' });
+            }
+        }
+
         const existing = await db.getAll('clubes');
-        if (existing.length === 0) {
+        // Eliminar duplicados de Balsas en la tabla de clubes
+        for (const c of existing) {
+            if (c.nombre.toUpperCase().includes('BALSAS') && c.nombre !== 'UD BALSAS PICARRAL') {
+                await db.delete('clubes', c.id);
+            }
+        }
+
+        if (existing.filter(c => !c.nombre.toUpperCase().includes('BALSAS') || c.nombre === 'UD BALSAS PICARRAL').length === 0) {
             console.log("Initializing partner clubs...");
             for (const name of CLUBES_CONVENIDOS) {
                 await db.add('clubes', { nombre: name, escudo: null });
@@ -4447,6 +4462,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             const players = await db.getAll('jugadores');
             const teams = await db.getAll('equipos');
+
+            // Reset filter if opening a different convocatoria
+            if (window.lastViewedConvId !== id) {
+                window.currentConvClubFilter = 'all';
+                window.lastViewedConvId = id;
+            } else {
+                window.currentConvClubFilter = window.currentConvClubFilter || 'all';
+            }
             const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
             
             let selectedTeamIds = [];
@@ -4600,15 +4623,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             
                             <!-- Multi-Team Toggle within Management -->
-                            <div class="mb-6 p-4 bg-white border border-slate-100 rounded-3xl shadow-inner-sm">
-                                <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar Jugadores por Squads</label>
-                                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
-                                    ${window.getSortedTeams(teams).map(t => `
-                                        <label class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-transparent cursor-pointer hover:border-blue-200 transition-all select-none">
-                                            <input type="checkbox" value="${t.id}" ${selectedTeamIds.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 conv-team-check">
-                                            <span class="text-[9px] font-black text-slate-600 truncate uppercase">${t.nombre}</span>
-                                        </label>
-                                    `).join('')}
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div class="p-4 bg-white border border-slate-100 rounded-3xl shadow-inner-sm">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar Jugadores por Squads</label>
+                                    <div class="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+                                        ${window.getSortedTeams(teams).map(t => `
+                                            <label class="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-transparent cursor-pointer hover:border-blue-200 transition-all select-none">
+                                                <input type="checkbox" value="${t.id}" ${selectedTeamIds.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 conv-team-check">
+                                                <span class="text-[9px] font-black text-slate-600 truncate uppercase">${t.nombre}</span>
+                                            </label>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-white border border-slate-100 rounded-3xl shadow-inner-sm">
+                                    <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Club Convenido</label>
+                                    <select id="mgmt-club-filter" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-4 ring-blue-50/30 transition-all cursor-pointer">
+                                        <option value="all">TODOS LOS CLUBES</option>
+                                        ${(() => {
+                                            const clubsMap = players.reduce((acc, p) => {
+                                                const raw = (p.equipoConvenido || 'Libre').trim();
+                                                const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                                if (!acc[key]) acc[key] = raw;
+                                                return acc;
+                                            }, {});
+                                            
+                                            return Object.entries(clubsMap)
+                                                .sort((a,b) => a[1].localeCompare(b[1]))
+                                                .map(([key, name]) => `<option value="${key}">${name.toUpperCase()}</option>`)
+                                                .join('');
+                                        })()}
+                                    </select>
                                 </div>
                             </div>
 
@@ -4823,6 +4867,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
                         <!-- List side -->
                         <div class="space-y-4">
+                            ${(() => {
+                                const clubCounts = convocados.reduce((acc, p) => {
+                                    let raw = (p.equipoConvenido || 'Sin Club').trim();
+                                    let key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                    if (!acc[key]) acc[key] = { name: raw, count: 0 };
+                                    acc[key].count++;
+                                    return acc;
+                                }, {});
+
+                                return `
+                                    <div class="flex flex-wrap gap-2 mb-2 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                                        <button onclick="window.setConvClubFilter('all', ${id})" class="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${window.currentConvClubFilter === 'all' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
+                                            Todos (${convocados.length})
+                                        </button>
+                                        ${Object.entries(clubCounts).map(([key, data]) => `
+                                            <button onclick="window.setConvClubFilter('${key}', ${id})" class="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${window.currentConvClubFilter === key ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
+                                                <span class="truncate max-w-[100px]">${data.name}</span>
+                                                <span class="px-1.5 py-0.5 rounded-md ${window.currentConvClubFilter === key ? 'bg-blue-500 text-white' : 'bg-slate-100 text-slate-400'} font-bold">${data.count}</span>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                `;
+                            })()}
+
                             <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                                 <div class="flex justify-between items-center px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
                                     <div class="flex gap-4">
@@ -4835,18 +4903,33 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </div>
                                 </div>
                                 <div class="divide-y divide-slate-50">
-                                    ${convocados.length > 0 ? convocados.map((p, i) => `
-                                        <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
-                                            <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
-                                            <div class="col-span-11 flex justify-between items-center">
-                                                <div class="flex flex-col">
-                                                    <span class="font-bold text-slate-800 text-sm truncate">${p.nombre}</span>
-                                                    <span class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
+                                    ${(() => {
+                                        const filtered = window.currentConvClubFilter === 'all' 
+                                            ? convocados 
+                                            : convocados.filter(p => {
+                                                const raw = (p.equipoConvenido || 'Sin Club').trim();
+                                                const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                                return key === window.currentConvClubFilter;
+                                            });
+                                        
+                                        if (filtered.length === 0) return '<p class="text-center py-20 text-slate-400 italic text-[10px] uppercase font-black tracking-widest">No hay jugadores para este club</p>';
+                                        
+                                        return filtered.map((p, i) => `
+                                            <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
+                                                <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
+                                                <div class="col-span-11 flex justify-between items-center">
+                                                    <div class="flex flex-col">
+                                                        <span class="font-bold text-slate-800 text-sm truncate">${p.nombre}</span>
+                                                        <span class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
+                                                    </div>
+                                                    <select onchange="window.updateConvPlayerPosition(${id}, '${p.id}', this.value)" class="bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border border-blue-100 outline-none hover:bg-blue-100 transition-all cursor-pointer">
+                                                        <option value="">${Array.isArray(p.posicion) ? p.posicion[0] : (p.posicion || '--')}</option>
+                                                        ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${p.posicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                                                    </select>
                                                 </div>
-                                                <span class="text-[9px] font-black text-slate-400 uppercase">${p.posicion || '--'}</span>
                                             </div>
-                                        </div>
-                                    `).join('') : '<p class="text-center py-20 text-slate-400 italic">No hay jugadores convocados.</p>'}
+                                        `).join('');
+                                    })()}
                                 </div>
                             </div>
                             
@@ -4897,13 +4980,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const teamChecks = modalContainer.querySelectorAll('.conv-team-check');
         const mgmtList = document.getElementById('mgmt-player-list');
         
+        // State for recruitment (persists across filter changes)
+        let currentPids = [...pids];
+        let currentCustomPositions = extra.pos ? { ...extra.pos } : {};
+
         const updateMgmtList = () => {
             const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-            const filteredPlayers = players.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
+            const clubFilter = document.getElementById('mgmt-club-filter')?.value || 'all';
+            
+            let filteredPlayers = players.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
+            
+            if (clubFilter !== 'all') {
+                filteredPlayers = filteredPlayers.filter(p => {
+                    const raw = (p.equipoConvenido || 'Libre').trim();
+                    const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                    return key === clubFilter;
+                });
+            }
             
             mgmtList.innerHTML = filteredPlayers.map(p => {
-                const isConvocado = pids.includes(p.id.toString());
-                const currentPos = (extra.pos && extra.pos[p.id]) || p.posicion || '';
+                const isConvocado = currentPids.includes(p.id.toString());
+                const currentPos = currentCustomPositions[p.id] || p.posicion || '';
 
                 return `
                     <div class="flex flex-col gap-2 p-4 bg-white rounded-3xl border border-slate-100 mgmt-player-label shadow-sm hover:shadow-lg transition-all border-transparent hover:border-blue-100 group">
@@ -4927,6 +5024,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         };
 
         teamChecks.forEach(cb => cb.onchange = updateMgmtList);
+        const mgmtClubFilter = document.getElementById('mgmt-club-filter');
+        if (mgmtClubFilter) mgmtClubFilter.onchange = updateMgmtList;
 
 
 
@@ -4957,39 +5056,19 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const savePlayersBtn = document.getElementById('save-conv-players');
         if (savePlayersBtn) {
             savePlayersBtn.onclick = async () => {
-                const playerLabels = mgmtArea.querySelectorAll('.mgmt-player-label');
-                const newPids = [];
-                const customPositions = {};
-                
-                playerLabels.forEach(label => {
-                    const chk = label.querySelector('.mgmt-player-check');
-                    if (chk && chk.checked) {
-                        const pid = chk.getAttribute('data-pid');
-                        newPids.push(pid);
-                        const posSel = label.querySelector('.mgmt-player-pos');
-                        if (posSel && posSel.value) {
-                            const pObj = players.find(p => p.id == pid);
-                            // Solo guardamos si es diferente a la base para permitir herencia
-                            if (!pObj || pObj.posicion !== posSel.value) {
-                                customPositions[pid] = posSel.value;
-                            }
-                        }
-                    }
-                });
-                
                 try {
                     // Update extra info with custom positions
                     let currentExtra = {};
                     if (rawConv.lugar && rawConv.lugar.includes(" ||| ")) {
                         try { currentExtra = JSON.parse(rawConv.lugar.split(" ||| ")[1]); } catch (e) {}
                     }
-                    currentExtra.pos = customPositions;
+                    currentExtra.pos = currentCustomPositions;
                     const mainLugar = (rawConv.lugar || "").split(" ||| ")[0];
                     const updatedLugar = `${mainLugar} ||| ${JSON.stringify(currentExtra)}`;
 
                     await db.update('convocatorias', { 
                         id: Number(id),
-                        playerids: newPids,
+                        playerids: currentPids,
                         lugar: updatedLugar
                     });
 
@@ -5005,7 +5084,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         for (const r of reports) {
                             let changed = false;
                             const updatedPls = { ...r.players };
-                            const newPidsStrings = newPids.map(String);
+                            const newPidsStrings = currentPids.map(String);
                             for (const pid in updatedPls) {
                                 if (!newPidsStrings.includes(String(pid))) {
                                     delete updatedPls[pid];
@@ -5034,16 +5113,32 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             };
         }
 
-        // Delegate listener for real-time count
-        const mList = document.getElementById('mgmt-player-list');
-        if (mList) {
-            mList.addEventListener('change', (e) => {
+        // Delegate listener for real-time count and state sync
+        if (mgmtList) {
+            mgmtList.onchange = (e) => {
+                const row = e.target.closest('.mgmt-player-label');
+                if (!row) return;
+                const pid = row.querySelector('.mgmt-player-check').getAttribute('data-pid');
+                
                 if (e.target.classList.contains('mgmt-player-check')) {
-                    const count = mList.querySelectorAll('.mgmt-player-check:checked').length;
-                    const badge = document.getElementById('conv-player-count-badge');
-                    if (badge) badge.textContent = count;
+                    if (e.target.checked) {
+                        if (!currentPids.includes(pid.toString())) currentPids.push(pid.toString());
+                    } else {
+                        currentPids = currentPids.filter(id => id !== pid.toString());
+                    }
                 }
-            });
+                
+                if (e.target.classList.contains('mgmt-player-pos')) {
+                    if (e.target.value) {
+                        currentCustomPositions[pid] = e.target.value;
+                    } else {
+                        delete currentCustomPositions[pid];
+                    }
+                }
+                
+                const badge = document.getElementById('conv-player-count-badge');
+                if (badge) badge.textContent = currentPids.length;
+            };
         }
 
         // Handle async sessions loading
@@ -5081,6 +5176,41 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             console.error("Error viewConvocatoria:", err);
             alert("Error abriendo convocatoria: " + err.message);
         }
+    };
+
+    window.updateConvPlayerPosition = async (convId, playerId, newPos) => {
+        try {
+            // Obtener datos actuales de la convocatoria
+            const { data: conv, error } = await supabaseClient.from("convocatorias").select("*").eq("id", convId).single();
+            if (error) throw error;
+
+            let extra = {};
+            if (conv.lugar && conv.lugar.includes(" ||| ")) {
+                try { extra = JSON.parse(conv.lugar.split(" ||| ")[1]); } catch (e) {}
+            }
+
+            if (!extra.pos) extra.pos = {};
+            extra.pos[playerId] = newPos;
+
+            const mainLugar = (conv.lugar || "").split(" ||| ")[0];
+            const updatedLugar = `${mainLugar} ||| ${JSON.stringify(extra)}`;
+
+            await db.update('convocatorias', { 
+                id: Number(convId),
+                lugar: updatedLugar
+            });
+
+            // Refrescar la vista para actualizar el campograma
+            window.viewConvocatoria(convId, 'pizarra');
+        } catch (err) {
+            console.error("Error updating player position:", err);
+            window.customAlert('Error', 'No se pudo actualizar la posición.', 'error');
+        }
+    };
+
+    window.setConvClubFilter = (club, id) => {
+        window.currentConvClubFilter = club;
+        window.viewConvocatoria(id, 'pizarra');
     };
 
     window.previewDocument = (url, name = 'Documento') => {
