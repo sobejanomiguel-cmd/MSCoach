@@ -243,8 +243,23 @@ window.getSortedTeams = (teams) => {
         const div = document.createElement('div');
         div.id = `pos-selector-${playerId}`;
         div.className = 'inline-pos-selector fixed bg-white shadow-2xl rounded-2xl border border-slate-100 p-4 z-[9999] w-64 animate-in zoom-in-95 duration-200';
-        div.style.top = `${rect.bottom + window.scrollY + 8}px`;
-        div.style.left = `${rect.left + window.scrollX}px`;
+        
+        // Intelligent Positioning
+        const menuHeight = 280; 
+        let top = rect.bottom + 8;
+        let left = rect.left;
+
+        if (top + menuHeight > window.innerHeight) {
+            top = rect.top - menuHeight - 8;
+            if (top < 10) top = 10; // Don't go above screen
+        }
+        
+        if (left + 256 > window.innerWidth) {
+            left = window.innerWidth - 256 - 16;
+        }
+
+        div.style.top = `${top}px`;
+        div.style.left = `${left}px`;
 
         db.get('jugadores', playerId).then(player => {
             const current = window.parsePosition(player.posicion);
@@ -2945,7 +2960,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     };
 
-    let sessionFilters = { team: 'TODOS', coach: 'TODOS', search: '' };
+    let sessionFilters = { team: 'TODOS', coach: 'TODOS', search: '', lugar: 'TODOS' };
 
     window.filterSessions = (type, value) => {
         sessionFilters[type] = value;
@@ -2975,6 +2990,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id));
         });
 
+        const uniqueLugares = [...new Set(mySessions.map(s => window.cleanLugar(s.lugar)).filter(Boolean))].sort();
+
         const filteredSessions = mySessions.filter(s => {
             let sessionTeamIds = [String(s.equipoid)];
             const { extra: ex } = window.parseLugarMetadata(s.lugar);
@@ -2982,12 +2999,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const matchesTeam = sessionFilters.team === 'TODOS' || sessionTeamIds.includes(String(sessionFilters.team));
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
+            
+            const sessionLugar = window.cleanLugar(s.lugar) || 'SIN ASIGNAR';
+            const matchesLugar = sessionFilters.lugar === 'TODOS' || sessionLugar.toUpperCase() === sessionFilters.lugar.toUpperCase();
+
             const searchTerm = (sessionFilters.search || '').toLowerCase();
             const matchesSearch = !searchTerm || 
                                 (s.titulo || '').toLowerCase().includes(searchTerm) || 
                                 (s.equiponombre || '').toLowerCase().includes(searchTerm) ||
                                 (s.lugar || '').toLowerCase().includes(searchTerm);
-            return matchesTeam && matchesCoach && matchesSearch;
+            return matchesTeam && matchesCoach && matchesLugar && matchesSearch;
         }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE') : [];
@@ -3005,23 +3026,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
-                    <!-- Filters Bar -->
-                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar no-scrollbar flex-1">
-                            <button onclick="window.filterSessions('team', 'TODOS')" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${sessionFilters.team === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">Todas las Plantillas</button>
-                            ${sortedTeams.map(t => `
-                                <button onclick="window.filterSessions('team', ${t.id})" class="px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${sessionFilters.team == t.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
-                                    ${t.nombre.split(' ||| ')[0]}
-                                </button>
-                            `).join('')}
-                        </div>
+                    <!-- Filters Toolbar -->
+                    <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
+                        <div class="grid grid-cols-1 md:grid-cols-3 lg:flex items-center gap-3">
+                            <!-- Team Filter -->
+                            <div class="relative flex-1 lg:min-w-[220px]">
+                                <select onchange="window.filterSessions('team', this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                                    <option value="TODOS" ${sessionFilters.team === 'TODOS' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                                    ${sortedTeams.map(t => `<option value="${t.id}" ${sessionFilters.team == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                                </select>
+                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
+                            </div>
 
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="filter" class="w-4 h-4 text-slate-300"></i>
-                            <select onchange="window.filterSessions('coach', this.value)" class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest outline-none focus:ring-2 ring-blue-100">
-                                <option value="TODOS">Todos los Técnicos</option>
-                                ${coaches.map(c => `<option value="${c.id}" ${sessionFilters.coach === c.id ? 'selected' : ''}>${c.name || c.nombre || 'Entrenador'}</option>`).join('')}
-                            </select>
+                            <!-- Place Filter -->
+                            <div class="relative flex-1 lg:min-w-[200px]">
+                                <select onchange="window.filterSessions('lugar', this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
+                                    <option value="TODOS" ${sessionFilters.lugar === 'TODOS' ? 'selected' : ''}>TODOS LOS LUGARES</option>
+                                    ${uniqueLugares.map(l => `<option value="${l}" ${sessionFilters.lugar === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
+                                </select>
+                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                            </div>
+
+                            <!-- Coach Filter -->
+                            <div class="relative flex-1 lg:min-w-[200px]">
+                                <select onchange="window.filterSessions('coach', this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
+                                    <option value="TODOS" ${sessionFilters.coach === 'TODOS' ? 'selected' : ''}>TODOS LOS TÉCNICOS</option>
+                                    ${coaches.map(c => `<option value="${c.id}" ${sessionFilters.coach === c.id ? 'selected' : ''}>${(c.name || c.nombre || 'ENTRENADOR').toUpperCase()}</option>`).join('')}
+                                </select>
+                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                            </div>
                         </div>
                     </div>
 
@@ -3950,6 +3983,7 @@ await db.update('sesiones', { ...data, id: session.id });
                             tipo: data.tipo || 'Convocatoria',
                             equipoid: data.equipoid || null,
                             convocatoriaid: convSaved.id,
+                            lugar: data.lugar || '', // Added lugar
                             players: playersData,
                             createdBy: currentUser?.id
                         };
@@ -6052,6 +6086,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     // --- SECCIÓN DE TORNEOS ---
     let torneoSearchTerm = '';
     let currentTorneoTeamId = 'all';
+    let currentTorneoLugar = 'all';
     let currentTorneoStatusTab = 'upcoming'; // 'upcoming' or 'finished'
 
     window.updateTorneoSearch = (val) => {
@@ -6069,8 +6104,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderView('torneos');
     };
 
+    window.switchTorneoLugar = (lugar) => {
+        currentTorneoLugar = lugar;
+        window.renderView('torneos');
+    };
+
     let convocatoriaSearchTerm = '';
     let currentConvocatoriaTeamId = 'all';
+    let currentConvocatoriaLugar = 'all';
     let currentConvocatoriaTypeTab = 'Ciclo';
 
     window.updateConvocatoriaSearch = (val) => {
@@ -6088,6 +6129,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderView('convocatorias');
     };
 
+    window.switchConvocatoriaLugar = (lugar) => {
+        currentConvocatoriaLugar = lugar;
+        window.renderView('convocatorias');
+    };
+
     window.renderConvocatorias = async function(container) {
         const allConvs = await db.getAll('convocatorias');
         const convs = allConvs.filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
@@ -6098,6 +6144,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         
         const teams = await db.getAll('equipos');
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
+
+        const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
 
         const filtered = convs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
@@ -6110,11 +6158,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                               (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
                               (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
 
+            const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
+            const matchesLugar = currentConvocatoriaLugar === 'all' || sessionLugar.toUpperCase() === currentConvocatoriaLugar.toUpperCase();
+
             const matchesSearch = !convocatoriaSearchTerm || 
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
             
-            return matchesType && matchesTeam && matchesSearch;
+            return matchesType && matchesTeam && matchesLugar && matchesSearch;
         });
 
         const renderConvCard = (c) => {
@@ -6220,27 +6271,37 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     </button>
                 </div>
 
-                <!-- Filters & Search -->
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div class="flex flex-wrap gap-2">
-                        <button onclick="window.switchConvocatoriaTeamTab('all')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            TODOS LOS EQUIPOS
-                        </button>
-                        ${teamsWithConvs.map(t => `
-                            <button onclick="window.switchConvocatoriaTeamTab('${t.id}')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                                ${t.nombre}
-                            </button>
-                        `).join('')}
-                    </div>
+                <!-- Filters & Search Toolbar -->
+                <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:flex items-center gap-3">
+                        <!-- Team Filter -->
+                        <div class="relative flex-1 lg:min-w-[220px]">
+                            <select onchange="window.switchConvocatoriaTeamTab(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                                <option value="all" ${currentConvocatoriaTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                                ${teamsWithConvs.map(t => `<option value="${t.id}" ${currentConvocatoriaTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
+                        </div>
 
-                    <div class="relative w-full md:w-80">
-                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input type="text" 
-                            id="convocatoria-search-input"
-                            placeholder="Buscar convocatoria..." 
-                            value="${convocatoriaSearchTerm}"
-                            oninput="window.updateConvocatoriaSearch(this.value)"
-                            class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                        <!-- Place Filter -->
+                        <div class="relative flex-1 lg:min-w-[200px]">
+                            <select onchange="window.switchConvocatoriaLugar(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
+                                <option value="all" ${currentConvocatoriaLugar === 'all' ? 'selected' : ''}>TODOS LOS LUGARES</option>
+                                ${uniqueLugares.map(l => `<option value="${l}" ${currentConvocatoriaLugar === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                        </div>
+
+                        <!-- Search -->
+                        <div class="relative flex-1 lg:min-w-[250px]">
+                            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                            <input type="text" 
+                                id="convocatoria-search-input"
+                                placeholder="BUSCAR POR NOMBRE O LUGAR..." 
+                                value="${convocatoriaSearchTerm}"
+                                oninput="window.updateConvocatoriaSearch(this.value)"
+                                class="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -6300,6 +6361,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const currentUser = userRes.data?.user;
         const isGlobal = window.currentVisibilityMode === 'global';
 
+        const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
+
         const filtered = convs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
 
@@ -6308,10 +6371,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                               (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
                               (extra.sw && extra.sw.map(String).includes(currentTorneoTeamId.toString()));
 
+            const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
+            const matchesLugar = currentTorneoLugar === 'all' || sessionLugar.toUpperCase() === currentTorneoLugar.toUpperCase();
+
             const matchesSearch = !torneoSearchTerm || 
                 (c.nombre || '').toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
-                (c.lugar || '').toLowerCase().includes(torneoSearchTerm.toLowerCase());
-            return matchesTeam && matchesSearch;
+                (window.cleanLugar(c.lugar)).toLowerCase().includes(torneoSearchTerm.toLowerCase());
+            
+            return matchesTeam && matchesLugar && matchesSearch;
         });
 
         const today = new Date().toISOString().split('T')[0];
@@ -6430,26 +6497,37 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         });
 
         container.innerHTML = `
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="window.switchTorneoTeamTab('all')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTorneoTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                        TODOS LOS EQUIPOS
-                    </button>
-                    ${teamsWithTorneos.map(t => `
-                        <button onclick="window.switchTorneoTeamTab('${t.id}')" class="px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTorneoTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:bg-slate-50'}">
-                            ${t.nombre}
-                        </button>
-                    `).join('')}
-                </div>
+            <!-- Filters & Search Toolbar -->
+            <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm mb-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:flex items-center gap-3">
+                    <!-- Team Filter -->
+                    <div class="relative flex-1 lg:min-w-[220px]">
+                        <select onchange="window.switchTorneoTeamTab(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                            <option value="all" ${currentTorneoTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                            ${teamsWithTorneos.map(t => `<option value="${t.id}" ${currentTorneoTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                        </select>
+                        <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
+                    </div>
 
-                <div class="relative w-full md:w-80">
-                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                    <input type="text" 
-                        id="torneo-search-input"
-                        placeholder="Buscar torneo..." 
-                        value="${torneoSearchTerm}"
-                        oninput="window.updateTorneoSearch(this.value)"
-                        class="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                    <!-- Place Filter -->
+                    <div class="relative flex-1 lg:min-w-[200px]">
+                        <select onchange="window.switchTorneoLugar(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
+                            <option value="all" ${currentTorneoLugar === 'all' ? 'selected' : ''}>TODOS LOS LUGARES</option>
+                            ${uniqueLugares.map(l => `<option value="${l}" ${currentTorneoLugar === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
+                        </select>
+                        <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                    </div>
+
+                    <!-- Search -->
+                    <div class="relative flex-1 lg:min-w-[250px]">
+                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input type="text" 
+                            id="torneo-search-input"
+                            placeholder="BUSCAR TORNEO O LUGAR..." 
+                            value="${torneoSearchTerm}"
+                            oninput="window.updateTorneoSearch(this.value)"
+                            class="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                    </div>
                 </div>
             </div>
 
@@ -7755,50 +7833,68 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         container.innerHTML = `
-            <div class="space-y-6 animate-in fade-in duration-500">
-                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                    <div class="flex flex-wrap gap-2">
-                        <button onclick="window.switchJugadoresTeam('all')" class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTeamId === 'all' ? 'bg-slate-900 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
-                            Todos
-                        </button>
-                        ${sortedTeams.map(t => `
-                            <button onclick="window.switchJugadoresTeam('${t.id}')" class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${currentTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
-                                ${t.nombre.split(' ||| ')[0]}
-                            </button>
-                        `).join('')}
+            <div class="space-y-8 animate-in fade-in duration-500">
+                <!-- Main Header & Search -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Directorio de Jugadores</h2>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Gestión centralizada de talento y rendimiento</p>
                     </div>
-                    
-                    <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                        <div class="relative flex-1 lg:w-64 group">
-                            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
-                            <input type="text" 
-                                id="jugadores-search-input"
-                                placeholder="Nombre..." 
-                                value="${searchTerm}"
-                                oninput="window.updateJugadoresSearch(this.value)"
-                                class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                    <div class="relative w-full md:w-96 group">
+                        <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
+                        <input type="text" 
+                            id="jugadores-search-input"
+                            placeholder="Buscar jugador por nombre..." 
+                            value="${searchTerm}"
+                            oninput="window.updateJugadoresSearch(this.value)"
+                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                    </div>
+                </div>
+
+                <!-- Interactive Filters Toolbar -->
+                <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <!-- Detailed Selectors Row -->
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:flex items-center gap-2">
+                        <!-- Team Filter (New Primary) -->
+                        <div class="relative flex-1 lg:min-w-[200px]">
+                            <select onchange="window.switchJugadoresTeam(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                                <option value="all" ${currentTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                                ${sortedTeams.map(t => `
+                                    <option value="${t.id}" ${currentTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>
+                                `).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                         </div>
 
-                        <select onchange="window.switchJugadoresAno(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[100px]">
-                            <option value="all" ${currentAno === 'all' ? 'selected' : ''}>Año: TODOS</option>
-                            ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
-                        </select>
+                        <div class="relative flex-1 lg:min-w-[140px]">
+                            <select onchange="window.switchJugadoresAno(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentAno === 'all' ? 'selected' : ''}>AÑOS: TODOS</option>
+                                ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
+                        </div>
 
-                        <select onchange="window.switchJugadoresPosicion(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[100px]">
-                            <option value="all" ${currentPosicion === 'all' ? 'selected' : ''}>Pos: TODAS</option>
-                            ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPosicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
-                        </select>
+                        <div class="relative flex-1 lg:min-w-[140px]">
+                            <select onchange="window.switchJugadoresPosicion(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentPosicion === 'all' ? 'selected' : ''}>TODAS LAS POSICIONES</option>
+                                ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPosicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
+                        </div>
 
-                        <select onchange="window.switchJugadoresSexo(this.value)" class="p-4 bg-white border border-slate-100 rounded-2xl text-xs font-black uppercase tracking-widest outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm appearance-none min-w-[120px]">
-                            <option value="all" ${currentSexo === 'all' ? 'selected' : ''}>Sexo: TODOS</option>
-                            <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
-                            <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
-                            <option value="none" ${currentSexo === 'none' ? 'selected' : ''}>Sin asignar</option>
-                        </select>
+                        <div class="relative flex-1 lg:min-w-[140px]">
+                            <select onchange="window.switchJugadoresSexo(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentSexo === 'all' ? 'selected' : ''}>AMBOS SEXOS</option>
+                                <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>MASCULINO</option>
+                                <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>FEMENINO</option>
+                                <option value="none" ${currentSexo === 'none' ? 'selected' : ''}>SIN ASIGNAR</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
+                        </div>
 
-                        <button onclick="window.bulkUpdateLateralidad(event)" class="flex items-center gap-2 px-4 py-4 bg-amber-50 text-amber-600 border border-amber-100 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all shadow-sm group" title="Auto-asignar pie por posición">
+                        <button onclick="window.bulkUpdateLateralidad(event)" class="lg:ml-auto flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all group" title="Auto-asignar pie por posición">
                             <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i>
-                            Auto-Pie
+                            AUTO-PIE
                         </button>
                     </div>
                 </div>
@@ -8943,10 +9039,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const sortedTeams = window.getSortedTeams(teams);
         
         // Inicializar filtros si no existen
-        if (!window.asistenciaFilters) window.asistenciaFilters = { activeTeamId: 'TODOS', activeType: 'Sesión' };
+        if (!window.asistenciaFilters) window.asistenciaFilters = { activeTeamId: 'TODOS', activeType: 'Sesión', activeLugar: 'TODOS' };
         
         const activeType = window.asistenciaFilters.activeType || 'Sesión';
         const activeTeamId = window.asistenciaFilters.activeTeamId || 'TODOS';
+        const activeLugar = window.asistenciaFilters.activeLugar || 'TODOS';
         
         const filteredAttendance = attendance.filter(a => {
             if (activeType === 'all') {
@@ -8988,18 +9085,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     `).join('')}
                 </div>
 
-                <!-- Secondary Tabs: Equipos -->
-                <div class="flex items-center gap-2 overflow-x-auto pb-4 custom-scrollbar no-scrollbar">
-                    <button onclick="window.filterAsistencia('TODOS')" 
-                        class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTeamId === 'TODOS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
-                        Todas las Plantillas
-                    </button>
-                    ${sortedTeams.map(t => `
-                        <button onclick="window.filterAsistencia('${t.id}')" 
-                            class="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTeamId.toString() === t.id.toString() ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
-                            ${t.nombre.split(' ||| ')[0]}
-                        </button>
-                    `).join('')}
+                <!-- Filters Toolbar -->
+                <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <!-- Team Filter -->
+                        <div class="relative w-full md:w-80">
+                            <select onchange="window.filterAsistencia(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                                <option value="TODOS" ${activeTeamId === 'TODOS' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                                ${sortedTeams.map(t => `<option value="${t.id}" ${activeTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Table View -->
@@ -9011,6 +9108,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo</th>
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión / Evento</th>
+                                    <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Lugar</th>
                                     <th class="text-center px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asistencia</th>
                                     <th class="text-right px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acciones</th>
                                 </tr>
@@ -9041,6 +9139,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                             <td class="px-8 py-5 text-xs font-black text-slate-800 uppercase">
                                                 ${a.nombre?.split(' ||| ')[0] || 'Entrenamiento'}
+                                            </td>
+                                            <td class="px-8 py-5">
+                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${window.cleanLugar(a.lugar) || '--'}</span>
                                             </td>
                                             <td class="px-8 py-5">
                                                 <div class="flex flex-col items-center gap-1">
