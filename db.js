@@ -124,7 +124,14 @@ class CoachDB {
         if (!this.db) await this.init();
         if (supabaseClient) {
             try {
-                const { id, ...toInsert } = data;
+                // Sanitize data for Supabase: convert empty strings to null
+                const toInsert = {};
+                Object.keys(data).forEach(key => {
+                    if (key !== 'id') {
+                        toInsert[key] = data[key] === "" ? null : data[key];
+                    }
+                });
+
                 const { data: remote, error } = await supabaseClient.from(storeName).insert([toInsert]).select();
                 
                 if (error) {
@@ -173,11 +180,18 @@ class CoachDB {
     async update(storeName, data) {
         if (!this.db) await this.init();
         if (supabaseClient && data.id) {
-            const { id, ...toUpdate } = data;
+            // Sanitize data for Supabase: convert empty strings to null
+            const toUpdate = {};
+            Object.keys(data).forEach(key => {
+                if (key !== 'id') {
+                    toUpdate[key] = data[key] === "" ? null : data[key];
+                }
+            });
+
             const { error } = await supabaseClient
                 .from(storeName)
                 .update(toUpdate)
-                .eq('id', Number(id));
+                .eq('id', Number(data.id));
 
             if (error) {
                 console.error(`Supabase update error (${storeName}):`, error);

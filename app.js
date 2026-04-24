@@ -4510,7 +4510,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </form>
                         </div>
                     </div>
-                    <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all"><i data-lucide="x"></i></button>
+                    <div class="flex items-center gap-3">
+                        <button onclick="window.exportConvocatoria(${conv.id})" class="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
+                            <i data-lucide="file-down" class="w-4 h-4 text-blue-400"></i>
+                            Generar PDF
+                        </button>
+                        <button onclick="closeModal()" class="p-2.5 bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
                 </div>
 
                 <!-- Tabs -->
@@ -4557,11 +4563,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             
                             <div class="flex gap-4">
-                                 <button onclick="window.exportConvocatoria(${conv.id})" class="flex-1 py-4 bg-slate-900 text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl">
-                                    <i data-lucide="file-down" class="w-5 h-5 text-blue-400"></i>
-                                    Descargar PDF
-                                 </button>
-                                 <button onclick="closeModal()" class="px-8 py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-all">Cerrar</button>
+                                 <button onclick="closeModal()" class="w-full py-4 bg-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-300 transition-all">Cerrar Ficha</button>
                             </div>
                         </div>
 
@@ -7531,6 +7533,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <input name="anionacimiento" type="number" placeholder="2010" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
                             </div>
                             <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sexo</label>
+                                <select name="sexo" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="Masculino">Masculino</option>
+                                    <option value="Femenino">Femenino</option>
+                                </select>
+                            </div>
+                            <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
                                 <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
                                     <option value="">Ninguno</option>
@@ -7583,6 +7592,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.posicion = formData.getAll('posicion'); // Save as array
+            
+            // Cast numeric fields
+            if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
+            if (data.nivel) data.nivel = parseInt(data.nivel);
             
             try {
                 if (photoInput.files[0]) {
@@ -7810,6 +7823,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <input name="anionacimiento" type="number" value="${player.anionacimiento || ''}" placeholder="2010" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
                             </div>
                             <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Sexo</label>
+                                <select name="sexo" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                    <option value="Masculino" ${player.sexo === 'Masculino' ? 'selected' : ''}>Masculino</option>
+                                    <option value="Femenino" ${player.sexo === 'Femenino' ? 'selected' : ''}>Femenino</option>
+                                </select>
+                            </div>
+                            <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
                                 <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
                                     <option value="">Ninguno</option>
@@ -7861,6 +7881,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const data = Object.fromEntries(formData.entries());
             data.id = playerId;
             data.posicion = formData.getAll('posicion'); // Save as array
+
+            // Cast numeric fields
+            if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
+            if (data.nivel) data.nivel = parseInt(data.nivel);
 
             try {
                 if (photoInput.files[0]) {
