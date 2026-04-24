@@ -1003,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const delimiter = firstLine.includes(';') ? ';' : ',';
                             const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
                             
-                            const teams = await db.getAll('equipos');
+                            const teams = window.getSortedTeams(await db.getAll('equipos'));
                             const players = await db.getAll('jugadores');
                             const existingConvs = await db.getAll('convocatorias');
 
@@ -1084,7 +1084,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const delimiter = firstLine.includes(';') ? ';' : ',';
                             const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
                             
-                            const existingTeams = await db.getAll('equipos');
+                            const existingTeams = window.getSortedTeams(await db.getAll('equipos'));
 
                             let importedCount = 0;
                             let updatedCount = 0;
@@ -1224,6 +1224,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sessions = filterByVisibility(allSessions);
         const convocatorias = filterByVisibility(allConvocatorias);
         const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
+        const todayStr = new Date().toISOString().split('T')[0];
+        const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
+        const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
         
         // Calculate dynamic attendance for each team
         teams.forEach(t => {
@@ -1241,13 +1244,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             t.computedAsistencia = totalPossible > 0 ? Math.round((totalPresent / totalPossible) * 100) : 0;
         });
 
-        // Ordenar equipos por categoría (año) de forma ascendente (2010 primero, 2017 último)
-        teams.sort((a, b) => {
-            const valA = parseInt(a.categoria) || 9999;
-            const valB = parseInt(b.categoria) || 9999;
-            if (valA !== valB) return valA - valB;
-            return (a.nombre || '').localeCompare(b.nombre || '');
-        });
+        // Sort teams using global utility
+        const teamsToRender = window.getSortedTeams(teams);
 
         const totalMale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('m')).length;
         const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
@@ -1269,12 +1267,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <h3 class="text-slate-500 text-sm font-medium">Sesiones</h3>
                     <p class="text-3xl font-bold text-slate-800">${sessions.length}</p>
                 </div>
-                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm transition-all hover:shadow-md">
                     <div class="flex items-center justify-between mb-4">
                         <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center"><i data-lucide="trophy"></i></div>
+                        <div class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Balance</div>
                     </div>
-                    <h3 class="text-slate-500 text-sm font-medium">Torneos</h3>
-                    <p class="text-3xl font-bold text-slate-800">${torneos.length}</p>
+                    <h3 class="text-slate-500 text-sm font-medium mb-1">Torneos</h3>
+                    <div class="flex items-end gap-2 mb-2">
+                        <p class="text-3xl font-black text-slate-800">${torneos.length}</p>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-1">Totales</p>
+                    </div>
+                    <div class="flex items-center gap-4 border-t border-slate-50 pt-3">
+                        <div>
+                            <p class="text-xs font-black text-emerald-500">${torneosJugados}</p>
+                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Jugados</p>
+                        </div>
+                        <div class="w-px h-4 bg-slate-100"></div>
+                        <div>
+                            <p class="text-xs font-black text-amber-500">${torneosPendientes}</p>
+                            <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tight">Pendientes</p>
+                        </div>
+                    </div>
                 </div>
                 <div class="stat-card bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
                     <div class="flex items-center justify-between mb-4">
@@ -1314,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         Rendimiento Asistencia por Equipo
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                        ${teams.map(e => `
+                        ${teamsToRender.map(e => `
                             <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                                 <div class="flex justify-between items-center mb-4 px-1">
                                     <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">${e.nombre}</span>
@@ -1739,7 +1752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                         if (idxNombre === -1) throw new Error("Columna NOMBRE no encontrada");
 
-                        const teams = await db.getAll('equipos');
+                        const teams = window.getSortedTeams(await db.getAll('equipos'));
                         const existingPlayers = await db.getAll('jugadores');
                         const playersToInsert = [];
                         let updatedCount = 0;
@@ -1930,7 +1943,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const items = await db.getAll('eventos');
         const evento = items.find(e => e.id == id);
         if (!evento) return;
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
 
         modalOverlay.classList.add('p-0');
         modalOverlay.classList.remove('md:p-8', 'p-4');
@@ -2042,7 +2055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const session = await db.get('sesiones', id);
         if (!session) return;
 
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const tasks = await db.getAll('tareas');
         const team = teams.find(t => t.id == session.equipoid);
         const sessionTasks = (session.taskids || []).map(taskId => tasks.find(t => t.id.toString() === taskId.toString())).filter(t => t);
@@ -2990,7 +3003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.renderSesiones = async function(container, onlyTable = false) {
         const sessions = await db.getAll('sesiones');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
         const sortedTeams = window.getSortedTeams(teams);
         
@@ -3565,7 +3578,7 @@ await db.update('sesiones', { ...data, id: session.id });
     window.openConvocatoriaForm = async (convData = null, defaultType = 'Sesión') => {
         const userRes = await supabaseClient.auth.getUser();
         const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const clubsMap = {};
         players.forEach(p => {
             const raw = (p.equipoConvenido || '').trim();
@@ -4151,7 +4164,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!container) return;
         
         const allPlayers = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         
         // Ensure teamIds is an array of strings
         const selectedTeamIds = Array.isArray(teamIds) ? teamIds.map(String) : [String(teamIds)];
@@ -4461,7 +4474,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             if (meta.eids && !conv.equipoid) conv.equipoid = meta.eids;
 
             const players = await db.getAll('jugadores');
-            const teams = await db.getAll('equipos');
+            const teams = window.getSortedTeams(await db.getAll('equipos'));
 
             // Reset filter if opening a different convocatoria
             if (window.lastViewedConvId !== id) {
@@ -5352,7 +5365,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (error) return;
 
         const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const team = teams.find(t => t.id == conv.equipoid);
         const convocados = players.filter(p => conv.playerids.includes(p.id.toString()));
 
@@ -5615,7 +5628,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!session) return;
         
         const allTasks = await db.getAll('tareas');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const players = await db.getAll('jugadores');
         
         const currentTeam = teams.find(t => t.id == session.equipoid);
@@ -6039,7 +6052,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     async function renderCampograma(container) {
         const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const years = [...new Set(players.map(p => p.anionacimiento).filter(y => y))].sort((a,b) => b-a);
         const clubs = [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort();
         
@@ -6272,7 +6285,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 return (b.hora || '').localeCompare(a.hora || '');
             });
         
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
         const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
@@ -6484,7 +6497,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 return (b.hora || '').localeCompare(a.hora || '');
             });
         
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
         const userRes = await supabaseClient.auth.getUser();
@@ -6610,7 +6623,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             `;
         };
 
-        const teamsWithTorneos = teams.filter(t => 
+        let teamsWithTorneos = teams.filter(t => 
             convs.some(c => {
                 const { extra } = window.parseLugarMetadata(c.lugar);
                 return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
@@ -6618,13 +6631,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             })
         );
 
-        // Sort senior to junior
-        teamsWithTorneos.sort((a, b) => {
-            const valA = parseInt(a.categoria) || 9999;
-            const valB = parseInt(b.categoria) || 9999;
-            if (valA !== valB) return valA - valB;
-            return (a.nombre || '').localeCompare(b.nombre || '');
-        });
+        // Sort by year ascending (2010 to 2017)
+        teamsWithTorneos = window.getSortedTeams(teamsWithTorneos);
 
         container.innerHTML = `
             <!-- Filters & Search Toolbar -->
@@ -6754,7 +6762,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             // Fetch players directly from Supabase for maximum reliability in this view
             const { data: players } = await supabaseClient.from('jugadores').select('*');
-            const teams = await db.getAll('equipos');
+            const teams = window.getSortedTeams(await db.getAll('equipos'));
             const { data: users } = await supabaseClient.from('profiles').select('*');
             
             const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
@@ -7200,7 +7208,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     });
 
     window.viewNewUnifiedEvent = async (date) => {
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const tasks = await db.getAll('tareas');
         const players = await db.getAll('jugadores');
         const sesiones = await db.getAll('sesiones');
@@ -7939,7 +7947,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.renderJugadores = async function(container) {
         const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const sortedTeams = window.getSortedTeams(teams);
 
         const currentTeamId = window.currentJugadoresTeamId || 'all';
@@ -7949,8 +7957,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const currentPosicion = window.currentJugadoresPosicion || 'all';
         const currentClub = window.currentJugadoresClub || 'all';
 
-        // Obtener años y clubes únicos para los filtros
-        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => b - a);
+        // Obtener años y clubes únicos para los filtros (Menor a Mayor)
+        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => a - b);
         const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a,b) => a.localeCompare(b));
 
         const filtered = players.filter(p => {
@@ -8162,7 +8170,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.showNewPlayerModal = async () => {
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const clubs = await db.getAll('clubes');
         modalContainer.innerHTML = `
             <div class="p-8">
@@ -8305,7 +8313,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const player = await db.get('jugadores', playerId);
         if (!player) return;
 
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const attendance = await db.getAll('asistencia');
         const convocatorias = await db.getAll('convocatorias');
         
@@ -8324,6 +8332,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         // --- PRE-CALCULATE CATEGORIZED DATA ---
         const playerAttendance = attendance.filter(a => a.players && a.players[playerId]);
         const categorized = { ciclos: [], sesiones: [], torneos: [] };
+        
+        // Detailed Attendance Counts
+        const attendanceSummary = {};
+        playerAttendance.forEach(a => {
+            const s = a.players[playerId];
+            let status = (typeof s === 'object' ? s.status : s || 'Sin estado');
+            if (status === 'presente') status = 'asiste';
+            status = status.toUpperCase();
+            attendanceSummary[status] = (attendanceSummary[status] || 0) + 1;
+        });
 
         // 1. Process explicit attendance records
         playerAttendance.forEach(a => {
@@ -8578,6 +8596,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             `;
                         })()}
                     </div>
+                    
+                    <!-- Detailed Attendance Stats -->
+                    <div class="mt-6 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Desglose de Asistencia (Total)</p>
+                        <div class="flex flex-wrap gap-4">
+                            ${Object.entries(attendanceSummary).length > 0 ? Object.entries(attendanceSummary).map(([status, count]) => {
+                                let color = 'slate';
+                                if (status === 'ASISTE') color = 'emerald';
+                                else if (status === 'AUSENTE') color = 'rose';
+                                else if (status === 'LESIONADO' || status === 'LESION') color = 'amber';
+                                else if (status === 'ZUBIETA' || status === 'ESTUDIOS') color = 'indigo';
+                                
+                                return `
+                                    <div class="flex-1 min-w-[120px] bg-${color}-50/50 p-4 rounded-2xl border border-${color}-100 flex items-center justify-between">
+                                        <div class="flex flex-col">
+                                            <span class="text-[9px] font-black text-${color}-600 uppercase tracking-widest">${status}</span>
+                                            <span class="text-2xl font-black text-slate-800">${count}</span>
+                                        </div>
+                                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                                            <i data-lucide="${status === 'ASISTE' ? 'check' : (status === 'AUSENTE' ? 'x' : 'info')}" class="w-5 h-5 text-${color}-500"></i>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('') : `
+                                <div class="w-full py-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-100">
+                                    <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Sin registros de asistencia acumulados</p>
+                                </div>
+                            `}
+                        </div>
+                    </div>
 
                     <div class="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                         <div class="flex items-center justify-between mb-8">
@@ -8660,7 +8708,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.editPlayer = async (playerId) => {
         const player = await db.get('jugadores', playerId);
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const clubs = await db.getAll('clubes');
         
         modalContainer.innerHTML = `
@@ -8818,7 +8866,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderEquipos = async function(container) {
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const players = await db.getAll('jugadores');
         const sortedTeams = window.getSortedTeams(teams);
 
@@ -9381,7 +9429,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderAsistencia = async function(container) {
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const attendance = await db.getAll('asistencia');
         const sortedTeams = window.getSortedTeams(teams);
         
@@ -9574,7 +9622,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.showAsistenciaStep1 = async (type) => {
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const sortedTeams = window.getSortedTeams(teams);
 
         modalContainer.innerHTML = `
@@ -9840,7 +9888,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const pls = a.players || a.data || {};
         const pids = Object.keys(pls);
         
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
         const players = await db.getAll('jugadores');
         
@@ -10173,7 +10221,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         try {
             const players = await db.getAll('jugadores');
             const convocatorias = await db.getAll('convocatorias');
-            const teams = await db.getAll('equipos');
+            const teams = window.getSortedTeams(await db.getAll('equipos'));
             const teamsMap = Object.fromEntries(teams.map(t => [t.id, (t.nombre || 'EQUIPO').split(' ||| ')[0]]));
 
             let currentType = 'Sesión';
@@ -10217,7 +10265,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <div class="relative">
                                             <select id="filter-team-conv" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
                                                 <option value="">TODOS LOS EQUIPOS</option>
-                                                ${teams.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(t => `<option value="${t.id}">${(t.nombre || 'EQUIPO').split(' ||| ')[0]}</option>`).join('')}
+                                                ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${(t.nombre || 'EQUIPO').split(' ||| ')[0]}</option>`).join('')}
                                             </select>
                                             <i data-lucide="users" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
                                         </div>
@@ -10730,7 +10778,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
         const pls = a.players || a.data || {};
         const players = await db.getAll('jugadores');
-        const teams = await db.getAll('equipos');
+        const teams = window.getSortedTeams(await db.getAll('equipos'));
         const team = teams.find(t => String(t.id) === String(a.equipoid));
 
         const teamPlayers = players.filter(p => Object.keys(pls).includes(String(p.id)));
