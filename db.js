@@ -18,6 +18,8 @@ class CoachDB {
     constructor() {
         this.db = null;
         this.userRole = 'TECNICO'; 
+        this.cache = {};
+        this.lastSync = {};
     }
 
     async init() {
@@ -74,25 +76,30 @@ class CoachDB {
 
     async getAll(storeName) {
         if (!this.db) await this.init();
-        // Ejecutamos la sincronización en segundo plano sin esperar a que termine para no bloquear la UI
-        const syncPromise = (async () => {
-            if (supabaseClient) {
+        
+        const now = Date.now();
+        const shouldSync = !this.lastSync[storeName] || (now - this.lastSync[storeName] > 300000); // 5 min throttle
+
+        if (shouldSync && supabaseClient) {
+            this.lastSync[storeName] = now;
+            (async () => {
                 try {
                     const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
                     if (!error && data) {
-                        await this.syncLocal(storeName, data);
-                        return data;
-                    } else if (error && (error.code === '42P01' || error.message.includes('cache'))) {
-                        console.warn(`Sync skipped: table '${storeName}' not found in Supabase.`);
+                        const changed = await this.syncLocal(storeName, data);
+                        if (changed) this.cache[storeName] = data;
                     }
                 } catch (err) {
                     console.warn(`Background sync failed for ${storeName}`);
                 }
-            }
-            return null;
-        })();
+            })();
+        }
 
-        // Devolvemos IMMEDIATAMENTE lo que tengamos en Local para una carga instantánea
+        // Return from cache if available
+        if (this.cache[storeName] && this.cache[storeName].length > 0) {
+            return this.cache[storeName];
+        }
+
         const localData = await new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
@@ -101,19 +108,13 @@ class CoachDB {
             request.onerror = () => resolve([]);
         });
 
-        // Si no hay datos locales (primera vez), entonces sí esperamos a la nube
-        if (localData.length === 0 && supabaseClient) {
-            const cloudData = await syncPromise;
-            return cloudData || [];
-        }
-
+        this.cache[storeName] = localData;
         return localData;
     }
 
     async syncLocal(storeName, remoteData) {
-        if (!this.db || !remoteData) return;
+        if (!this.db || !remoteData) return false;
 
-        // Abrimos una transacción para obtener los datos locales actuales
         const localData = await new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
@@ -124,28 +125,38 @@ class CoachDB {
 
         const localMap = new Map(localData.map(item => [item.id, item]));
         const remoteIds = new Set(remoteData.map(item => item.id));
+        
+        let hasChanges = false;
+        const toDelete = localData.filter(item => !remoteIds.has(item.id));
+        const toPut = remoteData.filter(remoteItem => {
+            const localItem = localMap.get(remoteItem.id);
+            if (!localItem) return true;
+            // Check for actual changes to avoid redundant writes
+            const merged = { ...localItem, ...remoteItem };
+            return JSON.stringify(localItem) !== JSON.stringify(merged);
+        });
+
+        if (toDelete.length === 0 && toPut.length === 0) return false;
 
         const tx = this.db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
 
         // 1. Eliminar locales que ya no existen en remoto
-        localData.forEach(localItem => {
-            if (!remoteIds.has(localItem.id)) {
-                store.delete(localItem.id);
+        // Solo eliminamos si el ID parece ser un ID de Supabase (pequeño) 
+        // y no está en el remoto. Los IDs grandes (Date.now()) son locales pendientes de sync.
+        toDelete.forEach(item => {
+            if (item.id < 1000000000000) { 
+                store.delete(item.id);
             }
         });
-
-        // 2. Actualizar o insertar remotos mezclando con los locales existentes
-        remoteData.forEach(remoteItem => {
+        toPut.forEach(remoteItem => {
             const localItem = localMap.get(remoteItem.id);
-            // Mezclamos: los datos remotos mandan, pero preservamos campos locales que no vengan en el JSON remoto
-            const merged = localItem ? { ...localItem, ...remoteItem } : remoteItem;
-            store.put(merged);
+            store.put(localItem ? { ...localItem, ...remoteItem } : remoteItem);
         });
 
         return new Promise((resolve) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => resolve();
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
         });
     }
 

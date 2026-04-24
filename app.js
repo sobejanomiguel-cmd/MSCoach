@@ -3905,10 +3905,23 @@ await db.update('sesiones', { ...data, id: session.id });
                                 </div>
                             </div>
                         ` : `
-                            <div>
-                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha</label>
-                                 <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
-                            </div>
+                            ${activeTab === 'Torneo' ? `
+                                <div class="col-span-2 grid grid-cols-2 gap-4">
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha Inicio</label>
+                                         <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
+                                    </div>
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha Final</label>
+                                         <input name="fecha_fin" value="${meta.fecha_fin || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    </div>
+                                </div>
+                            ` : `
+                                <div>
+                                     <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha</label>
+                                     <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
+                                </div>
+                            `}
                             <div class="grid grid-cols-3 gap-2 col-span-2">
                                  <div>
                                      <label class="block text-[10px] font-black text-slate-400 uppercase mb-2">H. Llegada</label>
@@ -4097,7 +4110,8 @@ await db.update('sesiones', { ...data, id: session.id });
                     eids: checkedTeamIds, 
                     hl: data.hl, 
                     hi: data.hi, 
-                    hs: data.hs 
+                    hs: data.hs,
+                    fecha_fin: data.fecha_fin || null
                 };
 
                 if (activeTab === 'Ciclo') {
@@ -4121,7 +4135,7 @@ await db.update('sesiones', { ...data, id: session.id });
                 data.hora = extra.hi;
                 data.equipoid = checkedTeamIds[0] || null;
                 data.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
-                ['hl', 'hi', 'hs', 'id'].forEach(f => delete data[f]);
+                ['hl', 'hi', 'hs', 'id', 'fecha_fin'].forEach(f => delete data[f]);
 
                 const currentUserRes = await supabaseClient.auth.getUser();
                 const currentUser = currentUserRes.data.user;
@@ -9595,13 +9609,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             let createdCount = 0;
             let renamedCount = 0;
+            let dateFixCount = 0;
 
             // 1. Rename existing records to standard format
             for (const asist of asistencias) {
                 const team = teams.find(t => t.id == asist.equipoid);
                 const teamName = team ? team.nombre : 'EQUIPO';
                 
-                // Intentamos sacar el nombre y tipo original (de la convocatoria vinculada si existe)
                 const linkedConv = convocatorias.find(c => c.id.toString() === asist.convocatoriaid?.toString());
                 const eventName = linkedConv ? linkedConv.nombre : asist.nombre;
                 const eventType = linkedConv ? linkedConv.tipo : asist.tipo;
@@ -9614,7 +9628,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 }
             }
 
-            // 2. Create missing records from convocatorias
+            // 2. Normalizar fechas de torneos
+            for (const conv of convocatorias) {
+                if (['Torneo', 'TORNEO'].includes(conv.tipo)) {
+                    const { base, extra } = window.parseLugarMetadata(conv.lugar);
+                    if (!extra.fecha_fin) {
+                        extra.fecha_fin = conv.fecha;
+                        const newLugar = `${base} ||| ${JSON.stringify(extra)}`;
+                        await db.update('convocatorias', { id: conv.id, lugar: newLugar });
+                        dateFixCount++;
+                    }
+                }
+            }
+
+            // 3. Create missing records from convocatorias
             for (const conv of convocatorias) {
                 if (!linkedIds.has(conv.id.toString())) {
                     const playersData = {};
@@ -9644,7 +9671,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     }
                 }
             }
-            window.customAlert('¡Hecho!', `Se han reparado ${createdCount} asistencias faltantes y normalizado ${renamedCount} nombres.`, 'success');
+            window.customAlert('¡Hecho!', `Se han reparado ${createdCount} asistencias, normalizado ${renamedCount} nombres y corregido ${dateFixCount} fechas de torneos.`, 'success');
             window.renderAsistencia(document.getElementById('content-container'));
         } catch (err) {
             console.error("Repair error:", err);
