@@ -141,8 +141,18 @@ window.getSortedTeams = (teams) => {
         if (isSpecialA && !isSpecialB) return 1;
         if (!isSpecialA && isSpecialB) return -1;
         
-        const yearA = parseInt(a.categoria) || 9999;
-        const yearB = parseInt(b.categoria) || 9999;
+        const getYear = (t) => {
+            const name = (t.nombre || '').toUpperCase();
+            for (let y = 2010; y <= 2025; y++) {
+                if (name.includes(String(y))) return y;
+            }
+            const fromCat = parseInt(t.categoria);
+            if (!isNaN(fromCat) && fromCat >= 2000 && fromCat < 2100) return fromCat;
+            return 9999;
+        };
+
+        const yearA = getYear(a);
+        const yearB = getYear(b);
         
         if (yearA !== yearB) return yearA - yearB;
         return nameA.localeCompare(nameB);
@@ -1275,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tasks = allTasks; // Tareas are always global (library)
             const sessions = filterByVisibility(allSessions);
             const convocatorias = filterByVisibility(allConvocatorias);
-            const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO');
+            const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase().trim() === 'TORNEO');
             const todayStr = new Date().toISOString().split('T')[0];
             const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
             const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
@@ -1329,6 +1339,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return nameStr.includes('FEM') || catStr.includes('FEM');
             }).length;
             const teamsMaleCount = teams.length - teamsFemaleCount;
+
+            // Torneos counts by team (using String keys for safety)
+            const torneoTeamCounts = {};
+            torneos.forEach(t => {
+                if (t.equipoid) {
+                    const key = String(t.equipoid);
+                    torneoTeamCounts[key] = (torneoTeamCounts[key] || 0) + 1;
+                }
+            });
+            
+            // Sort chronologically using global utility and map to counts
+            const sortedTorneoTeams = window.getSortedTeams(teams)
+                .filter(t => torneoTeamCounts[String(t.id)])
+                .map(t => [String(t.nombre).split(' ||| ')[0].toUpperCase(), torneoTeamCounts[String(t.id)]]);
     
             container.innerHTML = `
                 <!-- Row 1: Heavy Stats -->
@@ -1444,6 +1468,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <p class="text-xl font-black text-slate-500">${totalOther}</p>
                                 </div>
                             ` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 3: Detail Breakdown -->
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                    <!-- Torneos por Equipo Widget -->
+                    <div class="lg:col-span-4 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                        <div class="flex items-center gap-5 mb-8">
+                            <div class="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform"><i data-lucide="medal" class="w-8 h-8"></i></div>
+                            <div>
+                                <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Participación en Torneos</h3>
+                                <p class="text-2xl font-black text-slate-800 uppercase">Desglose por Equipo</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 border-t border-slate-50 pt-8">
+                            ${(() => {
+                                const palette = [
+                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                                    { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
+                                    { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
+                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
+                                    { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
+                                    { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
+                                ];
+                                return sortedTorneoTeams.map(([team, count], idx) => {
+                                    const color = palette[idx % palette.length];
+                                    return `
+                                        <div class="${color.bg} p-5 rounded-3xl border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
+                                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center truncate w-full group-hover/item:text-slate-600">${team}</p>
+                                            <p class="text-3xl font-black ${color.text} transition-colors">${count}</p>
+                                        </div>
+                                    `;
+                                }).join('') || '<p class="text-[10px] text-slate-300 italic text-center col-span-full py-10">Sin torneos registrados</p>';
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -7688,6 +7749,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             equipoid: baseData.conv_equipoid ? parseInt(baseData.conv_equipoid) : null,
                             convocatoriaid: newConv.id,
                             players: playersData,
+                            lugar: conv.lugar || '',
                             createdBy: currentUser.id
                         };
                         await db.add('asistencia', attendanceData);
@@ -9611,7 +9673,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             let renamedCount = 0;
             let dateFixCount = 0;
 
-            // 1. Rename existing records to standard format
+            // 1. Normalizar nombres y LUGARES de registros existentes
             for (const asist of asistencias) {
                 const team = teams.find(t => t.id == asist.equipoid);
                 const teamName = team ? team.nombre : 'EQUIPO';
@@ -9622,15 +9684,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 const newName = window.formatAttendanceName(asist.fecha, teamName, eventType, eventName);
                 
+                let needsUpdate = false;
+                const updatePayload = { id: asist.id };
+
                 if (asist.nombre !== newName) {
-                    await db.update('asistencia', { id: asist.id, nombre: newName });
+                    updatePayload.nombre = newName;
+                    needsUpdate = true;
+                }
+
+                // Sincronizar lugar si falta en la asistencia pero está en la convocatoria
+                if (!asist.lugar && linkedConv && linkedConv.lugar) {
+                    updatePayload.lugar = linkedConv.lugar;
+                    needsUpdate = true;
+                }
+                
+                if (needsUpdate) {
+                    await db.update('asistencia', updatePayload);
                     renamedCount++;
                 }
             }
 
-            // 2. Normalizar fechas de torneos
+            // 2. Normalizar fechas de torneos y corregir asignaciones por año
             for (const conv of convocatorias) {
                 if (['Torneo', 'TORNEO'].includes(conv.tipo)) {
+                    // Normalizar fecha fin
                     const { base, extra } = window.parseLugarMetadata(conv.lugar);
                     if (!extra.fecha_fin) {
                         extra.fecha_fin = conv.fecha;
@@ -9638,12 +9715,41 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         await db.update('convocatorias', { id: conv.id, lugar: newLugar });
                         dateFixCount++;
                     }
+
+                    // CORRECCIÓN DE EQUIPO: Si el torneo dice 2010 pero el equipo es 2011
+                    const convName = (conv.nombre || '').toUpperCase();
+                    if (convName.includes('2010')) {
+                        const currentTeam = teams.find(t => t.id == conv.equipoid);
+                        if (currentTeam && (currentTeam.nombre || '').includes('2011')) {
+                            const correctTeam = teams.find(t => (t.nombre || '').includes('2010'));
+                            if (correctTeam) {
+                                await db.update('convocatorias', { id: conv.id, equipoid: correctTeam.id });
+                                // Actualizar también la asistencia vinculada si existe
+                                const linkedAsist = asistencias.find(a => String(a.convocatoriaid) === String(conv.id));
+                                if (linkedAsist) {
+                                    await db.update('asistencia', { id: linkedAsist.id, equipoid: correctTeam.id });
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             // 3. Create missing records from convocatorias
             for (const conv of convocatorias) {
-                if (!linkedIds.has(conv.id.toString())) {
+                const team = teams.find(t => t.id == conv.equipoid);
+                const teamName = team ? team.nombre : 'EQUIPO';
+                const standardName = window.formatAttendanceName(conv.fecha, teamName, conv.tipo, conv.nombre);
+
+                // Comprobación de duplicados: por ID vinculado o por coincidencia de nombre/fecha/equipo
+                const alreadyLinked = linkedIds.has(conv.id.toString());
+                const alreadyExistsByName = asistencias.some(a => 
+                    a.fecha === conv.fecha && 
+                    String(a.equipoid) === String(conv.equipoid) &&
+                    a.nombre === standardName
+                );
+
+                if (!alreadyLinked && !alreadyExistsByName) {
                     const playersData = {};
                     const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
                     pids.forEach(pid => {
@@ -9659,6 +9765,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         tipo: conv.tipo || 'Sesión', 
                         equipoid: conv.equipoid || null,
                         convocatoriaid: conv.id,
+                        lugar: conv.lugar || '',
                         players: playersData
                     };
 
@@ -10163,14 +10270,17 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
         
         const teamPlayers = players.filter(p => {
+            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
             const isConvocado = expectedPlayerIds.has(String(p.id));
             
-            if (expectedPlayerIds.size > 0) {
-                return isConvocado;
-            }
-            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
-            const isTeamMember = a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-            return isRecorded || isTeamMember;
+            // Si hay registros de asistencia específicos, solo mostramos esos
+            if (pids.length > 0) return isRecorded;
+            
+            // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
+            if (expectedPlayerIds.size > 0) return isConvocado;
+
+            // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
+            return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         const mContainer = document.getElementById('modal-container');
@@ -10187,6 +10297,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${a.fecha}</span>
                         </div>
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre?.split(' ||| ')[0] || 'Control de Asistencia'}</h3>
+                        ${a.lugar ? `<p class="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-1 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${window.parseLugarMetadata(a.lugar).base}</p>` : ''}
                     </div>
                     <div class="flex gap-2">
                         <button onclick="window.generateAsistenciaPDF('${a.id}', false)" class="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
@@ -10305,14 +10416,17 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
         
         const teamPlayers = players.filter(p => {
+            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
             const isConvocado = expectedPlayerIds.has(String(p.id));
             
-            if (expectedPlayerIds.size > 0) {
-                return isConvocado;
-            }
-            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
-            const isTeamMember = a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-            return isRecorded || isTeamMember;
+            // Si hay registros de asistencia específicos, solo mostramos esos
+            if (pids.length > 0) return isRecorded;
+            
+            // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
+            if (expectedPlayerIds.size > 0) return isConvocado;
+
+            // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
+            return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         const mContainer = document.getElementById('modal-container');

@@ -205,6 +205,7 @@ class CoachDB {
     }
 
     async saveLocal(storeName, data) {
+        delete this.cache[storeName]; // Invalidate cache on change
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);
@@ -273,6 +274,7 @@ class CoachDB {
                 }
             }
         }
+        delete this.cache[storeName]; // Invalidate cache on change
         return new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readwrite');
             const request = tx.objectStore(storeName).delete(Number(id));
