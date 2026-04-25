@@ -904,7 +904,6 @@ window.customModal = (html) => {
     document.body.appendChild(modal);
     if (window.lucide) lucide.createIcons();
 };
-
 window.closeCustomModal = () => {
     const modal = document.getElementById('custom-modal-overlay');
     if (modal) {
@@ -914,6 +913,34 @@ window.closeCustomModal = () => {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize DB
+    await db.init();
+
+    // --- TEMPORARY CLEANUP SCRIPT (RUNS ONCE) ---
+    if (localStorage.getItem('force_photo_reset') === 'true') {
+        try {
+            console.log("Starting aggressive photo cleanup...");
+            const players = await db.getAll('jugadores');
+            for (const p of players) {
+                const tx = db.db.transaction('jugadores', 'readwrite');
+                const store = tx.objectStore('jugadores');
+                p.foto = null;
+                p.avatar_url = null; 
+                store.put(p);
+            }
+            localStorage.removeItem('force_photo_reset');
+            localStorage.setItem('reset_executed', 'true');
+            console.log("Local cleanup complete. Reloading...");
+            setTimeout(() => location.reload(), 500);
+        } catch (e) { 
+            console.error("Cleanup error:", e);
+            localStorage.removeItem('force_photo_reset');
+        }
+    } else if (!localStorage.getItem('reset_executed')) {
+        localStorage.setItem('force_photo_reset', 'true');
+        setTimeout(() => location.reload(), 1000);
+    }
+
     // Auth Elements
     const authScreen = document.getElementById('auth-screen');
     const authForm = document.getElementById('auth-form');
@@ -8859,6 +8886,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div>
                         <div class="flex items-center gap-4">
                             <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Directorio de Jugadores</h2>
+                            <button onclick="window.showBulkPhotoUpload()" class="px-4 py-2 bg-blue-50 text-blue-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all flex items-center gap-2 border border-blue-100/50 shadow-sm mr-2">
+                                <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
+                                Carga Masiva Fotos
+                            </button>
                             <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm">
                                 <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
                                 Limpiar Duplicados
@@ -8961,7 +8992,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             <td class="px-8 py-4">
                                                 <div class="flex items-center gap-4">
                                                     <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer" onclick="window.editPlayer('${p.id}')">
-                                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='Imagenes/Foto Jugador General.png'">
                                                     </div>
                                                     <div>
                                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
@@ -9286,7 +9317,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             attendanceSummary[status] = (attendanceSummary[status] || 0) + 1;
         });
 
-        // 1. Process explicit attendance records
+        // 1. Process explicit attendance records only (as requested: "que salgan las asistencias, no las convocatorias")
         playerAttendance.forEach(a => {
             if (a.convocatoriaid) {
                 const c = convocatorias.find(cv => cv.id == a.convocatoriaid);
@@ -9294,49 +9325,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const item = { ...a, rating: score };
 
                 if (c?.tipo === 'Ciclo') categorized.ciclos.push(item);
-                else if (c?.tipo === 'Torneo' || c?.tipo === 'Partido') categorized.torneos.push(item);
+                else if (c?.tipo === 'Torneo') categorized.torneos.push(item);
+                else if (c?.tipo === 'Sesión' || c?.tipo === 'Zubieta') categorized.sesiones.push(item);
             } else {
                 categorized.sesiones.push(a);
             }
         });
 
-        // 2. Bidirectional sync: Add convocatorias without attendance records
-        playerConvs.forEach(c => {
-            const hasAttendance = playerAttendance.some(a => a.convocatoriaid == c.id);
-            const score = (c.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
-            
-            if (!hasAttendance) {
-                const item = { 
-                    nombre: c.nombre, 
-                    fecha: c.fecha, 
-                    convocatoriaid: c.id, 
-                    players: { [playerId]: 'Convocado' },
-                    rating: score
-                };
-                if (c.tipo === 'Ciclo') categorized.ciclos.push(item);
-                else if (c.tipo === 'Torneo' || c.tipo === 'Partido') categorized.torneos.push(item);
-                else if (c.tipo === 'Sesión' || c.tipo === 'Zubieta') {
-                    if (!categorized.sesiones.some(s => s.fecha === c.fecha)) categorized.sesiones.push(item);
-                }
-            } else if (score) {
-                const target = [...categorized.ciclos, ...categorized.sesiones, ...categorized.torneos]
-                    .find(item => item.convocatoriaid == c.id);
-                if (target) target.rating = score;
-            }
-        });
+        const playerTorneoConvs = rawPlayerConvs.filter(c => c.tipo === 'Torneo');
+        const playerTorneoNames = [...new Set(playerTorneoConvs.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
 
         const uniqueTorneoNames = [...new Set(categorized.torneos.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
 
         // --- CALCULATE PARTICIPATION PERCENTAGES ---
         const teamId = player.equipoid?.toString();
         const teamStats = {
-            totalTorneos: convocatorias.filter(c => c.equipoid?.toString() === teamId && (c.tipo === 'Torneo' || c.tipo === 'Partido')).length,
-            totalSesiones: convocatorias.filter(c => c.equipoid?.toString() === teamId && (c.tipo === 'Sesión' || c.tipo === 'Zubieta')).length,
+            totalTorneos: convocatorias.filter(c => c.equipoid?.toString() === teamId && c.tipo === 'Torneo').length,
+            totalSesiones: convocatorias.filter(c => (c.playerids || []).map(String).includes(String(playerId)) && (c.tipo === 'Sesión' || c.tipo === 'Zubieta')).length,
             totalCiclos: convocatorias.filter(c => c.equipoid?.toString() === teamId && c.tipo === 'Ciclo').length
         };
         
         const playerStats = {
-            torneoPercent: teamStats.totalTorneos > 0 ? Math.round((categorized.torneos.length / teamStats.totalTorneos) * 100) : 0,
+            torneoPercent: teamStats.totalTorneos > 0 ? Math.round((playerTorneoConvs.length / teamStats.totalTorneos) * 100) : 0,
             sesionPercent: teamStats.totalSesiones > 0 ? Math.round((categorized.sesiones.length / teamStats.totalSesiones) * 100) : 0,
             cicloPercent: teamStats.totalCiclos > 0 ? Math.round((categorized.ciclos.length / teamStats.totalCiclos) * 100) : 0
         };
@@ -9352,7 +9362,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <div class="px-8 pb-8 -mt-12 relative z-10">
                     <div class="flex flex-col md:flex-row gap-8 items-start">
                         <div class="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl">
-                            <img src="${player.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='https://via.placeholder.com/150'">
+                            <img src="${player.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='Imagenes/Foto Jugador General.png'">
                         </div>
                         <div class="flex-1 pt-14">
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -9386,16 +9396,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                             </div>
                             
-                            <!-- Season Tabs -->
-                            <div class="mt-8 flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                                <button onclick="window.viewPlayerProfile('${playerId}', 'ALL')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${selectedSeason === 'ALL' ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}">
-                                    Historial Completo
-                                </button>
-                                ${availableSeasons.map(s => `
-                                    <button onclick="window.viewPlayerProfile('${playerId}', '${s}')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${selectedSeason === s ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}">
-                                        Temporada ${s}
-                                    </button>
-                                `).join('')}
+                                <div class="relative w-full md:w-64">
+                                    <select onchange="window.viewPlayerProfile('${playerId}', this.value)" class="w-full p-3 bg-slate-100 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer text-slate-600">
+                                        <option value="ALL" ${selectedSeason === 'ALL' ? 'selected' : ''}>HISTORIAL COMPLETO</option>
+                                        ${availableSeasons.map(s => `<option value="${s}" ${selectedSeason === s ? 'selected' : ''}>TEMPORADA ${s}</option>`).join('')}
+                                    </select>
+                                    <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -9449,8 +9456,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <i data-lucide="trophy" class="w-6 h-6 text-indigo-600"></i>
                                             </div>
                                             <div>
-                                                <span class="text-3xl font-black text-slate-800">${categorized.torneos.length}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Partidos Jugados</p>
+                                                <span class="text-3xl font-black text-slate-800">${playerTorneoConvs.length}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Torneos Seleccionados</p>
                                             </div>
                                         </div>
                                         <div class="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
@@ -9458,9 +9465,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </div>
                                         <p class="text-[8px] font-black text-indigo-500 uppercase tracking-widest text-right mt-2 mb-6">${playerStats.torneoPercent}% Participación</p>
                                         <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-2 custom-scrollbar">
-                                            ${uniqueTorneoNames.map(t => `
+                                            ${playerTorneoNames.map(t => `
                                                 <span class="px-2 py-1 bg-white/80 border border-indigo-100 rounded-lg text-[8px] font-black text-indigo-600 uppercase truncate max-w-[120px] shadow-sm">${t}</span>
-                                            `).join('') || '<span class="text-[8px] text-slate-300 italic uppercase">Sin participaciones registradas</span>'}
+                                            `).join('') || '<span class="text-[8px] text-slate-300 italic uppercase">Sin selecciones registradas</span>'}
                                         </div>
                                     </div>
                                     <p class="text-[9px] font-bold text-indigo-400/70 mt-4 leading-relaxed uppercase italic">Participación en eventos competitivos.</p>
@@ -9481,8 +9488,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i>
                                             </div>
                                             <div>
-                                                <span class="text-3xl font-black text-slate-800">${categorized.sesiones.length}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Sesiones Totales</p>
+                                                <span class="text-3xl font-black text-slate-800">${teamStats.totalSesiones}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Selecciones Totales</p>
                                             </div>
                                         </div>
                                         <div class="w-full h-2 bg-amber-100 rounded-full overflow-hidden mt-6">
@@ -9581,35 +9588,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         })()}
                     </div>
                     
-                    <!-- Detailed Attendance Stats -->
-                    <div class="mt-6 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Desglose de Asistencia (Total)</p>
-                        <div class="flex flex-wrap gap-4">
-                            ${Object.entries(attendanceSummary).length > 0 ? Object.entries(attendanceSummary).map(([status, count]) => {
-                                let color = 'slate';
-                                if (status === 'ASISTE') color = 'emerald';
-                                else if (status === 'AUSENTE') color = 'rose';
-                                else if (status === 'LESIONADO' || status === 'LESION') color = 'amber';
-                                else if (status === 'ZUBIETA' || status === 'ESTUDIOS') color = 'indigo';
-                                
-                                return `
-                                    <div class="flex-1 min-w-[120px] bg-${color}-50/50 p-4 rounded-2xl border border-${color}-100 flex items-center justify-between">
-                                        <div class="flex flex-col">
-                                            <span class="text-[9px] font-black text-${color}-600 uppercase tracking-widest">${status}</span>
-                                            <span class="text-2xl font-black text-slate-800">${count}</span>
-                                        </div>
-                                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
-                                            <i data-lucide="${status === 'ASISTE' ? 'check' : (status === 'AUSENTE' ? 'x' : 'info')}" class="w-5 h-5 text-${color}-500"></i>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('') : `
-                                <div class="w-full py-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-100">
-                                    <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">Sin registros de asistencia acumulados</p>
-                                </div>
-                            `}
-                        </div>
-                    </div>
 
                     <div class="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                         <div class="flex items-center justify-between mb-8">
@@ -9653,7 +9631,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                             if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
                                                             else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
                                                             else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
-                                                            else if (statusValue === 'Convocado') badge = '<span class="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[8px] font-black uppercase italic">Convocado</span>';
                                                             else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
                                                             return `
@@ -9676,8 +9653,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                                 return `
                                     ${renderGroup('Ciclos de Perfeccionamiento', categorized.ciclos, 'refresh-ccw', 'text-blue-500')}
-                                    ${renderGroup('Sesiones de Entrenamiento', categorized.sesiones, 'calendar', 'text-amber-500')}
-                                    ${renderGroup('Torneos y Partidos', categorized.torneos, 'trophy', 'text-indigo-500')}
+                                    ${renderGroup('Entrenamientos', categorized.sesiones, 'calendar', 'text-amber-500')}
+                                    ${renderGroup('Torneos', categorized.torneos, 'trophy', 'text-indigo-500')}
                                 `;
                             })()}
                         </div>
@@ -12256,12 +12233,12 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         
         doc.autoTable({
             startY: yPos,
-            head: [['TOTAL SESIONES', 'ASISTENCIAS', 'FALTAS', 'LESIONES', '% ASISTENCIA']],
+            head: [['TOTAL SESIONES', 'ASISTENCIAS', 'FALTAS', 'TORNEOS', '% ASISTENCIA']],
             body: [[
                 attendanceSummary.total,
                 attendanceSummary.asiste,
                 attendanceSummary.falta,
-                attendanceSummary.lesion,
+                torneos.length,
                 `${assistRate}%`
             ]],
             headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
@@ -12271,31 +12248,71 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
         yPos = doc.lastAutoTable.finalY + 20;
 
-        // --- SECTION: COMPETITIONS ---
-        if (torneos.length > 0) {
+        // --- SECTION: DETAILED ACTIVITY ---
+        const activityData = playerAttendance.sort((a,b) => b.fecha.localeCompare(a.fecha)).slice(0, 30).map(a => {
+            const c = allConvocatorias.find(cv => cv.id == a.convocatoriaid);
+            const status = a.players[playerId];
+            const statusValue = (typeof status === 'object' ? status.status : status) || 'ASISTE';
+            let finalStatus = statusValue.toUpperCase();
+            if (finalStatus === 'ASISTE') finalStatus = 'PRESENTE';
+            
+            return [
+                a.fecha,
+                (a.nombre || c?.nombre || 'SESIÓN').split(' ||| ')[0].toUpperCase(),
+                (c?.tipo || 'SESIÓN').toUpperCase(),
+                finalStatus
+            ];
+        });
+
+        if (activityData.length > 0) {
             doc.setTextColor(...primaryColor);
             doc.setFontSize(11);
             doc.setFont("helvetica", "bold");
-            doc.text("HISTORIAL DE COMPETICIÓN", 15, yPos);
+            doc.text("HISTORIAL DETALLADO DE ACTIVIDAD", 15, yPos);
             yPos += 3;
-            doc.line(15, yPos, 70, yPos);
+            doc.line(15, yPos, 85, yPos);
             yPos += 7;
 
-            const torneoData = torneos.slice(0, 10).map(t => {
+            doc.autoTable({
+                startY: yPos,
+                head: [['FECHA', 'ACTIVIDAD / EVENTO', 'TIPO', 'ESTADO']],
+                body: activityData,
+                headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], halign: 'center' },
+                styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
+                columnStyles: {
+                    1: { halign: 'left', cellWidth: 'auto' },
+                    3: { fontStyle: 'bold' }
+                },
+                margin: { left: 15 }
+            });
+            yPos = doc.lastAutoTable.finalY + 15;
+        }
+
+        // --- SECTION: COMPETITIONS ---
+        if (torneos.length > 0) {
+            if (yPos > 240) { doc.addPage(); yPos = 20; }
+            doc.setTextColor(...primaryColor);
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            doc.text("HISTORIAL DE COMPETICIÓN (TORNEOS)", 15, yPos);
+            yPos += 3;
+            doc.line(15, yPos, 85, yPos);
+            yPos += 7;
+
+            const torneoData = torneos.slice(0, 15).map(t => {
                 const score = (t.rendimiento && t.rendimiento[playerId]) ? t.rendimiento[playerId].score : '--';
                 return [
                     t.fecha,
                     t.nombre.split(' ||| ')[0].toUpperCase(),
-                    t.tipo.toUpperCase(),
                     score
                 ];
             });
 
             doc.autoTable({
                 startY: yPos,
-                head: [['FECHA', 'COMPETICIÓN', 'TIPO', 'NOTA']],
+                head: [['FECHA', 'COMPETICIÓN / TORNEO', 'CALIFICACIÓN']],
                 body: torneoData,
-                headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], halign: 'center' },
+                headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], halign: 'center' },
                 styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
                 columnStyles: {
                     1: { halign: 'left' }
@@ -12368,6 +12385,126 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             btn.innerHTML = originalHtml;
             btn.style.pointerEvents = 'auto';
         });
+    };
+
+    window.showBulkPhotoUpload = async () => {
+        const players = await db.getAll('jugadores');
+        const withoutPhoto = players.filter(p => !p.foto || p.foto.includes('General'));
+        
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Carga Masiva de Fotos</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Selecciona jugadores y elige una foto para todos ellos</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                        <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4">1. Elige la foto para aplicar</label>
+                        <input type="file" id="bulk-photo-input" accept="image/*" class="w-full text-[10px] font-bold text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-[10px] file:font-black file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center px-2">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Selecciona Jugadores (${withoutPhoto.length})</label>
+                            <button onclick="window.toggleAllBulk(this)" class="text-[9px] font-black text-blue-600 uppercase">Seleccionar Todos</button>
+                        </div>
+                        <div class="max-h-[400px] overflow-y-auto border border-slate-100 rounded-2xl divide-y divide-slate-50 custom-scrollbar">
+                            ${withoutPhoto.map(p => `
+                                <label class="flex items-center gap-4 p-4 hover:bg-slate-50 transition-all cursor-pointer group">
+                                    <input type="checkbox" name="player-bulk" value="${p.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <div class="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-100">
+                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover">
+                                    </div>
+                                    <div class="flex-1">
+                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${p.nombre}</p>
+                                        <p class="text-[9px] font-bold text-slate-400 uppercase">${p.equipoConvenido || 'Sin Club'}</p>
+                                    </div>
+                                </label>
+                            `).join('') || '<p class="p-8 text-center text-slate-400 text-[10px] font-black uppercase italic tracking-widest">Todos los jugadores tienen foto</p>'}
+                        </div>
+                    </div>
+
+                    <div class="pt-4">
+                        <button onclick="window.applyBulkPhoto()" id="apply-bulk-btn" class="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            Aplicar Foto a Seleccionados
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.toggleAllBulk = (btn) => {
+        const checks = document.querySelectorAll('input[name="player-bulk"]');
+        const allChecked = Array.from(checks).every(c => c.checked);
+        checks.forEach(c => c.checked = !allChecked);
+        btn.innerText = !allChecked ? 'Desmarcar Todos' : 'Seleccionar Todos';
+    };
+
+    window.applyBulkPhoto = async () => {
+        const fileInput = document.getElementById('bulk-photo-input');
+        const selectedIds = Array.from(document.querySelectorAll('input[name="player-bulk"]:checked')).map(c => c.value);
+        
+        if (selectedIds.length === 0) return window.customAlert('Atención', 'Selecciona al menos un jugador.', 'warning');
+        if (!fileInput.files || !fileInput.files[0]) return window.customAlert('Atención', 'Elige una foto para aplicar.', 'warning');
+        
+        const btn = document.getElementById('apply-bulk-btn');
+        btn.disabled = true;
+        btn.innerText = 'PROCESANDO...';
+        
+        try {
+            const avatarUrl = await db.uploadImage(fileInput.files[0]);
+            for (const id of selectedIds) {
+                const p = await db.get('jugadores', id);
+                if (p) {
+                    p.foto = avatarUrl;
+                    await db.update('jugadores', p);
+                }
+            }
+            window.customAlert('¡Éxito!', `Se ha aplicado la foto a ${selectedIds.length} jugadores.`, 'success');
+            closeModal();
+            if (typeof window.renderJugadores === 'function') {
+                window.renderJugadores(document.getElementById('content-container'));
+            }
+        } catch (err) {
+            console.error(err);
+            window.customAlert('Error', 'No se pudo subir la imagen.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Aplicar Foto a Seleccionados';
+        }
+    };
+
+    window.resetAllPlayerPhotos = async () => {
+        if (!confirm('¿Estás SEGURO de que quieres borrar TODAS las fotos de los jugadores en la base de datos de Supabase y local? Esta acción no se puede deshacer.')) return;
+        
+        try {
+            const players = await db.getAll('jugadores');
+            let count = 0;
+            
+            // 1. Update Cloud in bulk if possible, or one by one to ensure sync logic
+            for (const p of players) {
+                p.foto = null;
+                await db.update('jugadores', p);
+                count++;
+            }
+            
+            window.customAlert('¡Éxito!', `Se han borrado las fotos de ${count} jugadores correctamente.`, 'success');
+            if (typeof window.renderJugadores === 'function') {
+                window.renderJugadores(document.getElementById('content-container'));
+            }
+        } catch (err) {
+            console.error("Error resetting photos:", err);
+            window.customAlert('Error', 'No se pudieron borrar todas las fotos: ' + err.message, 'error');
+        }
     };
 
     window.cleanDuplicatePlayers = async () => {
