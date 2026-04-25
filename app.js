@@ -7043,6 +7043,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderConvocatorias = async function(container) {
+        const allConvs = await db.getAll('convocatorias');
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         const isGlobal = window.currentVisibilityMode === 'global';
