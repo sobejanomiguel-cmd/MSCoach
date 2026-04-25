@@ -421,8 +421,7 @@ window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
     // Visibility
     if (window.currentVisibilityMode === 'personal' && window.currentUser && !options.skipVisibility) {
         filtered = filtered.filter(i => 
-            !i.createdBy || // Allow legacy items without owner
-            i.createdBy === window.currentUser.id
+            !i.createdBy || i.createdBy === window.currentUser.id
         );
     }
     
@@ -4302,6 +4301,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isEdit = convData !== null;
         const activeTab = isEdit ? convData.tipo : defaultType;
         
+        const { base: baseLugar, extra: meta } = window.parseLugarMetadata(convData?.lugar || ' ||| {}');
+        
         const conv = convData || {
             id: null,
             tipo: activeTab,
@@ -4311,13 +4312,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             lugar: ' ||| {}',
             playerids: [],
             equipoid: null,
-            createdBy: userRes.data.user?.id
+            createdBy: userRes.data.user?.id,
+            sharedWith: []
         };
+
+        if (isEdit) {
+            conv.createdBy = convData.createdBy || meta.cb || userRes.data.user?.id;
+            conv.sharedWith = convData.sharedWith || [];
+        }
 
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
-
-        const { base: baseLugar, extra: meta } = window.parseLugarMetadata(conv.lugar);
 
         modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -4349,9 +4354,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">Técnicos Acompañantes</label>
                             <div class="p-2 bg-slate-50 border border-slate-100 rounded-2xl max-h-[100px] overflow-y-auto custom-scrollbar">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-1">
-                                    ${coaches.map(u => `
+                                        ${coaches.map(u => `
                                         <label class="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${meta.sw && meta.sw.includes(u.id) ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-100">
+                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${conv.sharedWith && conv.sharedWith.includes(u.id) ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-100">
                                             <span class="text-[8px] font-black text-slate-600 uppercase truncate">${(u.name || u.nombre || 'Técnico').split(' ')[0]}</span>
                                         </label>
                                     `).join('')}
@@ -4666,8 +4671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     hl: data.hl, 
                     hi: data.hi, 
                     hs: data.hs,
-                    fecha_fin: data.fecha_fin || null,
-                    sw: formData.getAll('sharedWith')
+                    fecha_fin: data.fecha_fin || null
                 };
 
                 if (activeTab === 'Ciclo') {
@@ -4690,6 +4694,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 data.hora = extra.hi;
                 data.equipoid = checkedTeamIds[0] || null;
+                data.sharedWith = formData.getAll('sharedWith');
                 data.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
                 ['hl', 'hi', 'hs', 'id', 'fecha_fin'].forEach(f => delete data[f]);
 
@@ -7016,6 +7021,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     let currentConvocatoriaLugar = 'all';
     let currentConvocatoriaTypeTab = 'Ciclo';
     let currentConvocatoriaComunidad = 'all';
+    window.currentConvocatoriaCoachId = 'all';
+
+    window.switchConvocatoriaCoach = (id) => {
+        window.currentConvocatoriaCoachId = id;
+        window.renderView('convocatorias');
+    };
 
     window.switchConvocatoriaComunidad = (com) => {
         currentConvocatoriaComunidad = com;
@@ -7075,7 +7086,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             // Filter by TYPE tab
             const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
 
-            // Filter by COACH
+            // Filter by COACH (Direct column use)
             const matchesCoach = currentCoachId === 'all' || (c.createdBy && c.createdBy.toString() === currentCoachId.toString());
 
             // Filter by Team tab
@@ -12727,7 +12738,8 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     tipo: finalTipo,
                     equipoid: teamId ? Number(teamId) : null,
                     playerids: playerIds,
-                    createdBy: currentUser?.id
+                    createdBy: currentUser?.id,
+                    sharedWith: []
                 };
 
                 await db.add('convocatorias', convData);
