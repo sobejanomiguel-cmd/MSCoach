@@ -1443,107 +1443,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const fileInput = document.createElement('input');
                     fileInput.type = 'file';
                     fileInput.accept = '.csv';
-                    fileInput.onchange = async (e) => {
-                        const file = e.target.files[0];
-                        if (!file) return;
-                        
-                        const reader = new FileReader();
-                        reader.onload = async (re) => {
-                            const text = re.target.result;
-                            const lines = text.split('\n').filter(line => line.trim() !== '');
-                            if (lines.length < 2) return;
-
-                            const firstLine = lines[0];
-                            const delimiter = firstLine.includes(';') ? ';' : ',';
-                            const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                            
-                            const teams = window.getSortedTeams(await db.getAll('equipos'));
-                            const players = await db.getAll('jugadores');
-                            const existingConvs = await db.getAll('convocatorias');
-
-                            let importedCount = 0;
-                            let updatedCount = 0;
-                            
-                            const loadingAlert = document.createElement('div');
-                            loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
-                            loadingAlert.innerHTML = `
-                                <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
-                                    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                    <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Sincronizando Convocatorias...</p>
-                                </div>
-                            `;
-                            document.body.appendChild(loadingAlert);
-
-                            const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
-
-                            for (let i = 1; i < lines.length; i++) {
-                                const row = lines[i].split(regex).map(c => c.trim().replace(/^"|"$/g, ''));
-                                if (row.length < headers.length) continue;
-
-                                const data = {};
-                                headers.forEach((h, idx) => data[h] = row[idx]);
-                                
-                                const teamName = data['EQUIPO'];
-                                const team = teams.find(t => t.nombre.toLowerCase() === (teamName || '').toLowerCase());
-                                const playerNames = (data['JUGADORES'] || '').split(';').map(n => n.trim().toLowerCase());
-                                const foundPlayerIds = players
-                                    .filter(p => playerNames.includes(p.nombre?.toLowerCase()))
-                                    .map(p => p.id.toString());
-
-                                const convData = {
-                                    nombre: (data['NOMBRE'] || '').toUpperCase().trim(),
-                                    tipo: data['TIPO'] || 'Ciclo',
-                                    fecha: data['FECHA'],
-                                    hora: data['HORA'],
-                                    lugar: (data['LUGAR'] || '').toUpperCase().trim(),
-                                    equipoid: team ? team.id.toString() : null,
-                                    playerids: foundPlayerIds
-                                };
-
-                                if (!convData.nombre || !convData.fecha) continue;
-
-                                const key = `${convData.nombre.toLowerCase()}|${convData.fecha}`;
-                                const existing = existingConvs.find(c => `${c.nombre?.toLowerCase()}|${c.fecha}` === key);
-
-                                if (existing) {
-                                    await supabaseClient.from('convocatorias').update(convData).eq('id', existing.id);
-                                    updatedCount++;
-                                } else {
-                                    const { data: remoteData, error: insErr } = await supabaseClient.from('convocatorias').insert([convData]).select();
-                                    if (insErr) throw insErr;
-                                    
-                                    const savedConv = (remoteData && remoteData[0]) || { ...convData, id: Date.now() };
-                                    
-                                    // Auto-crear asistencia para la importación
-                                    try {
-                                        const playersData = {};
-                                        (convData.playerids || []).forEach(pid => { playersData[pid] = { status: 'asiste' }; });
-                                        
-                                        const attendanceData = {
-                                            fecha: convData.fecha,
-                                            nombre: window.formatAttendanceName(convData.fecha, team ? team.nombre : 'EQUIPO', convData.tipo, convData.nombre),
-                                            tipo: convData.tipo,
-                                            equipoid: convData.equipoid,
-                                            convocatoriaid: savedConv.id,
-                                            players: playersData
-                                        };
-                                        await db.add('asistencia', attendanceData);
-                                    } catch (attErr) {
-                                        console.error("Error auto-creating attendance in CSV import:", attErr);
-                                    }
-                                    
-                                    importedCount++;
-                                }
-                            }
-                            loadingAlert.remove();
-                            window.customAlert('Importación Exitosa', `Se han creado ${importedCount} convocatorias y actualizado ${updatedCount}.`, 'success');
-                            window.switchView('convocatorias');
-                        };
-                        reader.readAsText(file);
-                    };
+                    fileInput.onchange = (e) => window.handleConvocatoriaImport(e.target);
                     fileInput.click();
                 };
-            } else if (viewId === 'equipos') {
+            }
+
+            else if (viewId === 'equipos') {
                 secondaryAddBtn.onclick = () => {
                     const fileInput = document.createElement('input');
                     fileInput.type = 'file';
@@ -12340,6 +12245,278 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             console.error(err);
             window.customAlert('Error', 'No se pudo completar la limpieza.', 'error');
         }
+    };
+
+    window.handleConvocatoriaImport = (input) => {
+        const file = input.files[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'pdf') {
+            window.importConvocatoriaFromPDF(input);
+        } else if (ext === 'csv') {
+            window.importConvocatoriaFromCSV(input);
+        }
+    };
+
+    window.importConvocatoriaFromCSV = async (input) => {
+        const file = input.files[0];
+        if (!file) return;
+
+        const loadingAlert = document.createElement('div');
+        loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+        loadingAlert.innerHTML = `
+            <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Analizando CSV...</p>
+            </div>
+        `;
+        document.body.appendChild(loadingAlert);
+
+        try {
+            const reader = new FileReader();
+            reader.onload = async (re) => {
+                const text = re.target.result;
+                const lines = text.split('\n').filter(line => line.trim() !== '');
+                if (lines.length < 2) {
+                    loadingAlert.remove();
+                    window.customAlert('Error', 'El CSV está vacío o no tiene el formato correcto.', 'error');
+                    return;
+                }
+
+                const firstLine = lines[0];
+                const delimiter = firstLine.includes(';') ? ';' : ',';
+                const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
+                
+                const allPlayers = await db.getAll('jugadores');
+                const teams = await db.getAll('equipos');
+
+                const firstData = lines[1].split(new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.trim().replace(/^"|"$/g, ''));
+                const dataObj = {};
+                headers.forEach((h, idx) => dataObj[h] = firstData[idx]);
+
+                const nombre = (dataObj['NOMBRE'] || dataObj['TITLE'] || 'CONVOCATORIA').toUpperCase();
+                const fecha = dataObj['FECHA'] || dataObj['DATE'] || new Date().toISOString().split('T')[0];
+                const lugar = (dataObj['LUGAR'] || dataObj['PLACE'] || 'DESCONOCIDO').toUpperCase();
+                
+                const playersInPdf = [];
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const row = lines[i].split(new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.trim().replace(/^"|"$/g, ''));
+                    if (row.length < headers.length) continue;
+                    const rowData = {};
+                    headers.forEach((h, idx) => rowData[h] = row[idx]);
+                    
+                    const pName = rowData['JUGADOR'] || rowData['PLAYER'] || rowData['NOMBRE'];
+                    if (!pName) continue;
+
+                    const dbPlayer = allPlayers.find(p => (p.nombre || '').toUpperCase() === pName.toUpperCase());
+                    if (dbPlayer) {
+                        playersInPdf.push({ name: pName, found: true, id: dbPlayer.id, dbName: dbPlayer.nombre });
+                    } else {
+                        playersInPdf.push({ name: pName, found: false });
+                    }
+                }
+
+                loadingAlert.remove();
+                window.showPdfImportReviewModal({ nombre, fecha, lugar, playersInPdf, teams });
+            };
+            reader.readAsText(file);
+        } catch (err) {
+            if (document.body.contains(loadingAlert)) loadingAlert.remove();
+            window.customAlert('Error', err.message, 'error');
+        }
+    };
+
+    window.importConvocatoriaFromPDF = async (input) => {
+        const file = input.files[0];
+        if (!file) return;
+
+        // Visual Progress
+        const loadingAlert = document.createElement('div');
+        loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+        loadingAlert.innerHTML = `
+            <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-6 animate-in zoom-in duration-300 max-w-sm w-full">
+                <div class="relative">
+                    <div class="w-20 h-20 border-4 border-slate-100 rounded-full"></div>
+                    <div class="absolute inset-0 w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <i data-lucide="file-text" class="w-8 h-8 text-blue-600"></i>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <p class="font-black text-slate-800 uppercase tracking-widest text-xs">Analizando PDF</p>
+                    <p id="pdf-progress-text" class="text-slate-400 text-[10px] font-bold uppercase mt-2 tracking-tighter">Extrayendo texto y jugadores...</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(loadingAlert);
+        if (window.lucide) lucide.createIcons();
+
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            if (!window.pdfjsLib) {
+                throw new Error("Librería PDF.js no cargada");
+            }
+            if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            }
+            
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = "";
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                fullText += textContent.items.map(item => item.str).join(' ') + "\n";
+                const pText = document.getElementById('pdf-progress-text');
+                if (pText) pText.innerText = `Procesando página ${i} de ${pdf.numPages}...`;
+            }
+
+            const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+            
+            let nombre = "CONVOCATORIA";
+            let fecha = new Date().toISOString().split('T')[0];
+            let lugar = "DESCONOCIDO";
+            
+            const dateMatch = fullText.match(/(\d{2})[/-](\d{2})[/-](\d{2,4})/);
+            if (dateMatch) {
+                const [_, d, m, y] = dateMatch;
+                const year = y.length === 2 ? `20${y}` : y;
+                fecha = `${year}-${m}-${d}`;
+            }
+
+            if (lines.length > 3) lugar = lines[3].toUpperCase();
+
+            const allPlayers = await db.getAll('jugadores');
+            const teams = await db.getAll('equipos');
+            const playersInPdf = [];
+            
+            const playerLines = lines.filter(l => /^\d+\s+[A-ZÁÉÍÓÚÑ\s]+/.test(l));
+            
+            playerLines.forEach(line => {
+                const match = line.match(/^\d+\s+([A-ZÁÉÍÓÚÑ\s]{5,})/);
+                if (match) {
+                    const extractedName = match[1].trim().replace(/\s+/g, ' ');
+                    
+                    const dbPlayer = allPlayers.find(p => {
+                        const pName = (p.nombre || '').toUpperCase();
+                        return pName.includes(extractedName) || extractedName.includes(pName);
+                    });
+
+                    if (dbPlayer) {
+                        playersInPdf.push({ name: extractedName, found: true, id: dbPlayer.id, dbName: dbPlayer.nombre });
+                    } else {
+                        playersInPdf.push({ name: extractedName, found: false });
+                    }
+                }
+            });
+
+            if (document.body.contains(loadingAlert)) document.body.removeChild(loadingAlert);
+            window.showPdfImportReviewModal({ nombre, fecha, lugar, playersInPdf, teams });
+
+        } catch (err) {
+            if (document.body.contains(loadingAlert)) document.body.removeChild(loadingAlert);
+            console.error("PDF Error:", err);
+            window.customAlert('Error', 'No se pudo procesar el PDF: ' + err.message, 'error');
+        }
+    };
+
+    window.showPdfImportReviewModal = (data) => {
+        const found = data.playersInPdf.filter(p => p.found);
+        const missing = data.playersInPdf.filter(p => !p.found);
+
+        const dialogHtml = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Revisar Importación</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Detectado desde PDF</p>
+                    </div>
+                    <button onclick="window.closeCustomModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Detectada</label>
+                            <input type="date" id="import-pdf-fecha" value="${data.fecha}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar / Título</label>
+                            <input type="text" id="import-pdf-lugar" value="${data.lugar}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Asignar a Equipo</label>
+                        <select id="import-pdf-team" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            <option value="">SELECCIONA EQUIPO...</option>
+                            ${data.teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-widest">Jugadores Detectados (${data.playersInPdf.length})</h4>
+                            <div class="flex gap-2">
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-[9px] font-bold">${found.length} OK</span>
+                                <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-[9px] font-bold">${missing.length} FALTAN</span>
+                            </div>
+                        </div>
+                        
+                        <div class="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                            ${data.playersInPdf.map(p => `
+                                <div class="flex items-center justify-between p-3 ${p.found ? 'bg-white' : 'bg-red-50/50'} rounded-xl border ${p.found ? 'border-slate-100' : 'border-red-100'}">
+                                    <div class="flex flex-col">
+                                        <span class="text-xs font-bold ${p.found ? 'text-slate-700' : 'text-red-600'}">${p.name}</span>
+                                        ${p.found ? `<span class="text-[8px] text-slate-400 uppercase font-black">Vinculado a: ${p.dbName}</span>` : ''}
+                                    </div>
+                                    ${p.found ? `<i data-lucide="check-circle-2" class="w-4 h-4 text-green-500"></i>` : `<i data-lucide="alert-circle" class="w-4 h-4 text-red-400"></i>`}
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${missing.length > 0 ? `<p class="mt-4 text-[9px] text-red-500 font-bold uppercase text-center">* Los jugadores en rojo no se añadirán a la convocatoria.</p>` : ''}
+                    </div>
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                    <button onclick="window.closeCustomModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                    <button id="btn-confirm-pdf-import" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px] hover:bg-blue-700 transition-all">Confirmar Importación</button>
+                </div>
+            </div>
+        `;
+
+        window.customModal(dialogHtml);
+        if (window.lucide) lucide.createIcons();
+
+        document.getElementById('btn-confirm-pdf-import').onclick = async () => {
+            const teamId = document.getElementById('import-pdf-team').value;
+            if (!teamId) {
+                window.customAlert('Atención', 'Debes seleccionar un equipo para la convocatoria', 'warning');
+                return;
+            }
+
+            const finalFecha = document.getElementById('import-pdf-fecha').value;
+            const finalLugar = document.getElementById('import-pdf-lugar').value;
+            const playerIds = found.map(p => p.id.toString());
+
+            try {
+                const convData = {
+                    nombre: `CONVOCATORIA ${finalLugar}`,
+                    fecha: finalFecha,
+                    lugar: finalLugar,
+                    tipo: 'Sesión',
+                    equipoid: teamId,
+                    playerids: playerIds
+                };
+
+                await db.add('convocatorias', convData);
+                window.customAlert('Éxito', `Convocatoria creada con ${playerIds.length} jugadores.`, 'success');
+                window.closeCustomModal();
+                window.renderConvocatorias(document.getElementById('content-container'));
+            } catch (err) {
+                window.customAlert('Error', err.message, 'error');
+            }
+        };
     };
 
     initNotifications();
