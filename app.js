@@ -7043,23 +7043,39 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     };
 
     window.renderConvocatorias = async function(container) {
-        const allConvs = await db.getAll('convocatorias');
-        const convs = window.applyGlobalFilters(allConvs).filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
+        const { data: profiles } = await supabaseClient.from('profiles').select('*');
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
+        const isGlobal = window.currentVisibilityMode === 'global';
+
+        // Determinar si saltamos la visibilidad (si filtramos por un técnico concreto)
+        const currentCoachId = window.currentConvocatoriaCoachId || 'all';
+
+        const convs = window.applyGlobalFilters(allConvs, 'fecha', { skipVisibility: currentCoachId !== 'all' })
+            .filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
             .sort((a,b) => {
                 if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
                 return (b.hora || '').localeCompare(a.hora || '');
             });
         
+        // En "Mi Espacio" (Personal + Todas), solo lo que yo he creado
+        const myConvs = (isGlobal || currentCoachId !== 'all') ? convs : convs.filter(c => {
+            if (!currentUser) return false;
+            return c.createdBy === currentUser.id;
+        });
+
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
         const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
 
-        const filtered = convs.filter(c => {
+        const filtered = myConvs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
             
             // Filter by TYPE tab
             const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
+
+            // Filter by COACH
+            const matchesCoach = currentCoachId === 'all' || (c.createdBy && c.createdBy.toString() === currentCoachId.toString());
 
             // Filter by Team tab
             const matchesTeam = currentConvocatoriaTeamId === 'all' || 
@@ -7077,8 +7093,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
             
-            return matchesType && matchesTeam && matchesLugar && matchesSearch && matchesComunidad;
+            return matchesType && matchesTeam && matchesLugar && matchesSearch && matchesComunidad && matchesCoach;
         });
+
+        const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
         const renderConvCard = (c) => {
             const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
@@ -7201,6 +7219,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <button onclick="window.switchConvocatoriaComunidad('LA RIOJA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
                             La Rioja
                         </button>
+                    </div>
+
+                    <!-- Coach Tabs -->
+                    <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner overflow-x-auto max-w-full custom-scrollbar">
+                        <button onclick="window.switchConvocatoriaCoach('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentCoachId === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Todas
+                        </button>
+                        ${coaches.map(c => `
+                            <button onclick="window.switchConvocatoriaCoach('${c.id}')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${currentCoachId == c.id ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                                ${(c.name || c.nombre || 'Técnico').split(' ')[0]}
+                            </button>
+                        `).join('')}
                     </div>
                 </div>
 
@@ -12687,13 +12717,16 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 
                 const serializedLugar = window.serializeLugarMetadata(finalLugar, metadata);
 
+                const currentUser = (await supabaseClient.auth.getUser()).data.user;
+
                 const convData = {
                     nombre: (finalNombre || `CONVOCATORIA ${finalLugar}`).toUpperCase(),
                     fecha: finalFecha,
                     lugar: serializedLugar,
                     tipo: finalTipo,
                     equipoid: teamId ? Number(teamId) : null,
-                    playerids: playerIds
+                    playerids: playerIds,
+                    createdBy: currentUser?.id
                 };
 
                 await db.add('convocatorias', convData);
