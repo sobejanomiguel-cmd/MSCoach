@@ -10641,7 +10641,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             
             let matchesType = false;
             if (target === 'sesion') {
-                matchesType = item === 'sesion' || item === 'convocatoria' || item === '' || (item !== 'ciclo' && item !== 'torneo');
+                matchesType = item === 'sesion' || item === 'convocatoria' || item === '' || (!['ciclo', 'torneo'].includes(item));
+            } else if (target === 'ciclo') {
+                matchesType = item === 'ciclo';
+            } else if (target === 'torneo') {
+                matchesType = item === 'torneo';
             } else {
                 matchesType = item === target;
             }
@@ -12465,7 +12469,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
                 
                 const allPlayers = await db.getAll('jugadores');
-                const teams = await db.getAll('equipos');
+                const teams = window.getSortedTeams(await db.getAll('equipos'));
 
                 const firstData = lines[1].split(new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.trim().replace(/^"|"$/g, ''));
                 const dataObj = {};
@@ -12564,7 +12568,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             if (lines.length > 3) lugar = lines[3].toUpperCase();
 
             const allPlayers = await db.getAll('jugadores');
-            const teams = await db.getAll('equipos');
+            const teams = window.getSortedTeams(await db.getAll('equipos'));
             const playersInPdf = [];
             
             const playerLines = lines.filter(l => /^\d+\s+[A-ZÁÉÍÓÚÑ\s]+/.test(l));
@@ -12668,7 +12672,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Asignar a Equipo</label>
                         <select id="import-pdf-team" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
                             <option value="">SELECCIONA EQUIPO...</option>
-                            ${data.teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                            ${data.teams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
                         </select>
                     </div>
 
