@@ -1330,7 +1330,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     sessionTeamCounts[name] = (sessionTeamCounts[name] || 0) + 1;
                 }
             });
-            const sortedSessionTeams = Object.entries(sessionTeamCounts).sort((a,b) => b[1] - a[1]).slice(0, 6);
+            
+            // Order sessions teams like attendance (using teamsToRender order)
+            const sortedSessionTeams = teamsToRender
+                .filter(t => {
+                    const name = String(t.nombre || '').split(' ||| ')[0].toUpperCase();
+                    return sessionTeamCounts[name] > 0;
+                })
+                .map(t => {
+                    const name = String(t.nombre || '').split(' ||| ')[0].toUpperCase();
+                    return [name, sessionTeamCounts[name]];
+                })
+                .slice(0, 6);
 
             // Team counts by gender
             const teamsFemaleCount = teams.filter(t => {
@@ -1355,63 +1366,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                 .map(t => [String(t.nombre).split(' ||| ')[0].toUpperCase(), torneoTeamCounts[String(t.id)]]);
     
             container.innerHTML = `
-                <!-- Row 1: Heavy Stats -->
-                <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-                    <!-- Tareas Widget -->
-                    <div class="lg:col-span-3 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
-                        <div class="flex items-center justify-between mb-8">
-                            <div class="flex items-center gap-5">
-                                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform"><i data-lucide="clipboard-list" class="w-8 h-8"></i></div>
-                                <div>
-                                    <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Biblioteca de Ejercicios</h3>
-                                    <p class="text-4xl font-black text-slate-800">${tasks.length} <span class="text-sm font-bold text-slate-300 ml-1">TOTALES</span></p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4 border-t border-slate-50 pt-8">
-                            ${sortedTaskTypes.map(([type, count]) => `
-                                <div class="flex items-center justify-between group/item p-2 hover:bg-slate-50 rounded-xl transition-colors">
-                                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-tight truncate mr-4">${type}</span>
-                                    <span class="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">${count}</span>
-                                </div>
-                            `).join('') || '<p class="text-[10px] text-slate-300 italic">Sin datos</p>'}
-                        </div>
-                    </div>
-
+                <!-- Line 1: Sesiones (Full Width) -->
+                <div class="grid grid-cols-1 gap-6 mb-8">
                     <!-- Sesiones Widget -->
-                    <div class="lg:col-span-2 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
                         <div class="flex items-center justify-between mb-8">
                             <div class="flex items-center gap-5">
-                                <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:-rotate-6 transition-transform"><i data-lucide="calendar" class="w-8 h-8"></i></div>
+                                <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:-rotate-6 transition-transform shadow-sm"><i data-lucide="calendar" class="w-8 h-8"></i></div>
                                 <div>
                                     <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Sesiones Planificadas</h3>
-                                    <p class="text-4xl font-black text-slate-800">${sessions.length} <span class="text-sm font-bold text-slate-300 ml-1">SESIONES</span></p>
+                                    <p class="text-4xl font-black text-slate-800 font-outfit">${sessions.length} <span class="text-sm font-bold text-slate-300 ml-1">SESIONES</span></p>
                                 </div>
                             </div>
+                            <button onclick="window.switchView('sesiones')" class="px-8 py-4 bg-indigo-600 text-white hover:bg-indigo-700 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-indigo-200 hidden md:block">Gestionar Sesiones</button>
                         </div>
-                        <div class="space-y-3 border-t border-slate-50 pt-8">
-                            ${sortedSessionTeams.map(([team, count]) => `
-                                <div class="flex items-center justify-between group/item p-2 hover:bg-slate-50 rounded-xl transition-colors">
-                                    <span class="text-[11px] font-black text-slate-500 uppercase tracking-tight truncate mr-4">${team}</span>
-                                    <span class="text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">${count}</span>
-                                </div>
-                            `).join('') || '<p class="text-[10px] text-slate-300 italic">Sin datos</p>'}
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 border-t border-slate-50 pt-8">
+                            ${(() => {
+                                const palette = [
+                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
+                                    { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
+                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                                    { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
+                                ];
+                                return sortedSessionTeams.map(([team, count], idx) => {
+                                    const color = palette[idx % palette.length];
+                                    return `
+                                        <div class="${color.bg} p-6 rounded-[2rem] border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
+                                            <p class="text-[9px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full transition-colors">${team}</p>
+                                            <p class="text-3xl font-black ${color.text} font-outfit transition-colors">${count}</p>
+                                        </div>
+                                    `;
+                                }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
+                            })()}
                         </div>
+                        <button onclick="window.switchView('sesiones')" class="mt-8 w-full py-5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-indigo-200 md:hidden">Gestionar Sesiones</button>
                     </div>
                 </div>
 
-                <!-- Row 2: Secondary Stats -->
+                <!-- Line 2: Competición + Estructura + Jugadores -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <!-- Torneos Widget -->
-                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                    <!-- Torneos Widget (Competición) -->
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group flex flex-col">
                         <div class="flex items-center gap-5 mb-8">
-                            <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center"><i data-lucide="trophy" class="w-7 h-7"></i></div>
+                            <div class="w-14 h-14 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shadow-sm"><i data-lucide="trophy" class="w-7 h-7"></i></div>
                             <div>
                                 <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Competición</h3>
                                 <p class="text-3xl font-black text-slate-800">${torneos.length}</p>
                             </div>
                         </div>
-                        <div class="flex gap-4 border-t border-slate-50 pt-8">
+                        <div class="flex gap-4 border-t border-slate-50 pt-8 mb-8">
                             <div class="flex-1 bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100">
                                 <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 text-center">Jugados</p>
                                 <p class="text-2xl font-black text-emerald-600 text-center">${torneosJugados}</p>
@@ -1421,10 +1426,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-2xl font-black text-amber-600 text-center">${torneosPendientes}</p>
                             </div>
                         </div>
+                        <button onclick="window.switchView('convocatorias')" class="mt-auto w-full py-4 bg-amber-500 text-white hover:bg-amber-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-amber-200">Gestionar Torneos</button>
                     </div>
 
-                    <!-- Equipos Widget -->
-                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                    <!-- Equipos Widget (Estructura) -->
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group flex flex-col">
                         <div class="flex items-center gap-5 mb-8">
                             <div class="w-14 h-14 bg-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200"><i data-lucide="users" class="w-7 h-7"></i></div>
                             <div>
@@ -1432,7 +1438,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-3xl font-black text-slate-800">${teams.length}</p>
                             </div>
                         </div>
-                        <div class="flex gap-4 border-t border-slate-50 pt-8">
+                        <div class="flex gap-4 border-t border-slate-50 pt-8 mb-8">
                             <div class="flex-1 bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
                                 <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 text-center">Masculinos</p>
                                 <p class="text-2xl font-black text-blue-600 text-center">${teamsMaleCount}</p>
@@ -1442,10 +1448,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-2xl font-black text-rose-600 text-center">${teamsFemaleCount}</p>
                             </div>
                         </div>
+                        <button onclick="window.switchView('equipos')" class="mt-auto w-full py-4 bg-blue-600 text-white hover:bg-blue-700 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-blue-200">Gestionar Equipos</button>
                     </div>
 
                     <!-- Jugadores Widget -->
-                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                    <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group flex flex-col">
                         <div class="flex items-center gap-5 mb-8">
                             <div class="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center"><i data-lucide="user-check" class="w-7 h-7"></i></div>
                             <div>
@@ -1453,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-3xl font-black text-slate-800">${players.length}</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 border-t border-slate-50 pt-8">
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 border-t border-slate-50 pt-8 mb-8">
                             <div class="bg-blue-50/50 p-3 rounded-xl border border-blue-100 text-center">
                                 <p class="text-[8px] font-black text-blue-600 uppercase mb-1">Masc.</p>
                                 <p class="text-xl font-black text-blue-600">${totalMale}</p>
@@ -1469,21 +1476,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             ` : ''}
                         </div>
+                        <button onclick="window.switchView('jugadores')" class="mt-auto w-full py-4 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-emerald-200">Gestionar Jugadores</button>
                     </div>
                 </div>
 
-                <!-- Row 3: Detail Breakdown -->
-                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-                    <!-- Torneos por Equipo Widget -->
-                    <div class="lg:col-span-4 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
+                <!-- Line 3: Biblioteca de ejercicios + Desglose por equipos -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+                    <!-- Tareas Widget -->
+                    <div class="lg:col-span-7 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group flex flex-col">
+                        <div class="flex items-center justify-between mb-8">
+                            <div class="flex items-center gap-5">
+                                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform shadow-sm"><i data-lucide="clipboard-list" class="w-8 h-8"></i></div>
+                                <div>
+                                    <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Biblioteca de Ejercicios</h3>
+                                    <p class="text-4xl font-black text-slate-800 font-outfit">${tasks.length} <span class="text-sm font-bold text-slate-300 ml-1">TOTALES</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4 border-t border-slate-50 pt-8 mb-8">
+                            ${(() => {
+                                const palette = [
+                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                                    { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
+                                    { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
+                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' }
+                                ];
+                                return sortedTaskTypes.map(([type, count], idx) => {
+                                    const color = palette[idx % palette.length];
+                                    return `
+                                        <div class="${color.bg} p-6 rounded-[2rem] border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
+                                            <p class="text-[9px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full transition-colors">${type}</p>
+                                            <p class="text-3xl font-black ${color.text} font-outfit transition-colors">${count}</p>
+                                        </div>
+                                    `;
+                                }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
+                            })()}
+                        </div>
+                        <button onclick="window.switchView('tareas')" class="mt-auto w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Biblioteca</button>
+                    </div>
+
+                    <!-- Torneos por Equipo Widget (Desglose) -->
+                    <div class="lg:col-span-5 stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group flex flex-col">
                         <div class="flex items-center gap-5 mb-8">
-                            <div class="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform"><i data-lucide="medal" class="w-8 h-8"></i></div>
+                            <div class="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center group-hover:rotate-6 transition-transform shadow-sm"><i data-lucide="medal" class="w-8 h-8"></i></div>
                             <div>
                                 <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Participación en Torneos</h3>
                                 <p class="text-2xl font-black text-slate-800 uppercase">Desglose por Equipo</p>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 border-t border-slate-50 pt-8">
+                        <div class="grid grid-cols-2 gap-4 border-t border-slate-50 pt-8 mb-8">
                             ${(() => {
                                 const palette = [
                                     { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
@@ -1506,12 +1549,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 }).join('') || '<p class="text-[10px] text-slate-300 italic text-center col-span-full py-10">Sin torneos registrados</p>';
                             })()}
                         </div>
+                        <button onclick="window.switchView('convocatorias')" class="mt-auto w-full py-5 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-amber-900/10">Gestionar Torneos</button>
                     </div>
                 </div>
                 
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
                     <!-- Attendance Widget -->
-                    <div class="lg:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-md">
+                    <div class="lg:col-span-8 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col transition-all hover:shadow-md">
                         <div class="flex items-center justify-between mb-10">
                             <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4 uppercase tracking-tight">
                                 <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><i data-lucide="trending-up" class="w-7 h-7"></i></div>
@@ -1519,7 +1563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </h3>
                             <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">Media Global: ${teamsToRender.length > 0 ? Math.round(teamsToRender.reduce((acc, t) => acc + (t.computedAsistencia || 0), 0) / teamsToRender.length) : 0}%</span>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                             ${teamsToRender.map(e => `
                                 <div class="bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100/50 hover:bg-white hover:shadow-xl hover:border-blue-100 transition-all group/item">
                                     <div class="flex justify-between items-center mb-6">
@@ -1532,39 +1576,37 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             `).join('')}
                         </div>
+                        <button onclick="window.switchView('asistencia')" class="mt-auto w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Asistencia</button>
                     </div>
 
                     <!-- Clubs Widget -->
                     <div class="lg:col-span-4 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col transition-all hover:shadow-md">
                         <div class="flex items-center justify-between mb-10">
                             <h3 class="text-2xl font-black text-slate-800 flex items-center gap-4 uppercase tracking-tight">
-                                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center"><i data-lucide="building-2" class="w-7 h-7"></i></div>
+                                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm"><i data-lucide="building-2" class="w-7 h-7"></i></div>
                                 Clubes
                             </h3>
                             <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">${clubes.length}</span>
                         </div>
-                        <div class="flex-1 space-y-3 overflow-y-auto max-h-[450px] pr-2 custom-scrollbar">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-50 pt-8 mb-8">
                             ${clubes.length === 0 ? `
-                                <div class="py-20 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
+                                <div class="col-span-full py-20 text-center bg-slate-50 rounded-[2rem] border border-dashed border-slate-200">
                                     <i data-lucide="building-2" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
                                     <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin clubes registrados</p>
                                 </div>
                             ` : clubes.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => `
-                                <div onclick="window.switchView('clubes')" class="group flex items-center gap-5 p-5 bg-slate-50/50 rounded-[2rem] border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl transition-all cursor-pointer">
-                                    <div class="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm overflow-hidden p-2 group-hover:scale-105 transition-transform duration-500">
-                                        ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-6 h-6 text-indigo-400"></i>`}
+                                <div onclick="window.switchView('clubes')" class="group flex flex-col items-center text-center p-6 bg-slate-50/50 rounded-[2.5rem] border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl transition-all cursor-pointer">
+                                    <div class="w-20 h-20 bg-white rounded-3xl flex items-center justify-center border border-slate-100 shadow-sm overflow-hidden p-3 mb-4 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
+                                        ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-8 h-8 text-indigo-400"></i>`}
                                     </div>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-black text-slate-800 uppercase tracking-tight truncate">${club.nombre}</p>
-                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate mt-0.5">${club.lugar || 'Ubicación no def.'}</p>
-                                    </div>
-                                    <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-slate-100">
-                                        <i data-lucide="chevron-right" class="w-5 h-5 text-indigo-600"></i>
+                                    <div class="w-full">
+                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight truncate mb-1">${club.nombre}</p>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate opacity-60">${club.lugar || 'Ubicación'}</p>
                                     </div>
                                 </div>
                             `).join('')}
                         </div>
-                        <button onclick="window.switchView('clubes')" class="mt-8 w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Clubes</button>
+                        <button onclick="window.switchView('clubes')" class="mt-auto w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Clubes</button>
                     </div>
                 </div>
             `;
@@ -2418,7 +2460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-[10px] text-white">#</div>
                                         <div>
                                             <p class="text-xs font-black text-slate-800 uppercase">${p.nombre}</p>
-                                            <p class="text-[9px] font-bold text-slate-400 uppercase">${p.posicion || '---'}</p>
+                                            <p class="text-[9px] font-bold text-slate-400 uppercase">${window.formatPosition(p.posicion)}</p>
                                         </div>
                                     </div>
                                 `).join('') || `<p class="text-[10px] text-slate-400 italic">No hay jugadores asignados.</p>`}
@@ -4111,7 +4153,7 @@ await db.update('sesiones', { ...data, id: session.id });
                                         </p>
                                     </div>
                                 </div>
-                                <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || '--'}</span>
+                                <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">${window.parsePosition(p.posicion)[0] || '--'}</span>
                             </label>
                         `).join('')}
                     </div>
@@ -4460,7 +4502,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <input type="checkbox" name="playerids" value="${p.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                     <div class="flex-1 min-w-0">
                                         <p class="text-[10px] font-bold text-slate-700 truncate">${p.nombre}</p>
-                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.posicion || '--'}</p>
+                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${window.formatPosition(p.posicion)}</p>
                                     </div>
                                 </label>
                             `).join('')}
@@ -4949,7 +4991,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             <div class="mt-2 pt-2 border-t border-slate-50 flex items-center gap-2">
                                                 <label class="text-[8px] font-black text-slate-300 uppercase shrink-0">POS:</label>
                                                 <select class="flex-1 p-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-600 outline-none mgmt-player-pos transition-all focus:bg-white focus:border-blue-200">
-                                                    <option value="">${p.posicion || '--'}</option>
+                                                    <option value="">${window.formatPosition(p.posicion)}</option>
                                                     ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                                                 </select>
                                             </div>
@@ -5197,8 +5239,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                         <span class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
                                                     </div>
                                                     <select onchange="window.updateConvPlayerPosition(${id}, '${p.id}', this.value)" class="bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border border-blue-100 outline-none hover:bg-blue-100 transition-all cursor-pointer">
-                                                        <option value="">${Array.isArray(p.posicion) ? p.posicion[0] : (p.posicion || '--')}</option>
-                                                        ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${p.posicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
+                                                        <option value="">${window.parsePosition(p.posicion)[0] || '--'}</option>
+                                                        ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${window.parsePosition(p.posicion).includes(pos) ? 'selected' : ''}>${pos}</option>`).join('')}
                                                     </select>
                                                 </div>
                                             </div>
@@ -5288,7 +5330,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <div class="mt-2 pt-2 border-t border-slate-50 flex items-center gap-2">
                             <label class="text-[8px] font-black text-slate-300 uppercase shrink-0">POS:</label>
                             <select class="flex-1 p-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-600 outline-none mgmt-player-pos transition-all focus:bg-white focus:border-blue-200">
-                                <option value="">${p.posicion || '--'}</option>
+                                <option value="">${window.formatPosition(p.posicion)}</option>
                                 ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                             </select>
                         </div>
@@ -7089,7 +7131,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
                                                                     ${(() => {
-                                                                        const currentPos = evalData.pos || (p.posicion ? p.posicion.split(',')[0].trim() : '');
+                                                                        const currentPos = evalData.pos || window.parsePosition(p.posicion)[0] || '';
                                                                         return PLAYER_POSITIONS.map(pos => `
                                                                             <option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>
                                                                         `).join('');
@@ -7326,7 +7368,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <div class="flex-1 min-w-0">
                                     <p class="text-[10px] font-bold text-slate-700 truncate group-hover/p:text-blue-600 transition-colors uppercase">${p.nombre}</p>
                                     <div class="flex items-center gap-2">
-                                        <p class="text-[8px] text-slate-400 font-bold uppercase">${p.posicion || '--'}</p>
+                                        <p class="text-[8px] text-slate-400 font-bold uppercase">${window.formatPosition(p.posicion)}</p>
                                         <span class="text-[8px] text-blue-500 font-black uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
                                     </div>
                                 </div>
@@ -8165,16 +8207,26 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (Array.isArray(pos)) return pos;
         if (typeof pos !== 'string') return [pos];
         
-        // Handle JSON strings like '["ACD"]'
-        if (pos.startsWith('[') && pos.endsWith(']')) {
+        let cleanPos = pos.trim();
+        // Handle strings that look like arrays: ["ACD"] or ['ACD'] or [ACD]
+        if (cleanPos.startsWith('[') && cleanPos.endsWith(']')) {
             try {
-                const parsed = JSON.parse(pos);
+                const parsed = JSON.parse(cleanPos.replace(/'/g, '"')); // Try fixing single quotes
                 if (Array.isArray(parsed)) return parsed;
-            } catch (e) {}
+            } catch (e) {
+                // Manual fallback for very malformed strings
+                cleanPos = cleanPos.substring(1, cleanPos.length - 1).replace(/['"]/g, '');
+            }
         }
         
-        // Handle comma-separated strings like "MBZ, DBZ"
-        return pos.split(/[,/]/).map(s => s.trim()).filter(Boolean);
+        // Handle comma or slash separated strings
+        return cleanPos.split(/[,/]/).map(s => s.trim()).filter(Boolean);
+    };
+
+    window.formatPosition = (pos) => {
+        const parsed = window.parsePosition(pos);
+        if (parsed.length === 0) return '--';
+        return parsed.join(', ');
     };
 
     window.bulkUpdateLateralidad = async (e) => {
@@ -8665,6 +8717,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const uniqueTorneoNames = [...new Set(categorized.torneos.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
 
+        // --- CALCULATE PARTICIPATION PERCENTAGES ---
+        const teamId = player.equipoid?.toString();
+        const teamStats = {
+            totalTorneos: convocatorias.filter(c => c.equipoid?.toString() === teamId && (c.tipo === 'Torneo' || c.tipo === 'Partido')).length,
+            totalSesiones: convocatorias.filter(c => c.equipoid?.toString() === teamId && (c.tipo === 'Sesión' || c.tipo === 'Zubieta')).length,
+            totalCiclos: convocatorias.filter(c => c.equipoid?.toString() === teamId && c.tipo === 'Ciclo').length
+        };
+        
+        const playerStats = {
+            torneoPercent: teamStats.totalTorneos > 0 ? Math.round((categorized.torneos.length / teamStats.totalTorneos) * 100) : 0,
+            sesionPercent: teamStats.totalSesiones > 0 ? Math.round((categorized.sesiones.length / teamStats.totalSesiones) * 100) : 0,
+            cicloPercent: teamStats.totalCiclos > 0 ? Math.round((categorized.ciclos.length / teamStats.totalCiclos) * 100) : 0
+        };
+
         modalContainer.innerHTML = `
             <div class="relative overflow-hidden">
                 <div class="h-32 bg-gradient-to-r from-blue-600 to-indigo-700 relative">
@@ -8697,6 +8763,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
+                                    <button onclick="window.generatePlayerPDF('${playerId}')" class="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 flex items-center gap-2">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                        Exportar PDF
+                                    </button>
                                     <button onclick="window.editPlayer('${playerId}')" class="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
                                         <i data-lucide="edit-3" class="w-4 h-4"></i>
                                         Editar Perfil
@@ -8744,20 +8814,25 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual.</p>
                         </div>
 
-                        ${(() => {
-                            return `
                                 <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 flex flex-col justify-between">
-                                    <div>
-                                        <p class="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-3">Competiciones</p>
+                                    <div class="mb-6">
+                                        <div class="flex justify-between items-center mb-3">
+                                            <p class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Competiciones</p>
+                                            <span class="text-[10px] font-black text-indigo-600">${playerStats.torneoPercent}%</span>
+                                        </div>
                                         <div class="flex items-center gap-4 mb-4">
                                             <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                                                 <i data-lucide="trophy" class="w-6 h-6 text-indigo-600"></i>
                                             </div>
                                             <div>
-                                                <span class="text-3xl font-black text-slate-800">${uniqueTorneoNames.length}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Torneos / Partidos</p>
+                                                <span class="text-3xl font-black text-slate-800">${categorized.torneos.length}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Partidos Jugados</p>
                                             </div>
                                         </div>
+                                        <div class="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${playerStats.torneoPercent}%"></div>
+                                        </div>
+                                        <p class="text-[8px] font-black text-indigo-500 uppercase tracking-widest text-right mt-2 mb-6">${playerStats.torneoPercent}% Participación</p>
                                         <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-2 custom-scrollbar">
                                             ${uniqueTorneoNames.map(t => `
                                                 <span class="px-2 py-1 bg-white/80 border border-indigo-100 rounded-lg text-[8px] font-black text-indigo-600 uppercase truncate max-w-[120px] shadow-sm">${t}</span>
@@ -8766,31 +8841,17 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </div>
                                     <p class="text-[9px] font-bold text-indigo-400/70 mt-4 leading-relaxed uppercase italic">Participación en eventos competitivos.</p>
                                 </div>
-                            `;
-                        })()}
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                         ${(() => {
-                            const attendance = (window.allAttendanceData || []).filter(a => a.players && a.players[playerId]);
-                            const convs = window.allConvocatoriasData || [];
-                            
-                            const sesionesAttended = attendance.filter(a => {
-                                if (!a.convocatoriaid) return true;
-                                const c = convs.find(cv => cv.id == a.convocatoriaid);
-                                return c?.tipo === 'Sesión' || c?.tipo === 'Zubieta';
-                            }).length;
-
-                            const ciclosAttended = attendance.filter(a => {
-                                if (!a.convocatoriaid) return false;
-                                const c = convs.find(cv => cv.id == a.convocatoriaid);
-                                return c?.tipo === 'Ciclo';
-                            }).length;
-
                             return `
                                 <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/50 flex flex-col justify-between">
                                     <div>
-                                        <p class="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-3">Entrenamientos</p>
+                                        <div class="flex justify-between items-center mb-3">
+                                            <p class="text-[9px] font-black text-amber-500 uppercase tracking-widest">Entrenamientos</p>
+                                            <span class="text-[10px] font-black text-amber-600">${playerStats.sesionPercent}%</span>
+                                        </div>
                                         <div class="flex items-center gap-4">
                                             <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                                                 <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i>
@@ -8800,24 +8861,35 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <p class="text-[8px] font-bold text-slate-400 uppercase">Sesiones Totales</p>
                                             </div>
                                         </div>
+                                        <div class="w-full h-2 bg-amber-100 rounded-full overflow-hidden mt-6">
+                                            <div class="h-full bg-amber-500 rounded-full transition-all duration-1000" style="width: ${playerStats.sesionPercent}%"></div>
+                                        </div>
+                                        <p class="text-[8px] font-black text-amber-500 uppercase tracking-widest text-right mt-2">${playerStats.sesionPercent}% Asistencia</p>
                                     </div>
-                                    <p class="text-[9px] font-bold text-amber-500/60 mt-4 leading-relaxed uppercase italic">Sesiones ordinarias y específicas.</p>
+                                    <p class="text-[9px] font-bold text-amber-500/70 mt-4 leading-relaxed uppercase italic">Asistencia a entrenamientos regulares.</p>
                                 </div>
 
-                                <div class="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/50 flex flex-col justify-between">
+                                <div class="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100/50 flex flex-col justify-between">
                                     <div>
-                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-3">Ciclos de Trabajo</p>
+                                        <div class="flex justify-between items-center mb-3">
+                                            <p class="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Ciclos de Trabajo</p>
+                                            <span class="text-[10px] font-black text-emerald-600">${playerStats.cicloPercent}%</span>
+                                        </div>
                                         <div class="flex items-center gap-4">
                                             <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                <i data-lucide="refresh-ccw" class="w-6 h-6 text-blue-500"></i>
+                                                <i data-lucide="layers" class="w-6 h-6 text-emerald-500"></i>
                                             </div>
                                             <div>
                                                 <span class="text-3xl font-black text-slate-800">${categorized.ciclos.length}</span>
                                                 <p class="text-[8px] font-bold text-slate-400 uppercase">Ciclos Completados</p>
                                             </div>
                                         </div>
+                                        <div class="w-full h-2 bg-emerald-100 rounded-full overflow-hidden mt-6">
+                                            <div class="h-full bg-emerald-500 rounded-full transition-all duration-1000" style="width: ${playerStats.cicloPercent}%"></div>
+                                        </div>
+                                        <p class="text-[8px] font-black text-emerald-500 uppercase tracking-widest text-right mt-2">${playerStats.cicloPercent}% Cumplimiento</p>
                                     </div>
-                                    <p class="text-[9px] font-bold text-blue-500/60 mt-4 leading-relaxed uppercase italic">Ciclos de tecnificación y seguimiento.</p>
+                                    <p class="text-[9px] font-bold text-emerald-500/70 mt-4 leading-relaxed uppercase italic">Participación en periodos de formación.</p>
                                 </div>
 
                                 <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100/50 flex flex-col justify-between">
@@ -8828,6 +8900,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             const ratings = allEvents.map(t => {
                                                 return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
                                             }).filter(r => r.rating && r.rating !== '--');
+                                            
+                                            const avgRating = ratings.length > 0 ? (ratings.reduce((acc, r) => acc + parseFloat(r.rating), 0) / ratings.length).toFixed(1) : null;
+                                            const ratingPercent = avgRating ? Math.round((avgRating / 10) * 100) : 0;
 
                                             if (ratings.length === 0) return `
                                                 <div class="flex items-center gap-4 mb-4">
@@ -8842,18 +8917,24 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <div class="py-6 text-center bg-white/30 rounded-xl border border-dashed border-rose-100"><p class="text-[8px] text-slate-300 italic uppercase">Sin puntuaciones</p></div>
                                             `;
 
-                                            const average = (ratings.reduce((acc, curr) => acc + parseFloat(curr.rating), 0) / ratings.length).toFixed(1);
-
                                             return `
-                                                <div class="flex items-center gap-4 mb-6">
+                                                <div class="flex justify-between items-center mb-3">
+                                                    <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
+                                                    <span class="text-[10px] font-black text-rose-600">${ratingPercent}%</span>
+                                                </div>
+                                                <div class="flex items-center gap-4 mb-4">
                                                     <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                                                         <i data-lucide="award" class="w-6 h-6 text-rose-600"></i>
                                                     </div>
                                                     <div>
-                                                        <span class="text-3xl font-black text-slate-800">${average}</span>
-                                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Media en ${ratings.length} Torneos</p>
+                                                        <span class="text-3xl font-black text-slate-800">${avgRating}</span>
+                                                        <p class="text-[8px] font-bold text-slate-400 uppercase">Nota Media</p>
                                                     </div>
                                                 </div>
+                                                <div class="w-full h-2 bg-rose-100 rounded-full overflow-hidden mt-6">
+                                                    <div class="h-full bg-rose-500 rounded-full transition-all duration-1000" style="width: ${ratingPercent}%"></div>
+                                                </div>
+                                                <p class="text-[8px] font-black text-rose-500 uppercase tracking-widest text-right mt-2 mb-6">${ratingPercent}% Rendimiento</p>
                                                 <div class="space-y-3 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
                                                     ${ratings.map(r => `
                                                         <div class="flex justify-between items-center py-2 border-b border-rose-100/30">
@@ -9629,7 +9710,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     </div>
                                                     <div class="flex-1 min-w-0">
                                                         <p class="text-[10px] font-bold text-slate-700 truncate group-hover:text-blue-600 transition-colors">${p.nombre}</p>
-                                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${Array.isArray(p.posicion) ? p.posicion.join(', ') : (p.posicion || '--')}</p>
+                                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${window.formatPosition(p.posicion)}</p>
                                                     </div>
                                                     <i data-lucide="arrow-right" class="w-3 h-3 text-slate-300 group-hover:text-blue-400 group-hover:translate-x-1 transition-all"></i>
                                                 </div>
@@ -10092,7 +10173,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <td class="py-4 px-2">
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                ${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ'}
+                                ${window.parsePosition(p.posicion)[0] || 'PJ'}
                             </div>
                             <div>
                                 <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
@@ -10460,7 +10541,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <td class="py-4">
                                             <div class="flex items-center gap-3">
                                                 <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                                    ${(Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ'}
+                                                    ${window.parsePosition(p.posicion)[0] || 'PJ'}
                                                 </div>
                                                 <span class="text-xs font-black text-slate-700 uppercase">${p.nombre} ${p.apellidos || ''}</span>
                                             </div>
@@ -11182,7 +11263,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             };
             return [
                 (p.nombre + ' ' + (p.apellidos || '')).toUpperCase(),
-                ((Array.isArray(p.posicion) ? p.posicion[0] : p.posicion) || 'PJ').toUpperCase(),
+                (window.parsePosition(p.posicion)[0] || 'PJ').toUpperCase(),
                 (p.equipoConvenido || 'Sin Club').toUpperCase(),
                 statusLabelMap[statusRaw] || statusRaw
             ];
@@ -11254,6 +11335,194 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         window.renderAsistencia(document.getElementById('content-container'));
     };
 
-    initNotifications();
+    window.generatePlayerPDF = async (playerId) => {
+        const player = await db.get('jugadores', playerId);
+        if (!player) return;
 
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            return window.customAlert('Error', 'Librería PDF no disponible.', 'error');
+        }
+
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => String(t.id) === String(player.equipoid));
+        
+        const attendance = await db.getAll('asistencia');
+        const playerAttendance = attendance.filter(a => a.players && a.players[playerId]);
+        const attendanceSummary = { asiste: 0, falta: 0, lesion: 0, enfermo: 0, total: playerAttendance.length };
+        playerAttendance.forEach(a => {
+            const s = a.players[playerId];
+            const statusRaw = (typeof s === 'object' ? s.status : s) || 'N/A';
+            const status = String(statusRaw).toLowerCase();
+            if (status === 'asiste' || status === 'presente') attendanceSummary.asiste++;
+            else if (status === 'falta' || status === 'no_asiste') attendanceSummary.falta++;
+            else if (status === 'lesion' || status === 'lesionado') attendanceSummary.lesion++;
+            else if (status === 'enfermo') attendanceSummary.enfermo++;
+        });
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Professional Colors
+        const primaryColor = [37, 99, 235]; // Blue 600
+        const textColor = [30, 41, 59]; // Slate 800
+
+        // Header Background
+        doc.setFillColor(...primaryColor);
+        doc.rect(0, 0, 210, 60, 'F');
+
+        // Helper for images
+        const loadImage = (url) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'Anonymous';
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+                img.src = url;
+            });
+        };
+
+        // Photo logic: draw to canvas to get a reliable data URL
+        const photoUrl = player.foto || 'Foto Jugador General.png';
+        const img = await loadImage(photoUrl);
+        if (img) {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                
+                doc.setFillColor(255, 255, 255);
+                doc.roundedRect(15, 12, 40, 40, 4, 4, 'F');
+                doc.addImage(imgData, 'JPEG', 17, 14, 36, 36);
+            } catch (e) {
+                console.warn("PDF Photo Error:", e);
+            }
+        }
+
+        // Name & Team in Header
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.text(player.nombre.toUpperCase(), 65, 32);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        const teamName = team ? team.nombre.split(' ||| ')[0] : 'JUGADOR LIBRE';
+        doc.text(teamName.toUpperCase(), 65, 39);
+        if (player.equipoConvenido) {
+            doc.text(`CLUB ASOCIADO: ${player.equipoConvenido.toUpperCase()}`, 65, 44);
+        }
+
+        // Info Sections
+        let yPos = 75;
+
+        // --- SECTION: PERSONAL INFO ---
+        doc.setTextColor(...primaryColor);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("INFORMACIÓN PERSONAL Y TÉCNICA", 15, yPos);
+        yPos += 3;
+        doc.setDrawColor(...primaryColor);
+        doc.setLineWidth(0.5);
+        doc.line(15, yPos, 85, yPos);
+        yPos += 7;
+
+        const personalInfo = [
+            ["AÑO DE NACIMIENTO", String(player.anionacimiento || '----').toUpperCase()],
+            ["SEXO", String(player.sexo || 'MASCULINO').toUpperCase()],
+            ["LATERALIDAD", String(player.lateralidad || player.pie || 'DIESTRO').toUpperCase()],
+            ["POSICIÓN", window.formatPosition(player.posicion).toUpperCase()],
+            ["NIVEL TÉCNICO", player.nivel || 3]
+        ];
+
+        doc.autoTable({
+            startY: yPos,
+            body: personalInfo,
+            theme: 'plain',
+            styles: { fontSize: 9, cellPadding: 3 },
+            columnStyles: {
+                0: { fontStyle: 'bold', textColor: [100, 116, 139], cellWidth: 50 },
+                1: { textColor: textColor, fontStyle: 'bold' }
+            },
+            margin: { left: 15 }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+
+        // --- SECTION: ATTENDANCE STATS ---
+        doc.setTextColor(...primaryColor);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("ESTADÍSTICAS DE ASISTENCIA", 15, yPos);
+        yPos += 3;
+        doc.line(15, yPos, 75, yPos);
+        yPos += 7;
+
+        const assistRate = attendanceSummary.total > 0 ? Math.round((attendanceSummary.asiste / attendanceSummary.total) * 100) : 0;
+        
+        doc.autoTable({
+            startY: yPos,
+            head: [['TOTAL SESIONES', 'ASISTENCIAS', 'FALTAS', 'LESIONES', '% ASISTENCIA']],
+            body: [[
+                attendanceSummary.total,
+                attendanceSummary.asiste,
+                attendanceSummary.falta,
+                attendanceSummary.lesion,
+                `${assistRate}%`
+            ]],
+            headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+            styles: { halign: 'center', fontSize: 9, cellPadding: 4 },
+            margin: { left: 15 }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 20;
+
+        // --- SECTION: COMPETITIONS ---
+        const convocatorias = await db.getAll('convocatorias');
+        const playerConvs = convocatorias.filter(c => (c.playerids || []).map(String).includes(String(playerId)));
+        const torneos = playerConvs.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO' || (c.tipo || '').toUpperCase() === 'PARTIDO');
+
+        if (torneos.length > 0) {
+            doc.setTextColor(...primaryColor);
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            doc.text("HISTORIAL DE COMPETICIÓN", 15, yPos);
+            yPos += 3;
+            doc.line(15, yPos, 70, yPos);
+            yPos += 7;
+
+            const torneoData = torneos.slice(0, 10).map(t => {
+                const score = (t.rendimiento && t.rendimiento[playerId]) ? t.rendimiento[playerId].score : '--';
+                return [
+                    t.fecha,
+                    t.nombre.split(' ||| ')[0].toUpperCase(),
+                    t.tipo.toUpperCase(),
+                    score
+                ];
+            });
+
+            doc.autoTable({
+                startY: yPos,
+                head: [['FECHA', 'COMPETICIÓN', 'TIPO', 'NOTA']],
+                body: torneoData,
+                headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], halign: 'center' },
+                styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
+                columnStyles: {
+                    1: { halign: 'left' }
+                },
+                margin: { left: 15 }
+            });
+        }
+
+        // Footer (Clean)
+        const pageHeight = doc.internal.pageSize.height;
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        // No footer text as requested
+
+        doc.save(`FICHA_${player.nombre.toUpperCase().replace(/ /g, '_')}.pdf`);
+    };
+    initNotifications();
 });
