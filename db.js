@@ -1,5 +1,5 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 9; // Incrementado por cambios de esquema
+const DB_VERSION = 10; // Incrementado para incluir fechanacimiento y foto_blob
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
@@ -77,26 +77,10 @@ class CoachDB {
     async getAll(storeName) {
         if (!this.db) await this.init();
         
-        const now = Date.now();
-        const shouldSync = !this.lastSync[storeName] || (now - this.lastSync[storeName] > 300000); // 5 min throttle
-
-        if (shouldSync && supabaseClient) {
-            this.lastSync[storeName] = now;
-            (async () => {
-                try {
-                    const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
-                    if (!error && data) {
-                        const changed = await this.syncLocal(storeName, data);
-                        if (changed) this.cache[storeName] = data;
-                    }
-                } catch (err) {
-                    console.warn(`Background sync failed for ${storeName}`);
-                }
-            })();
-        }
-
-        // Return from cache if available
+        // Return from cache if available immediately for UI responsiveness
         if (this.cache[storeName] && this.cache[storeName].length > 0) {
+            // Still trigger background sync if needed
+            this.triggerBackgroundSync(storeName);
             return this.cache[storeName];
         }
 
@@ -104,57 +88,83 @@ class CoachDB {
             const tx = this.db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
             const request = store.getAll();
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => resolve(request.result || []);
             request.onerror = () => resolve([]);
         });
 
         this.cache[storeName] = localData;
+        this.triggerBackgroundSync(storeName);
         return localData;
+    }
+
+    async triggerBackgroundSync(storeName) {
+        if (!supabaseClient) return;
+        
+        const now = Date.now();
+        const lastSync = this.lastSync[storeName] || 0;
+        if (now - lastSync < 300000) return; // 5 min throttle
+
+        this.lastSync[storeName] = now;
+        
+        try {
+            const { data, error } = await supabaseClient.from(storeName).select('*').order('id', { ascending: false });
+            if (!error && data) {
+                const changed = await this.syncLocal(storeName, data);
+                if (changed) {
+                    this.cache[storeName] = data;
+                    // Trigger a custom event so the UI can refresh if needed
+                    window.dispatchEvent(new CustomEvent('db-sync-complete', { detail: { storeName } }));
+                }
+            }
+        } catch (err) {
+            console.warn(`Background sync failed for ${storeName}`, err);
+        }
     }
 
     async syncLocal(storeName, remoteData) {
         if (!this.db || !remoteData) return false;
 
-        const localData = await new Promise((resolve) => {
-            const tx = this.db.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => resolve([]);
-        });
-
+        // Use cached local data instead of querying IDB again
+        const localData = this.cache[storeName] || [];
         const localMap = new Map(localData.map(item => [item.id, item]));
         const remoteIds = new Set(remoteData.map(item => item.id));
         
-        let hasChanges = false;
-        const toDelete = localData.filter(item => !remoteIds.has(item.id));
+        const toDelete = localData.filter(item => !remoteIds.has(item.id) && item.id < 1000000000000);
         const toPut = remoteData.filter(remoteItem => {
             const localItem = localMap.get(remoteItem.id);
             if (!localItem) return true;
-            // Check for actual changes to avoid redundant writes
-            const merged = { ...localItem, ...remoteItem };
-            return JSON.stringify(localItem) !== JSON.stringify(merged);
+            
+            // Shallow comparison first for speed
+            let needsUpdate = false;
+            for (const key in remoteItem) {
+                if (remoteItem[key] !== localItem[key]) {
+                    // Special case for objects (metadata)
+                    if (typeof remoteItem[key] === 'object' && remoteItem[key] !== null) {
+                        if (JSON.stringify(remoteItem[key]) !== JSON.stringify(localItem[key])) {
+                            needsUpdate = true;
+                            break;
+                        }
+                    } else {
+                        needsUpdate = true;
+                        break;
+                    }
+                }
+            }
+            return needsUpdate;
         });
 
         if (toDelete.length === 0 && toPut.length === 0) return false;
 
-        const tx = this.db.transaction(storeName, 'readwrite');
-        const store = tx.objectStore(storeName);
-
-        // 1. Eliminar locales que ya no existen en remoto
-        // Solo eliminamos si el ID parece ser un ID de Supabase (pequeño) 
-        // y no está en el remoto. Los IDs grandes (Date.now()) son locales pendientes de sync.
-        toDelete.forEach(item => {
-            if (item.id < 1000000000000) { 
-                store.delete(item.id);
-            }
-        });
-        toPut.forEach(remoteItem => {
-            const localItem = localMap.get(remoteItem.id);
-            store.put(localItem ? { ...localItem, ...remoteItem } : remoteItem);
-        });
-
         return new Promise((resolve) => {
+            const tx = this.db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+
+            toDelete.forEach(item => store.delete(item.id));
+            toPut.forEach(remoteItem => {
+                const localItem = localMap.get(remoteItem.id);
+                store.put(localItem ? { ...localItem, ...remoteItem } : remoteItem);
+            });
+
             tx.oncomplete = () => resolve(true);
             tx.onerror = () => resolve(false);
         });
@@ -180,7 +190,7 @@ class CoachDB {
                 const allowedFields = [
                     'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                     'lateralidad', 'nivel', 'sexo', 'notas', 
-                    'equipoConvenido', 'foto', 'club', 'escudo', 'categoria'
+                    'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria'
                 ];
 
                 Object.keys(data).forEach(key => {
@@ -229,18 +239,18 @@ class CoachDB {
         });
     }
 
-    async update(storeName, data) {
+    async update(storeName, data, localOnly = false) {
         if (!this.db) await this.init();
         const id = Number(data.id);
         
-        if (supabaseClient && id) {
+        if (supabaseClient && id && !localOnly) {
             console.log(`[DB] Updating ${storeName} ID ${id}:`, data);
             const toUpdate = {};
             // Lista de campos conocidos para evitar errores de schema cache
             const allowedFields = [
                 'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                 'lateralidad', 'nivel', 'sexo', 'notas', 
-                'equipoConvenido', 'foto', 'club', 'escudo', 'categoria'
+                'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria'
             ];
 
             Object.keys(data).forEach(key => {
@@ -357,3 +367,4 @@ class CoachDB {
 }
 
 const db = new CoachDB();
+window.db = db;

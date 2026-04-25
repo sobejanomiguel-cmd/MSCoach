@@ -1,53 +1,188 @@
+// --- GLOBAL UTILITIES ---
+window.debounce = (fn, delay) => {
+    let timeout;
+    return (...args) => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn(...args), delay);
+    };
+};
+
+window.generatePdfBlob = async (fileOrUrl) => {
+    return new Promise((resolve) => {
+        if (!fileOrUrl) return resolve(null);
+
+        // 1. Si ya es un File, lo procesamos directamente
+        if (fileOrUrl instanceof File) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+                    const maxW = 400;
+                    const scale = maxW / img.width;
+                    canvas.width = maxW;
+                    canvas.height = img.height * scale;
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    resolve(canvas.toDataURL("image/jpeg", 0.8));
+                };
+                img.onerror = () => resolve(null);
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(fileOrUrl);
+            return;
+        }
+
+        // 2. Si es una data URI, procesamos directamente
+        if (typeof fileOrUrl === 'string' && fileOrUrl.startsWith('data:')) {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const maxW = 400;
+                const scale = maxW / img.width;
+                canvas.width = maxW;
+                canvas.height = img.height * scale;
+                ctx.fillStyle = "#FFFFFF";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL("image/jpeg", 0.8));
+            };
+            img.onerror = () => resolve(null);
+            img.src = fileOrUrl;
+            return;
+        }
+
+        // 3. URLs (Cloud o Locales)
+        const isCloud = typeof fileOrUrl === 'string' && (fileOrUrl.startsWith('http') || fileOrUrl.startsWith('https'));
+
+        const tryLoad = (url, next) => {
+            const i = new Image();
+            // Solo aplicamos Anonymous si es cloud para evitar errores en file://
+            if (isCloud) i.crossOrigin = "Anonymous";
+
+            i.onload = () => {
+                try {
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+                    const maxW = 400;
+                    const scale = maxW / i.width;
+                    canvas.width = maxW;
+                    canvas.height = i.height * scale;
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(i, 0, 0, canvas.width, canvas.height);
+                    resolve(canvas.toDataURL("image/jpeg", 0.8));
+                } catch (e) {
+                    console.warn("Canvas error, trying next strategy:", e);
+                    next();
+                }
+            };
+            i.onerror = () => {
+                console.warn("Strategy failed for:", url);
+                next();
+            };
+            i.src = url;
+        };
+
+        // Fallback para archivos locales: intentar fetch como Blob
+        const localFetchStrategy = async () => {
+            try {
+                const response = await fetch(fileOrUrl);
+                const blob = await response.blob();
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement("canvas");
+                        const ctx = canvas.getContext("2d");
+                        const maxW = 400;
+                        const scale = maxW / img.width;
+                        canvas.width = maxW;
+                        canvas.height = img.height * scale;
+                        ctx.fillStyle = "#FFFFFF";
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL("image/jpeg", 0.8));
+                    };
+                    img.onerror = () => resolve(null);
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(blob);
+            } catch (err) {
+                console.error("Local fetch strategy failed:", err);
+                resolve(null);
+            }
+        };
+
+        // Strategy Chain: Direct -> Proxy 1 -> Proxy 2 -> Local Fetch (if local) -> Give up
+        const strategy1 = () => tryLoad(fileOrUrl, strategy2);
+        const strategy2 = () => {
+            if (!isCloud) return localFetchStrategy(); // Si es local y falló direct, intentar fetch
+            const proxyUrl = `https://images.weserv.nl/?url=${encodeURIComponent(fileOrUrl)}&w=400&il&output=jpg`;
+            tryLoad(proxyUrl, strategy3);
+        };
+        const strategy3 = () => {
+            const proxyUrl = `https://i0.wp.com/${fileOrUrl.replace(/^https?:\/\//, '')}?w=400`;
+            tryLoad(proxyUrl, () => resolve(null));
+        };
+
+        strategy1();
+    });
+};
+
 window.deleteTorneoDoc = async (id, docIndex) => {
-        if (!confirm('¿Seguro que quieres eliminar este documento?')) return;
-        try {
+    if (!confirm('¿Seguro que quieres eliminar este documento?')) return;
+    try {
+        const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+        const metadata = window.getConvMetadata(conv);
+        const docs = metadata.documentos || [];
+        docs.splice(docIndex, 1);
+
+        await window.saveConvMetadata(id, 'documentos', docs);
+        window.viewTorneoRendimiento(id);
+    } catch (err) {
+        console.error("Delete error:", err);
+        window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
+    }
+}; window.handleTorneoDocUpload = async (id, files) => {
+    if (!files || files.length === 0) return;
+    const btn = document.querySelector(`button[onclick*="torneo-doc-upload"]`);
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="w-4 h-4 animate-spin text-blue-600">...</i>';
+
+    try {
+        const uploadPromises = Array.from(files).map(async (file) => {
+            const publicUrl = await db.uploadFile(file, 'tareas', 'tasks');
+            return publicUrl ? { name: file.name, url: publicUrl } : null;
+        });
+
+        const results = (await Promise.all(uploadPromises)).filter(r => r !== null);
+
+        if (results.length > 0) {
             const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
             const metadata = window.getConvMetadata(conv);
             const docs = metadata.documentos || [];
-            docs.splice(docIndex, 1);
-            
-            await window.saveConvMetadata(id, 'documentos', docs);
+            const updatedDocs = [...docs, ...results];
+
+            await window.saveConvMetadata(id, 'documentos', updatedDocs);
+
             window.viewTorneoRendimiento(id);
-        } catch (err) {
-            console.error("Delete error:", err);
-            window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
+            window.customAlert('Éxito', `${results.length} archivo(s) subido(s) correctamente`, 'success');
         }
-    };window.handleTorneoDocUpload = async (id, files) => {
-        if (!files || files.length === 0) return;
-        const btn = document.querySelector(`button[onclick*="torneo-doc-upload"]`);
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = '<i class="w-4 h-4 animate-spin text-blue-600">...</i>';
-        
-        try {
-            const uploadPromises = Array.from(files).map(async (file) => {
-                const publicUrl = await db.uploadFile(file, 'tareas', 'tasks');
-                return publicUrl ? { name: file.name, url: publicUrl } : null;
-            });
-            
-            const results = (await Promise.all(uploadPromises)).filter(r => r !== null);
-            
-            if (results.length > 0) {
-                const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
-                const metadata = window.getConvMetadata(conv);
-                const docs = metadata.documentos || [];
-                const updatedDocs = [...docs, ...results];
-                
-                await window.saveConvMetadata(id, 'documentos', updatedDocs);
-                
-                window.viewTorneoRendimiento(id);
-                window.customAlert('Éxito', `${results.length} archivo(s) subido(s) correctamente`, 'success');
-            }
-        } catch (err) {
-            console.error("Upload error details:", err);
-            const errorMsg = err.message || err.error_description || 'Error de permisos o conexión';
-            window.customAlert('Error al subir', `No se pudieron subir los archivos. Detalle: ${errorMsg}`, 'error');
-        } finally {
-            btn.innerHTML = originalHtml;
-        }
-    };const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
+    } catch (err) {
+        console.error("Upload error details:", err);
+        const errorMsg = err.message || err.error_description || 'Error de permisos o conexión';
+        window.customAlert('Error al subir', `No se pudieron subir los archivos. Detalle: ${errorMsg}`, 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+    }
+}; const PLAYER_POSITIONS = ['PO', 'DBD', 'DBZ', 'DCD', 'DCZ', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ', 'MPD', 'MPZ', 'ACD', 'ACZ'];
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 
-window.currentVisibilityMode = 'personal'; 
+window.currentVisibilityMode = 'personal';
 window.getSeason = (dateStr) => {
     if (!dateStr) return 'N/A';
     const d = new Date(dateStr);
@@ -65,7 +200,7 @@ window.initSeasons = () => {
     const currentYear = new Date().getFullYear();
     let html = '<option value="ALL">HISTORIAL COMPLETO</option>';
     for (let y = 2023; y <= currentYear + 1; y++) {
-        const season = `${y}/${y+1}`;
+        const season = `${y}/${y + 1}`;
         html += `<option value="${season}" ${season === window.currentSeason ? 'selected' : ''}>TEMP. ${season}</option>`;
     }
     selector.innerHTML = html;
@@ -74,7 +209,7 @@ window.initSeasons = () => {
 window.initSeasons = () => {
     const selector = document.getElementById('season-selector');
     if (!selector) return;
-    
+
     // Si no hay temporada seleccionada, calculamos la actual
     if (!window.currentSeason || window.currentSeason === 'ALL') {
         window.currentSeason = window.getSeason(new Date());
@@ -83,13 +218,13 @@ window.initSeasons = () => {
     const currentYear = new Date().getFullYear();
     let html = '<option value="ALL">HISTORIAL COMPLETO</option>';
     for (let y = 2023; y <= currentYear + 1; y++) {
-        const season = `${y}/${y+1}`;
+        const season = `${y}/${y + 1}`;
         html += `<option value="${season}" ${season === window.currentSeason ? 'selected' : ''}>TEMP. ${season}</option>`;
     }
     selector.innerHTML = html;
 };
 
-window.renderPerfil = async function(container) {
+window.renderPerfil = async function (container) {
     try {
         const user = await db.getUser();
         if (!user) {
@@ -107,7 +242,7 @@ window.renderPerfil = async function(container) {
 
         const displayName = profile?.nombre || profile?.full_name || profile?.name || 'Mi Perfil';
         const userPhoto = profile?.avatar_url || profile?.foto || null;
-        
+
         container.innerHTML = `
             <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div class="bg-white rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
@@ -216,7 +351,7 @@ window.renderPerfil = async function(container) {
 
                     const { error } = await supabaseClient.from('profiles').upsert(profileUpdate);
                     if (error) throw error;
-                    
+
                     window.customAlert('¡Éxito!', 'Perfil actualizado correctamente.', 'success');
                     window.renderPerfil(container);
                 } catch (err) {
@@ -240,7 +375,7 @@ window.renderPerfil = async function(container) {
     }
 };
 
-window.renderUsuarios = async function(container) {
+window.renderUsuarios = async function (container) {
     try {
         const { data: users, error } = await supabaseClient.from('profiles').select('*');
         if (error) throw error;
@@ -248,9 +383,9 @@ window.renderUsuarios = async function(container) {
         container.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 ${users && users.length > 0 ? users.map(u => {
-                    const uName = u.nombre || u.full_name || u.name || 'Sin nombre';
-                    const uPhoto = u.avatar_url || u.foto;
-                    return `
+            const uName = u.nombre || u.full_name || u.name || 'Sin nombre';
+            const uPhoto = u.avatar_url || u.foto;
+            return `
                         <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden">
                             <div class="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-50 transition-colors"></div>
                             
@@ -296,7 +431,7 @@ window.renderUsuarios = async function(container) {
                             </div>
                         </div>
                     `;
-                }).join('') : `
+        }).join('') : `
                     <div class="col-span-full p-20 bg-white rounded-[3rem] border border-dashed border-slate-200 text-center">
                         <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
                             <i data-lucide="users" class="w-10 h-10 text-slate-300"></i>
@@ -317,7 +452,7 @@ window.renderUsuarios = async function(container) {
 window.showNewUserModal = () => {
     const modalContainer = document.getElementById('modal-container');
     const modalOverlay = document.getElementById('modal-overlay');
-    
+
     modalContainer.innerHTML = `
         <div class="p-10">
             <div class="flex justify-between items-center mb-8">
@@ -362,7 +497,7 @@ window.showNewUserModal = () => {
     document.getElementById('new-user-form').onsubmit = async (e) => {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target));
-        
+
         try {
             const { error } = await supabaseClient.from('profiles').insert([{
                 email: data.email,
@@ -370,7 +505,7 @@ window.showNewUserModal = () => {
                 role: data.role,
                 id: crypto.randomUUID()
             }]);
-            
+
             if (error) throw error;
             window.customAlert('¡Éxito!', 'Perfil de staff creado. El técnico puede registrarse con este email.', 'success');
             closeModal();
@@ -417,14 +552,14 @@ window.setSeason = (season) => {
 window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
     if (!items) return [];
     let filtered = [...items];
-    
+
     // Visibility
     if (window.currentVisibilityMode === 'personal' && window.currentUser && !options.skipVisibility) {
-        filtered = filtered.filter(i => 
+        filtered = filtered.filter(i =>
             !i.createdBy || i.createdBy === window.currentUser.id
         );
     }
-    
+
     // Season
     if (window.currentSeason !== 'ALL' && dateField) {
         filtered = filtered.filter(i => {
@@ -433,7 +568,7 @@ window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
             return window.getSeason(dateVal) === window.currentSeason;
         });
     }
-    
+
     return filtered;
 };
 
@@ -462,24 +597,33 @@ window.ensureClubesInitialized = async () => {
             }
         }
 
-        // Migración masiva de fotos de jugadores (EN SEGUNDO PLANO PARA NO CONGELAR LA APP)
+        // Migración masiva de fotos de jugadores (EN SEGUNDO PLANO Y PROCESADO POR LOTES)
         setTimeout(async () => {
             try {
                 const players = await db.getAll('jugadores');
                 let updatedCount = 0;
-                for (const p of players) {
-                    if (!p.foto || p.foto.includes('placeholder')) {
-                        p.foto = 'Imagenes/Foto Jugador General.png';
-                        await db.update('jugadores', p);
-                        updatedCount++;
+                const batchSize = 20;
+                
+                for (let i = 0; i < players.length; i += batchSize) {
+                    const batch = players.slice(i, i + batchSize);
+                    let batchChanged = false;
+                    for (const p of batch) {
+                        if (!p.foto || p.foto.includes('placeholder')) {
+                            p.foto = 'Imagenes/Foto Jugador General.png';
+                            await db.update('jugadores', p);
+                            updatedCount++;
+                            batchChanged = true;
+                        }
                     }
+                    // Pequeña pausa entre lotes si hubo cambios para liberar el hilo principal
+                    if (batchChanged) await new Promise(r => setTimeout(r, 50));
                 }
                 if (updatedCount > 0) console.log(`Migración de fotos completada: ${updatedCount} jugadores actualizados.`);
             } catch (err) {
                 console.warn("Background migration warning:", err);
             }
-        }, 1000);
-        
+        }, 2000);
+
     } catch (err) {
         console.error("Error initializing data:", err);
     }
@@ -493,11 +637,11 @@ window.toggleVisibility = (mode) => {
     }
 
     window.currentVisibilityMode = mode;
-    
+
     // Update UI buttons
     const personalBtn = document.getElementById('mode-personal');
     const globalBtn = document.getElementById('mode-global');
-    
+
     if (mode === 'personal') {
         personalBtn.classList.add('bg-white', 'text-blue-600', 'shadow-sm');
         personalBtn.classList.remove('text-slate-400');
@@ -509,7 +653,7 @@ window.toggleVisibility = (mode) => {
         personalBtn.classList.remove('bg-white', 'text-blue-600', 'shadow-sm');
         personalBtn.classList.add('text-slate-400');
     }
-    
+
     // Refresh current view
     const container = document.getElementById('content-container');
     if (window.currentView) {
@@ -522,13 +666,13 @@ window.getSortedTeams = (teams) => {
     return [...teams].sort((a, b) => {
         const nameA = (a.nombre || '').toUpperCase();
         const nameB = (b.nombre || '').toUpperCase();
-        
+
         const isSpecialA = nameA.includes('INFANTIL ALEVÍN FEMENINO');
         const isSpecialB = nameB.includes('INFANTIL ALEVÍN FEMENINO');
-        
+
         if (isSpecialA && !isSpecialB) return 1;
         if (!isSpecialA && isSpecialB) return -1;
-        
+
         const getYear = (t) => {
             const name = (t.nombre || '').toUpperCase();
             for (let y = 2010; y <= 2025; y++) {
@@ -541,7 +685,7 @@ window.getSortedTeams = (teams) => {
 
         const yearA = getYear(a);
         const yearB = getYear(b);
-        
+
         if (yearA !== yearB) return yearA - yearB;
         return nameA.localeCompare(nameB);
     });
@@ -557,11 +701,11 @@ window.formatAttendanceName = (dateStr, teamName, type, eventName) => {
             const shortYear = y.substring(2);
             formattedDate = `${d}.${m}.${shortYear}`;
         }
-    } catch (e) {}
+    } catch (e) { }
 
     const cleanTeam = String(teamName || 'EQUIPO').split(' ||| ')[0].toUpperCase();
     let base = `Asistencia ${formattedDate}_${cleanTeam}_`;
-    
+
     const cleanType = String(type || '').toLowerCase();
     const cleanEvent = String(eventName || '').split(' ||| ')[0].toUpperCase();
 
@@ -576,155 +720,155 @@ window.formatAttendanceName = (dateStr, teamName, type, eventName) => {
 
 
 
-    window.getConvMetadata = (conv) => {
-        return window.parseLugarMetadata(conv?.lugar).extra;
-    };
+window.getConvMetadata = (conv) => {
+    return window.parseLugarMetadata(conv?.lugar).extra;
+};
 
-    window.parseLugarMetadata = (lugarStr) => {
-        if (!lugarStr) return { base: '', extra: {} };
-        if (!lugarStr.includes(' ||| ')) return { base: lugarStr, extra: {} };
-        try {
-            const [base, jsonInfo] = lugarStr.split(' ||| ');
-            return { base: (base || '').toUpperCase().trim(), extra: JSON.parse(jsonInfo) || {} };
-        } catch (e) {
-            console.error("Error parsing lugar metadata:", e);
-            return { base: (lugarStr.split(' ||| ')[0] || '').toUpperCase().trim(), extra: {} };
-        }
-    };
+window.parseLugarMetadata = (lugarStr) => {
+    if (!lugarStr) return { base: '', extra: {} };
+    if (!lugarStr.includes(' ||| ')) return { base: lugarStr, extra: {} };
+    try {
+        const [base, jsonInfo] = lugarStr.split(' ||| ');
+        return { base: (base || '').toUpperCase().trim(), extra: JSON.parse(jsonInfo) || {} };
+    } catch (e) {
+        console.error("Error parsing lugar metadata:", e);
+        return { base: (lugarStr.split(' ||| ')[0] || '').toUpperCase().trim(), extra: {} };
+    }
+};
 
-    window.serializeLugarMetadata = (base, extra) => {
-        return `${(base || '').toUpperCase().trim()} ||| ${JSON.stringify(extra || {})}`;
-    };
+window.serializeLugarMetadata = (base, extra) => {
+    return `${(base || '').toUpperCase().trim()} ||| ${JSON.stringify(extra || {})}`;
+};
 
-    window.saveConvMetadata = async (id, key, value) => {
-        const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
-        if (!conv) return;
-        
-        const { base, extra } = window.parseLugarMetadata(conv.lugar);
-        extra[key] = value;
-        const newLugar = window.serializeLugarMetadata(base, extra);
-        
-        await db.update('convocatorias', { id: Number(id), lugar: newLugar });
-    };
+window.saveConvMetadata = async (id, key, value) => {
+    const { data: conv } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
+    if (!conv) return;
 
-    window.getComunidadByLugar = (lugarStr, nombreStr = '') => {
-        if (!lugarStr && !nombreStr) return 'OTRO';
-        
-        // Normalizamos el texto (quitamos acentos y pasamos a mayúsculas)
-        const normalize = (str) => (str || '').toUpperCase()
-            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-            .trim();
+    const { base, extra } = window.parseLugarMetadata(conv.lugar);
+    extra[key] = value;
+    const newLugar = window.serializeLugarMetadata(base, extra);
 
-        const cleanLugar = window.cleanLugar(lugarStr);
-        const combined = normalize(cleanLugar + ' ' + nombreStr);
-        
-        const navarraKeywords = ['TUDELA', 'PAMPLONA', 'LODOSA', 'CORELLA', 'MILAGRO', 'NAVARRA', 'OLITE', 'TAFALLA', 'ESTELLA', 'VALTIERRA', 'MURCHANTE', 'CASCANTE', 'CINTRUENIGO', 'FITERO', 'MARCILLA', 'PERALTA', 'CAPARROSO', 'VILLAFRANCA', 'AZAGRA', 'SAN ADRIAN', 'CADREITA', 'RIBAFORADA', 'FUSTINANA', 'CABANILLAS', 'CORTES', 'BUNUEL', 'ABLITAS', 'MONTEAGUDO', 'BARILLAS', 'TULEBRAS', 'MURCHANTE', 'LESCUN', 'IRUNA', 'BAZTAN', 'ALSASUA', 'VIANA', 'ELIZONDO', 'BERA', 'BERA DE BIDASOA', 'DONEZTEBE', 'SANTESTEBAN', 'LEITZA', 'PUENTE LA REINA', 'SANGUESA'];
-        const riojaKeywords = ['ARNEDO', 'CALAHORRA', 'LOGRONO', 'ALFARO', 'RIOJA', 'NAJERA', 'HARO', 'SANTO DOMINGO', 'QUEL', 'AUTOL', 'ALDEANUEVA', 'RINCON DE SOTO', 'PRADEJON', 'CERVERA', 'AGUILAR', 'IREGUA', 'ALBERITE', 'LARDERO', 'VILLAMEDIANA', 'FUENMAYOR', 'NAVARRETE', 'ENTRENA'];
-        
-        if (navarraKeywords.some(kw => combined.includes(kw))) return 'NAVARRA';
-        if (riojaKeywords.some(kw => combined.includes(kw))) return 'LA RIOJA';
-        
-        return 'OTRO';
-    };
+    await db.update('convocatorias', { id: Number(id), lugar: newLugar });
+};
 
-    window.cleanLugar = (l) => {
-        return window.parseLugarMetadata(l).base;
-    };
+window.getComunidadByLugar = (lugarStr, nombreStr = '') => {
+    if (!lugarStr && !nombreStr) return 'OTRO';
 
-    window.renderStars = (rating = 3, playerId = null) => {
-        const stars = [];
-        for (let i = 1; i <= 5; i++) {
-            const color = i <= rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200';
-            if (playerId) {
-                stars.push(`
+    // Normalizamos el texto (quitamos acentos y pasamos a mayúsculas)
+    const normalize = (str) => (str || '').toUpperCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
+    const cleanLugar = window.cleanLugar(lugarStr);
+    const combined = normalize(cleanLugar + ' ' + nombreStr);
+
+    const navarraKeywords = ['TUDELA', 'PAMPLONA', 'LODOSA', 'CORELLA', 'MILAGRO', 'NAVARRA', 'OLITE', 'TAFALLA', 'ESTELLA', 'VALTIERRA', 'MURCHANTE', 'CASCANTE', 'CINTRUENIGO', 'FITERO', 'MARCILLA', 'PERALTA', 'CAPARROSO', 'VILLAFRANCA', 'AZAGRA', 'SAN ADRIAN', 'CADREITA', 'RIBAFORADA', 'FUSTINANA', 'CABANILLAS', 'CORTES', 'BUNUEL', 'ABLITAS', 'MONTEAGUDO', 'BARILLAS', 'TULEBRAS', 'MURCHANTE', 'LESCUN', 'IRUNA', 'BAZTAN', 'ALSASUA', 'VIANA', 'ELIZONDO', 'BERA', 'BERA DE BIDASOA', 'DONEZTEBE', 'SANTESTEBAN', 'LEITZA', 'PUENTE LA REINA', 'SANGUESA'];
+    const riojaKeywords = ['ARNEDO', 'CALAHORRA', 'LOGRONO', 'ALFARO', 'RIOJA', 'NAJERA', 'HARO', 'SANTO DOMINGO', 'QUEL', 'AUTOL', 'ALDEANUEVA', 'RINCON DE SOTO', 'PRADEJON', 'CERVERA', 'AGUILAR', 'IREGUA', 'ALBERITE', 'LARDERO', 'VILLAMEDIANA', 'FUENMAYOR', 'NAVARRETE', 'ENTRENA'];
+
+    if (navarraKeywords.some(kw => combined.includes(kw))) return 'NAVARRA';
+    if (riojaKeywords.some(kw => combined.includes(kw))) return 'LA RIOJA';
+
+    return 'OTRO';
+};
+
+window.cleanLugar = (l) => {
+    return window.parseLugarMetadata(l).base;
+};
+
+window.renderStars = (rating = 3, playerId = null) => {
+    const stars = [];
+    for (let i = 1; i <= 5; i++) {
+        const color = i <= rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200';
+        if (playerId) {
+            stars.push(`
                     <button type="button" onclick="event.stopPropagation(); window.updatePlayerLevel('${playerId}', ${i})" class="p-0.5 hover:scale-125 transition-transform">
                         <i data-lucide="star" class="w-3 h-3 ${color}"></i>
                     </button>
                 `);
-            } else {
-                stars.push(`<i data-lucide="star" class="w-3 h-3 ${color}"></i>`);
-            }
+        } else {
+            stars.push(`<i data-lucide="star" class="w-3 h-3 ${color}"></i>`);
         }
-        return `<div class="flex items-center gap-0.5 justify-center">${stars.join('')}</div>`;
-    };
+    }
+    return `<div class="flex items-center gap-0.5 justify-center">${stars.join('')}</div>`;
+};
 
-    window.updatePlayerLevel = async (playerId, newLevel) => {
-        await window.updatePlayerField(playerId, 'nivel', newLevel);
-    };
+window.updatePlayerLevel = async (playerId, newLevel) => {
+    await window.updatePlayerField(playerId, 'nivel', newLevel);
+};
 
-    window.updatePlayerField = async (playerId, field, value) => {
-        try {
-            const player = await db.get('jugadores', playerId);
-            if (!player) return;
-            
-            player[field] = value;
-            await db.update('jugadores', player);
-            
-            // Refresh current view if applicable
-            if (window.currentView === 'jugadores') {
-                window.renderJugadores(document.getElementById('content-container'));
-            } else if (window.currentView === 'campograma') {
-                window.renderView('campograma');
-            }
-            
-            // If the profile modal is open, refresh its content
-            const profileHeader = document.querySelector('h3.text-3xl.font-black');
-            if (profileHeader && profileHeader.innerText.includes(player.nombre?.toUpperCase() || '')) {
-                window.viewPlayerProfile(playerId);
-            }
-        } catch (err) {
-            console.error(`Error updating player ${field}:`, err);
-        }
-    };
+window.updatePlayerField = async (playerId, field, value) => {
+    try {
+        const player = await db.get('jugadores', playerId);
+        if (!player) return;
 
-    window.togglePlayerLateralidad = async (playerId, current) => {
-        const cycle = ['', 'Derecho', 'Zurdo', 'Ambidiestro'];
-        let nextIdx = cycle.indexOf(current) + 1;
-        if (nextIdx >= cycle.length) nextIdx = 0;
-        await window.updatePlayerField(playerId, 'lateralidad', cycle[nextIdx]);
-    };
+        player[field] = value;
+        await db.update('jugadores', player);
 
-    window.togglePlayerSexo = async (playerId, current) => {
-        const next = (current === 'Masculino') ? 'Femenino' : (current === 'Femenino' ? '' : 'Masculino');
-        await window.updatePlayerField(playerId, 'sexo', next);
-    };
-
-    window.toggleInlinePosSelector = (playerId, event) => {
-        event.stopPropagation();
-        const existing = document.getElementById(`pos-selector-${playerId}`);
-        if (existing) {
-            existing.remove();
-            return;
+        // Refresh current view if applicable
+        if (window.currentView === 'jugadores') {
+            window.renderJugadores(document.getElementById('content-container'));
+        } else if (window.currentView === 'campograma') {
+            window.renderView('campograma');
         }
 
-        // Close others
-        document.querySelectorAll('.inline-pos-selector').forEach(el => el.remove());
-
-        const rect = event.currentTarget.getBoundingClientRect();
-        const div = document.createElement('div');
-        div.id = `pos-selector-${playerId}`;
-        div.className = 'inline-pos-selector fixed bg-white shadow-2xl rounded-2xl border border-slate-100 p-4 z-[9999] w-64 animate-in zoom-in-95 duration-200';
-        
-        // Intelligent Positioning
-        const menuHeight = 280; 
-        let top = rect.bottom + 8;
-        let left = rect.left;
-
-        if (top + menuHeight > window.innerHeight) {
-            top = rect.top - menuHeight - 8;
-            if (top < 10) top = 10; // Don't go above screen
+        // If the profile modal is open, refresh its content
+        const profileHeader = document.querySelector('h3.text-3xl.font-black');
+        if (profileHeader && profileHeader.innerText.includes(player.nombre?.toUpperCase() || '')) {
+            window.viewPlayerProfile(playerId);
         }
-        
-        if (left + 256 > window.innerWidth) {
-            left = window.innerWidth - 256 - 16;
-        }
+    } catch (err) {
+        console.error(`Error updating player ${field}:`, err);
+    }
+};
 
-        div.style.top = `${top}px`;
-        div.style.left = `${left}px`;
+window.togglePlayerLateralidad = async (playerId, current) => {
+    const cycle = ['', 'Derecho', 'Zurdo', 'Ambidiestro'];
+    let nextIdx = cycle.indexOf(current) + 1;
+    if (nextIdx >= cycle.length) nextIdx = 0;
+    await window.updatePlayerField(playerId, 'lateralidad', cycle[nextIdx]);
+};
 
-        db.get('jugadores', playerId).then(player => {
-            const current = window.parsePosition(player.posicion);
-            div.innerHTML = `
+window.togglePlayerSexo = async (playerId, current) => {
+    const next = (current === 'Masculino') ? 'Femenino' : (current === 'Femenino' ? '' : 'Masculino');
+    await window.updatePlayerField(playerId, 'sexo', next);
+};
+
+window.toggleInlinePosSelector = (playerId, event) => {
+    event.stopPropagation();
+    const existing = document.getElementById(`pos-selector-${playerId}`);
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    // Close others
+    document.querySelectorAll('.inline-pos-selector').forEach(el => el.remove());
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const div = document.createElement('div');
+    div.id = `pos-selector-${playerId}`;
+    div.className = 'inline-pos-selector fixed bg-white shadow-2xl rounded-2xl border border-slate-100 p-4 z-[9999] w-64 animate-in zoom-in-95 duration-200';
+
+    // Intelligent Positioning
+    const menuHeight = 280;
+    let top = rect.bottom + 8;
+    let left = rect.left;
+
+    if (top + menuHeight > window.innerHeight) {
+        top = rect.top - menuHeight - 8;
+        if (top < 10) top = 10; // Don't go above screen
+    }
+
+    if (left + 256 > window.innerWidth) {
+        left = window.innerWidth - 256 - 16;
+    }
+
+    div.style.top = `${top}px`;
+    div.style.left = `${left}px`;
+
+    db.get('jugadores', playerId).then(player => {
+        const current = window.parsePosition(player.posicion);
+        div.innerHTML = `
                 <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Seleccionar Posiciones</p>
                 <div class="grid grid-cols-3 gap-1.5">
                     ${PLAYER_POSITIONS.map(pos => `
@@ -737,71 +881,71 @@ window.formatAttendanceName = (dateStr, teamName, type, eventName) => {
                     <button onclick="this.parentElement.parentElement.remove()" class="px-4 py-2 bg-slate-900 text-white text-[9px] font-black uppercase rounded-xl hover:bg-black transition-all">Hecho</button>
                 </div>
             `;
-            document.body.appendChild(div);
-        });
+        document.body.appendChild(div);
+    });
 
-        // Click outside listener
-        const closeOnOutside = (e) => {
-            if (!div.contains(e.target) && !event.currentTarget.contains(e.target)) {
-                div.remove();
-                document.removeEventListener('click', closeOnOutside);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', closeOnOutside), 10);
-    };
-
-    window.toggleInlinePosItem = async (playerId, pos, btn) => {
-        const player = await db.get('jugadores', playerId);
-        let current = window.parsePosition(player.posicion);
-        
-        if (current.includes(pos)) {
-            current = current.filter(p => p !== pos);
-            btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-white text-slate-400 border-slate-100 hover:border-blue-200';
-        } else {
-            current.push(pos);
-            btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-blue-600 text-white border-blue-600';
+    // Click outside listener
+    const closeOnOutside = (e) => {
+        if (!div.contains(e.target) && !event.currentTarget.contains(e.target)) {
+            div.remove();
+            document.removeEventListener('click', closeOnOutside);
         }
-        
-        await window.updatePlayerField(playerId, 'posicion', current);
+    };
+    setTimeout(() => document.addEventListener('click', closeOnOutside), 10);
+};
+
+window.toggleInlinePosItem = async (playerId, pos, btn) => {
+    const player = await db.get('jugadores', playerId);
+    let current = window.parsePosition(player.posicion);
+
+    if (current.includes(pos)) {
+        current = current.filter(p => p !== pos);
+        btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-white text-slate-400 border-slate-100 hover:border-blue-200';
+    } else {
+        current.push(pos);
+        btn.className = 'px-2 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight border transition-all bg-blue-600 text-white border-blue-600';
+    }
+
+    await window.updatePlayerField(playerId, 'posicion', current);
+};
+
+window.initStarRating = (containerId, initialValue = 3) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const updateStars = (val) => {
+        const stars = container.querySelectorAll('[data-lucide="star"]');
+        stars.forEach((star, idx) => {
+            if (idx < val) {
+                star.classList.add('text-amber-400', 'fill-amber-400');
+                star.classList.remove('text-slate-200', 'fill-slate-200');
+            } else {
+                star.classList.remove('text-amber-400', 'fill-amber-400');
+                star.classList.add('text-slate-200', 'fill-slate-200');
+            }
+        });
+        const input = container.querySelector('input[name="nivel"]');
+        if (input) input.value = val;
     };
 
-    window.initStarRating = (containerId, initialValue = 3) => {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        const updateStars = (val) => {
-            const stars = container.querySelectorAll('[data-lucide="star"]');
-            stars.forEach((star, idx) => {
-                if (idx < val) {
-                    star.classList.add('text-amber-400', 'fill-amber-400');
-                    star.classList.remove('text-slate-200', 'fill-slate-200');
-                } else {
-                    star.classList.remove('text-amber-400', 'fill-amber-400');
-                    star.classList.add('text-slate-200', 'fill-slate-200');
-                }
-            });
-            const input = container.querySelector('input[name="nivel"]');
-            if (input) input.value = val;
-        };
-
-        container.innerHTML = `
+    container.innerHTML = `
             <input type="hidden" name="nivel" value="${initialValue}">
             <div class="flex items-center gap-2 p-3 bg-slate-50 border border-slate-100 rounded-2xl justify-center">
-                ${[1,2,3,4,5].map(i => `
+                ${[1, 2, 3, 4, 5].map(i => `
                     <button type="button" onclick="this.parentElement.parentElement.querySelector('input').value = ${i}; const stars = this.parentElement.querySelectorAll('[data-lucide=\\'star\\']'); stars.forEach((s, idx) => { if (idx < ${i}) { s.classList.add('text-amber-400', 'fill-amber-400'); s.classList.remove('text-slate-200', 'fill-slate-200'); } else { s.classList.remove('text-amber-400', 'fill-amber-400'); s.classList.add('text-slate-200', 'fill-slate-200'); } });" class="p-1 hover:scale-110 transition-transform">
                         <i data-lucide="star" class="w-6 h-6 ${i <= initialValue ? 'text-amber-400 fill-amber-400' : 'text-slate-200 fill-slate-200'}"></i>
                     </button>
                 `).join('')}
             </div>
         `;
-        if (window.lucide) lucide.createIcons();
-    };
+    if (window.lucide) lucide.createIcons();
+};
 
 window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCallback = "") => {
-    const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' : 
-                 selectedPositions.length === 1 ? selectedPositions[0] : 
-                 `${selectedPositions[0]} + ${selectedPositions.length - 1}`;
-    
+    const label = selectedPositions.length === 0 ? 'SELECCIONAR POSICIONES' :
+        selectedPositions.length === 1 ? selectedPositions[0] :
+            `${selectedPositions[0]} + ${selectedPositions.length - 1}`;
+
     return `
         <div class="relative group/ms">
             <button type="button" onclick="document.querySelectorAll('[id$=-menu]').forEach(m => m.id !== '${id}-modal-menu' && m.classList.add('hidden')); document.getElementById('${id}-modal-menu').classList.toggle('hidden')" 
@@ -812,14 +956,14 @@ window.renderPositionSelector = (selectedPositions = [], id = "pos", onChangeCal
             <div id="${id}-modal-menu" class="hidden absolute z-[60] top-full left-0 w-full bg-white border border-slate-100 shadow-2xl rounded-3xl mt-2 p-4 max-h-64 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
                 <div class="grid grid-cols-3 gap-1">
                     ${PLAYER_POSITIONS.map(pos => {
-                        const isSelected = selectedPositions.includes(pos);
-                        return `
+        const isSelected = selectedPositions.includes(pos);
+        return `
                             <label class="flex items-center gap-2 p-2 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
                                 <input type="checkbox" name="posicion" value="${pos}" ${isSelected ? 'checked' : ''} onchange="const val = [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].map(i => i.value).join(', '); this.closest('.group\\/ms').querySelector('button span').innerText = val === '' ? 'SELECCIONAR POSICIONES' : [...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length === 1 ? val : val.split(', ')[0] + ' + ' + ([...this.closest('#${id}-modal-menu').querySelectorAll('input:checked')].length - 1); ${onChangeCallback ? `${onChangeCallback}(val)` : ''}" class="w-4 h-4 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
                                 <span class="text-[10px] font-black ${isSelected ? 'text-blue-600' : 'text-slate-500'} uppercase font-outfit">${pos}</span>
                             </label>
                         `;
-                    }).join('')}
+    }).join('')}
                 </div>
             </div>
         </div>
@@ -836,7 +980,7 @@ window.customAlert = (title, message, type = 'info') => {
         error: 'alert-circle',
         info: 'info'
     };
-    
+
     const alertModal = document.createElement('div');
     alertModal.className = 'fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300';
     alertModal.innerHTML = `
@@ -852,7 +996,7 @@ window.customAlert = (title, message, type = 'info') => {
     `;
     document.body.appendChild(alertModal);
     if (window.lucide) lucide.createIcons();
-    
+
     alertModal.querySelector('#close-alert').onclick = () => {
         alertModal.classList.add('animate-out', 'fade-out', 'zoom-out');
         setTimeout(() => document.body.removeChild(alertModal), 300);
@@ -925,14 +1069,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const tx = db.db.transaction('jugadores', 'readwrite');
                 const store = tx.objectStore('jugadores');
                 p.foto = null;
-                p.avatar_url = null; 
+                p.avatar_url = null;
                 store.put(p);
             }
             localStorage.removeItem('force_photo_reset');
             localStorage.setItem('reset_executed', 'true');
             console.log("Local cleanup complete. Reloading...");
             setTimeout(() => location.reload(), 500);
-        } catch (e) { 
+        } catch (e) {
             console.error("Cleanup error:", e);
             localStorage.removeItem('force_photo_reset');
         }
@@ -949,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const toggleAuthBtn = document.getElementById('toggle-auth');
     const appEl = document.getElementById('app');
     let isLogin = true;
-    
+
     // Global Filters & State
     let asistenciaFilters = window.asistenciaFilters = {
         search: '',
@@ -1022,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const applyRoleRestrictions = () => {
         const isAdmin = db.userRole === 'ELITE';
         const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
-        
+
         // El staff y otras secciones críticas son solo para ELITE
         document.querySelectorAll('.admin-only').forEach(el => {
             el.style.display = isAdmin ? 'block' : 'none';
@@ -1057,7 +1201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
-            
+
             authSubmit.disabled = true;
             authSubmit.textContent = 'Procesando...';
 
@@ -1080,7 +1224,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    
+
     // UI Elements
     const navLinks = document.querySelectorAll('.nav-link');
     const viewTitle = document.getElementById('view-title');
@@ -1098,12 +1242,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         logoutBtn.addEventListener('click', async () => {
             const { error } = await supabaseClient.auth.signOut();
             if (error) window.customAlert('Error al Salir', error.message, 'error');
-            else window.location.reload(); 
+            else window.location.reload();
         });
     }
     if (mobileMenuBtn && sidebar) {
         const overlay = document.getElementById('sidebar-overlay');
-        
+
         const toggleSidebar = (show) => {
             if (show) {
                 sidebar.classList.remove('-translate-x-full');
@@ -1118,22 +1262,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isOpen = !sidebar.classList.contains('-translate-x-full');
             toggleSidebar(!isOpen);
         });
-        
+
         const closeSidebarBtn = document.getElementById('close-sidebar-btn');
         if (closeSidebarBtn) {
             closeSidebarBtn.addEventListener('click', () => toggleSidebar(false));
         }
-        
+
         if (overlay) {
             overlay.addEventListener('click', () => toggleSidebar(false));
         }
-        
+
         // Close sidebar and multiselect menus when clicking outside
         document.addEventListener('click', (e) => {
             if (window.innerWidth < 768 && !sidebar.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
                 sidebar.classList.add('-translate-x-full');
             }
-            
+
             // Close Campograma Multiselect Menus
             const menus = document.querySelectorAll('[id$="-menu"]');
             menus.forEach(menu => {
@@ -1149,7 +1293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Navigation logic
     const navLinksMobile = document.querySelectorAll('.nav-link-mobile');
-    
+
     const handleNavClick = (view) => {
         switchView(view);
         if (window.innerWidth < 768) {
@@ -1184,9 +1328,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const DB_VERSION = 7;
 
     const TASK_TYPES = [
-        "ABP", "ACCIONES COMBINADAS", "EVOLUCIONES", "JUEGO DE FÚTBOL", 
-        "JUEGO DE POSICIÓN", "JUEGO LÚDICO", "POSESIÓN", "RONDO", 
-        "TÉCNICA COLECTIVA", "TÉCNICA INDIVIDUAL", "FÚTBOL", "PORTEROS", "MOVIMIENTOS"
+        "TÉCNICA INDIVIDUAL", "TÉCNICA COLECTIVA", "TECNIFICACIÓN", 
+        "CALENTAMIENTO", "ABP", "ACCIONES COMBINADAS", "EVOLUCIONES", 
+        "JUEGO DE FÚTBOL", "JUEGO DE POSICIÓN", "JUEGO LÚDICO", 
+        "POSESIÓN", "RONDO", "FÚTBOL", "PORTEROS", "MOVIMIENTOS", 
+        "PARTIDO", "ESTRATEGIA", "FÍSICO", "PREVENTIVO", "VUELTA A LA CALMA"
     ];
 
     const TASK_CATEGORIES = [
@@ -1194,39 +1340,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     const TASK_OBJECTIVES = [
-        "1x1", "ABP", "AMPLITUD", "ATAQUE RAPIDO", "BASCULACIONES", "BLOCAJES", 
-        "BUSCAR SUPERIORIDADES", "CAIDAS", "CAMBIOS DE ORIENTACIÓN", "CENTRO Y REMATE", 
-        "COBERTURAS", "COOPERACIÓN", "CONCENTRACIÓN", "CONDUCCIÓN", "CONTROL", 
-        "CONTROL ORIENTADO", "COORDINACIÓN", "CREAR LÍNEA DE PASE", "DEJAR DE CARA", 
-        "DEFENSA 1x1", "DEFENSA CENTROS LATERALES", "DEFENSA DE PARED", "DESMARQUES DE APOYO", 
-        "DESMARQUES DE RUPTURA", "DESPEJES", "DESPLAZAMIENTO", "DESVIOS", "DIVERSIÓN", 
-        "ENTRENAMIENTO COMPETITIVO", "ESTIRAMIENTOS", "FIJAR RIVAL", "FINALIZAR", 
-        "GOLPEO DE CABEZA", "INTERCEPTACIÓN", "JUEGO AEREO", "JUEGO DE ESPALDAS", 
-        "JUEGO DE PIES", "JUGAR CON ALEJADO", "LATERALIDAD", "LECTURA DEFENSIVA", 
-        "MANTENER", "MECANISMOS DE EJECUCIÓN", "PAREDES", "PASE", "PASE LARGO", 
-        "POSESIÓN", "PRESIÓN", "PROFUNDIDAD", "PROGRESAR", "PROLONGACIONES", 
-        "PROPIOCEPCION", "PROTECCIÓN", "REGATE", "REPLIEGUE", "SAQUE CON LA MANO", 
-        "SAQUE DE BANDA", "SALIDA DE BALÓN", "SUPERAR LINEAS", "TAPAR LÍNEA DE PASE", 
-        "TOMA DE DECISION", "TRANSICIONES DEFENSIVAS", "VELOCIDAD", "VELOCIDAD DESPLAZAMIENTO", 
+        "TÉCNICA INDIVIDUAL", "TÉCNICA COLECTIVA", "1x1", "ABP", "AMPLITUD", 
+        "ATAQUE RAPIDO", "BASCULACIONES", "BLOCAJES", "BUSCAR SUPERIORIDADES", 
+        "CAIDAS", "CAMBIOS DE ORIENTACIÓN", "CENTRO Y REMATE", "COBERTURAS", 
+        "COOPERACIÓN", "CONCENTRACIÓN", "CONDUCCIÓN", "CONTROL",
+        "CONTROL ORIENTADO", "COORDINACIÓN", "CREAR LÍNEA DE PASE", "DEJAR DE CARA",
+        "DEFENSA 1x1", "DEFENSA CENTROS LATERALES", "DEFENSA DE PARED", "DESMARQUES DE APOYO",
+        "DESMARQUES DE RUPTURA", "DESPEJES", "DESPLAZAMIENTO", "DESVIOS", "DIVERSIÓN",
+        "ENTRENAMIENTO COMPETITIVO", "ESTIRAMIENTOS", "FIJAR RIVAL", "FINALIZAR",
+        "GOLPEO DE CABEZA", "INTERCEPTACIÓN", "JUEGO AEREO", "JUEGO DE ESPALDAS",
+        "JUEGO DE PIES", "JUGAR CON ALEJADO", "LATERALIDAD", "LECTURA DEFENSIVA",
+        "MANTENER", "MECANISMOS DE EJECUCIÓN", "PAREDES", "PASE", "PASE LARGO",
+        "POSESIÓN", "PRESIÓN", "PROFUNDIDAD", "PROGRESAR", "PROLONGACIONES",
+        "PROPIOCEPCION", "PROTECCIÓN", "REGATE", "REPLIEGUE", "SAQUE CON LA MANO",
+        "SAQUE DE BANDA", "SALIDA DE BALÓN", "SUPERAR LINEAS", "TAPAR LÍNEA DE PASE",
+        "TOMA DE DECISION", "TRANSICIONES DEFENSIVAS", "VELOCIDAD", "VELOCIDAD DESPLAZAMIENTO",
         "VELOCIDAD REACCIÓN", "VERTICALIDAD", "VISIÓN PERIFÉRICA"
     ];
 
     const TASK_MATERIALS = [
-        "AROS", "BALONES", "CHINOS", "CONOS", "PETOS", "PICAS", "PORTERIA PEQUEÑA", 
-        "PORTERIA REGLAMENTARIA", "ESCALERA COORDINACION", "VALLAS", "CINTA", 
+        "AROS", "BALONES", "CHINOS", "CONOS", "PETOS", "PICAS", "PORTERIA PEQUEÑA",
+        "PORTERIA REGLAMENTARIA", "ESCALERA COORDINACION", "VALLAS", "CINTA",
         "BANCO", "FITBALL", "PELOTAS TENIS", "PALA PADEL"
     ];
 
     const TASK_SPACES = [
-        "1/2 CAMPO", "3/4 CAMPO", "CAMPO ENTERO", "DOBLE AREA", "AREA GRANDE", 
-        "CIRCULO CENTRAL", "PORTERÍA COMPETICIÓN", "10 M", "20", "5X5", "6X6", "7X7", 
-        "8X8", "10X5", "10X8", "10X10", "10X20", "10X25", "10X40", "12X12", "14X10", 
-        "15X5", "15X7", "15X10", "15X15", "15X45", "20X5", "20X10", "20X15", "20X20", 
-        "20X30", "20X40", "25X10", "25X12", "25X15", "25X20", "25X25", "30X10", "30X15", 
-        "30X20", "30X30", "35X15", "35X20", "35X35", "40X15", "40X20", "40X25", "40X30", 
-        "40X40", "40X50", "45X25", "50X25", "50X30", "60X40", 
-        "ESPACIO GRANDE (15X15) / ESPACIO PEQUEÑO (5X5)", "7X7 / 15X15", "25X20 - 20X10", 
-        "15X15 - 20X20", "25X20 - 10X10", "5X5 - 20X20", "30X30 (10X10)", 
+        "1/2 CAMPO", "3/4 CAMPO", "CAMPO ENTERO", "DOBLE AREA", "AREA GRANDE",
+        "CIRCULO CENTRAL", "PORTERÍA COMPETICIÓN", "10 M", "20", "5X5", "6X6", "7X7",
+        "8X8", "10X5", "10X8", "10X10", "10X20", "10X25", "10X40", "12X12", "14X10",
+        "15X5", "15X7", "15X10", "15X15", "15X45", "20X5", "20X10", "20X15", "20X20",
+        "20X30", "20X40", "25X10", "25X12", "25X15", "25X20", "25X25", "30X10", "30X15",
+        "30X20", "30X30", "35X15", "35X20", "35X35", "40X15", "40X20", "40X25", "40X30",
+        "40X40", "40X50", "45X25", "50X25", "50X30", "60X40",
+        "ESPACIO GRANDE (15X15) / ESPACIO PEQUEÑO (5X5)", "7X7 / 15X15", "25X20 - 20X10",
+        "15X15 - 20X20", "25X20 - 10X10", "5X5 - 20X20", "30X30 (10X10)",
         "RONDO GRANDE 10X10 / RONDO PEQUEÑO 7X7", "IR VARIANDO CONFORME SE VAN ELIMINANDO JUGADORES"
     ];
 
@@ -1242,13 +1389,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         'equipos': { title: 'Gestión de Equipos', subtitle: 'Plantillas y datos de jugadores.', addButtonLabel: 'Nuevo Equipo', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'clubes': { title: 'Clubes Convenidos', subtitle: 'Gestión y vinculación de equipos por club.', addButtonLabel: 'Nuevo Club', addButtonEnabled: true },
         'jugadores': { title: 'Directorio de Jugadores', subtitle: 'Base de datos global de futbolistas.', addButtonLabel: 'Nuevo Jugador', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
-        'asistencia': { 
-            title: 'Control de Asistencia', 
-            subtitle: 'Histórico de asistencia por día y equipo.', 
-            addButtonLabel: 'Asistencia', 
-            addButtonEnabled: true, 
-            secondaryButtonEnabled: true, 
-            secondaryButtonLabel: 'Reparar Asistencias' 
+        'asistencia': {
+            title: 'Control de Asistencia',
+            subtitle: 'Histórico de asistencia por día y equipo.',
+            addButtonLabel: 'Asistencia',
+            addButtonEnabled: true,
+            secondaryButtonEnabled: true,
+            secondaryButtonLabel: 'Reparar Asistencias'
         },
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
@@ -1317,7 +1464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const btnText = addBtn.querySelector('.btn-text');
             if (btnText) btnText.textContent = meta.addButtonLabel;
             if (addBtnMobile) addBtnMobile.classList.remove('hidden');
-            
+
             // Centralized Add Button Logic
             const handleAddClick = () => {
                 if (viewId === 'eventos') window.showNewEventoModal();
@@ -1342,7 +1489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (meta.secondaryButtonEnabled && !isConvenido) {
             secondaryAddBtn.classList.remove('hidden');
             secondaryAddBtn.querySelector('span').textContent = meta.secondaryButtonLabel;
-            
+
             // CSV Import Logic for Tareas
             if (viewId === 'tareas') {
                 secondaryAddBtn.onclick = () => {
@@ -1352,7 +1499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     fileInput.onchange = async (e) => {
                         const file = e.target.files[0];
                         if (!file) return;
-                        
+
                         const reader = new FileReader();
                         reader.onload = async (re) => {
                             const text = re.target.result;
@@ -1362,9 +1509,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             // Detect delimiter: , or ;
                             const firstLine = lines[0];
                             const delimiter = firstLine.includes(';') ? ';' : ',';
-                            
+
                             const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, '').toUpperCase());
-                            
+
                             const startIndex = headers.findIndex(h => h === 'TAREA' || h === 'NOMBRE' || h === 'TASK');
                             if (startIndex === -1) {
                                 window.customAlert('CSV Inválido', 'No se ha encontrado la columna "TAREA" o "NOMBRE". Revisa el formato.', 'error');
@@ -1373,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                             const existingTasks = await db.getAll('tareas');
                             const existingNames = new Set(existingTasks.map(t => t.name.toLowerCase()));
-                            
+
                             let importedCount = 0;
                             let skippedCount = 0;
                             const tasksToImport = [];
@@ -1409,7 +1556,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 if (existing) {
                                     let needsUpdate = false;
                                     const normalizeValue = (v) => v?.toString().trim() || '';
-                                    
+
                                     const espacioCsv = (taskData['ESPACIO'] || taskData['SPACE'] || taskData['ESPACIOS'] || taskData['AREA'] || '').trim().toUpperCase();
                                     const materialCsv = (taskData['MATERIAL'] || taskData['MATERIALES'] || taskData['MATERIALS'] || '').trim().toUpperCase();
                                     const objCsv = (taskData['OBJETIVO'] || taskData['OBJECTIVE'] || '').trim().toUpperCase();
@@ -1421,7 +1568,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     if (taskData['VARIANTES'] && existing.variantes !== varCsv) { existing.variantes = varCsv; needsUpdate = true; }
                                     if (taskData['OBJETIVO'] && existing.objetivo !== objCsv) { existing.objetivo = objCsv; needsUpdate = true; }
                                     if (espacioCsv && existing.espacio !== espacioCsv) { existing.espacio = espacioCsv; needsUpdate = true; }
-                                    
+
                                     if (materialCsv) {
                                         const cleanMaterials = materialCsv.split(/[,;]/).map(m => m.trim().toUpperCase()).filter(m => m).join(', ');
                                         if (existing.material !== cleanMaterials) {
@@ -1429,7 +1576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             needsUpdate = true;
                                         }
                                     }
-                                    
+
                                     if (needsUpdate) {
                                         await db.update('tareas', existing);
                                         updatedCount++;
@@ -1469,9 +1616,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             }
 
                             loadingAlert.remove();
-                            window.customAlert('Importación Completada', 
-                                `Se han importado ${importedCount} tareas nuevas y completado datos en ${updatedCount} existentes. ` + 
-                                (skippedCount > 0 ? `${skippedCount} tareas sin cambios.` : ''), 
+                            window.customAlert('Importación Completada',
+                                `Se han importado ${importedCount} tareas nuevas y completado datos en ${updatedCount} existentes. ` +
+                                (skippedCount > 0 ? `${skippedCount} tareas sin cambios.` : ''),
                                 'success');
                             window.switchView('tareas');
                         };
@@ -1509,12 +1656,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const firstLine = lines[0];
                             const delimiter = firstLine.includes(';') ? ';' : ',';
                             const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                            
+
                             const existingTeams = window.getSortedTeams(await db.getAll('equipos'));
 
                             let importedCount = 0;
                             let updatedCount = 0;
-                            
+
                             const loadingAlert = document.createElement('div');
                             loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
                             loadingAlert.innerHTML = `
@@ -1590,14 +1737,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentView = viewId;
         contentContainer.innerHTML = '';
         await window.renderView(viewId);
-        
+
     }
 
     window.renderView = async (viewId) => {
         const wrapper = document.createElement('div');
         wrapper.className = 'view animate-in fade-in duration-500';
-        
-        switch(viewId) {
+
+        switch (viewId) {
             case 'dashboard': await renderDashboard(wrapper); break;
             case 'calendario': await renderCalendario(wrapper); break;
             case 'campograma': await renderCampograma(wrapper); break;
@@ -1614,15 +1761,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'clubes': await window.renderClubes(wrapper); break;
             case 'perfil': await window.renderPerfil(wrapper); break;
         }
-        
+
         contentContainer.innerHTML = '';
         contentContainer.appendChild(wrapper);
-        
+
         // El chispazo maestro: activar todos los iconos de la nueva vista
         if (window.lucide) {
-            setTimeout(() => {
+            // Usar requestAnimationFrame para asegurar que el DOM está listo y no bloquear
+            requestAnimationFrame(() => {
                 lucide.createIcons();
-            }, 100);
+            });
         }
     }
 
@@ -1638,7 +1786,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 db.getAll('asistencia'),
                 db.getAll('clubes')
             ]);
-            
+
             const userRes = await supabaseClient.auth.getUser();
             const currentUser = userRes.data?.user;
 
@@ -1650,10 +1798,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
             const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
             const attendanceFiltered = window.applyGlobalFilters(attendance);
-            
+
+            // Pre-process for efficiency
+            const teamMap = new Map(teams.map(t => [String(t.id), t]));
+            const attendanceByTeam = attendance.reduce((acc, r) => {
+                if (r.equipoid) {
+                    const id = String(r.equipoid);
+                    if (!acc[id]) acc[id] = [];
+                    acc[id].push(r);
+                }
+                return acc;
+            }, {});
+
             // Calculate dynamic attendance for each team
             teams.forEach(t => {
-                const teamReports = attendance.filter(r => r.equipoid && r.equipoid.toString() === t.id.toString());
+                const teamReports = attendanceByTeam[String(t.id)] || [];
                 let totalPresent = 0;
                 let totalPossible = 0;
                 teamReports.forEach(r => {
@@ -1680,18 +1839,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const type = String(t.type || 'Fútbol').toUpperCase();
                 taskTypeCounts[type] = (taskTypeCounts[type] || 0) + 1;
             });
-            const sortedTaskTypes = Object.entries(taskTypeCounts).sort((a,b) => b[1] - a[1]).slice(0, 6);
+            const sortedTaskTypes = Object.entries(taskTypeCounts).sort((a, b) => b[1] - a[1]).slice(0, 9);
 
             // Session counts by team
             const sessionTeamCounts = {};
             sessions.forEach(s => {
-                const team = teams.find(t => t.id == s.equipoid);
+                const team = teamMap.get(String(s.equipoid));
                 if (team && team.nombre) {
                     const name = String(team.nombre).split(' ||| ')[0].toUpperCase();
                     sessionTeamCounts[name] = (sessionTeamCounts[name] || 0) + 1;
                 }
             });
-            
+
             // Order sessions teams like attendance (using teamsToRender order)
             const sortedSessionTeams = teamsToRender
                 .filter(t => {
@@ -1720,12 +1879,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     torneoTeamCounts[key] = (torneoTeamCounts[key] || 0) + 1;
                 }
             });
-            
+
             // Sort chronologically using global utility and map to counts
             const sortedTorneoTeams = window.getSortedTeams(teams)
                 .filter(t => torneoTeamCounts[String(t.id)])
                 .map(t => [String(t.nombre).split(' ||| ')[0].toUpperCase(), torneoTeamCounts[String(t.id)]]);
-    
+
             container.innerHTML = `
                 <!-- Line 1: Sesiones (Full Width) -->
                 <div class="grid grid-cols-1 gap-6 mb-8">
@@ -1743,24 +1902,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 border-t border-slate-50 pt-8">
                             ${(() => {
-                                const palette = [
-                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
-                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
-                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
-                                    { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
-                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
-                                    { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
-                                ];
-                                return sortedSessionTeams.map(([team, count], idx) => {
-                                    const color = palette[idx % palette.length];
-                                    return `
+                    const palette = [
+                        { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                        { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                        { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
+                        { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
+                        { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                        { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
+                    ];
+                    return sortedSessionTeams.map(([team, count], idx) => {
+                        const color = palette[idx % palette.length];
+                        return `
                                         <div class="${color.bg} p-6 rounded-[2rem] border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
                                             <p class="text-[9px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full transition-colors">${team}</p>
                                             <p class="text-3xl font-black ${color.text} font-outfit transition-colors">${count}</p>
                                         </div>
                                     `;
-                                }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
-                            })()}
+                    }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
+                })()}
                         </div>
                         <button onclick="window.switchView('sesiones')" class="mt-8 w-full py-5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-indigo-200 md:hidden">Gestionar Sesiones</button>
                     </div>
@@ -1856,24 +2015,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-4 border-t border-slate-50 pt-8 mb-8">
                             ${(() => {
-                                const palette = [
-                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
-                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
-                                    { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
-                                    { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
-                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
-                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' }
-                                ];
-                                return sortedTaskTypes.map(([type, count], idx) => {
-                                    const color = palette[idx % palette.length];
-                                    return `
+                    const palette = [
+                        { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                        { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                        { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
+                        { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
+                        { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                        { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' }
+                    ];
+                    return sortedTaskTypes.map(([type, count], idx) => {
+                        const color = palette[idx % palette.length];
+                        return `
                                         <div class="${color.bg} p-6 rounded-[2rem] border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
                                             <p class="text-[9px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full transition-colors">${type}</p>
                                             <p class="text-3xl font-black ${color.text} font-outfit transition-colors">${count}</p>
                                         </div>
                                     `;
-                                }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
-                            })()}
+                    }).join('') || '<p class="text-[10px] text-slate-300 italic col-span-full text-center py-10">Sin datos</p>';
+                })()}
                         </div>
                         <button onclick="window.switchView('tareas')" class="mt-auto w-full py-5 bg-slate-900 text-white hover:bg-black rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-slate-900/10">Gestionar Biblioteca</button>
                     </div>
@@ -1889,26 +2048,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="grid grid-cols-2 gap-4 border-t border-slate-50 pt-8 mb-8">
                             ${(() => {
-                                const palette = [
-                                    { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
-                                    { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
-                                    { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
-                                    { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
-                                    { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
-                                    { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
-                                    { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
-                                    { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
-                                ];
-                                return sortedTorneoTeams.map(([team, count], idx) => {
-                                    const color = palette[idx % palette.length];
-                                    return `
+                    const palette = [
+                        { bg: 'bg-blue-50/50', border: 'border-blue-100', text: 'text-blue-600' },
+                        { bg: 'bg-emerald-50/50', border: 'border-emerald-100', text: 'text-emerald-600' },
+                        { bg: 'bg-amber-50/50', border: 'border-amber-100', text: 'text-amber-600' },
+                        { bg: 'bg-rose-50/50', border: 'border-rose-100', text: 'text-rose-600' },
+                        { bg: 'bg-indigo-50/50', border: 'border-indigo-100', text: 'text-indigo-600' },
+                        { bg: 'bg-violet-50/50', border: 'border-violet-100', text: 'text-violet-600' },
+                        { bg: 'bg-cyan-50/50', border: 'border-cyan-100', text: 'text-cyan-600' },
+                        { bg: 'bg-orange-50/50', border: 'border-orange-100', text: 'text-orange-600' }
+                    ];
+                    return sortedTorneoTeams.map(([team, count], idx) => {
+                        const color = palette[idx % palette.length];
+                        return `
                                         <div class="${color.bg} p-5 rounded-3xl border ${color.border} flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-xl group/item hover:-translate-y-1">
                                             <p class="text-[10px] font-black text-slate-700 uppercase tracking-[0.1em] mb-2 text-center truncate w-full group-hover/item:text-slate-900 transition-colors">${team}</p>
                                             <p class="text-3xl font-black ${color.text} transition-colors">${count}</p>
                                         </div>
                                     `;
-                                }).join('') || '<p class="text-[10px] text-slate-300 italic text-center col-span-full py-10">Sin torneos registrados</p>';
-                            })()}
+                    }).join('') || '<p class="text-[10px] text-slate-300 italic text-center col-span-full py-10">Sin torneos registrados</p>';
+                })()}
                         </div>
                         <button onclick="window.switchView('torneos')" class="mt-auto w-full py-5 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-amber-900/10">Gestionar Torneos</button>
                     </div>
@@ -1955,7 +2114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <i data-lucide="building-2" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
                                     <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest">Sin clubes registrados</p>
                                 </div>
-                            ` : clubes.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => `
+                            ` : clubes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => `
                                 <div onclick="window.switchView('clubes')" class="group flex flex-col items-center text-center p-6 bg-slate-50/50 rounded-[2.5rem] border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-xl transition-all cursor-pointer">
                                     <div class="w-20 h-20 bg-white rounded-3xl flex items-center justify-center border border-slate-100 shadow-sm overflow-hidden p-3 mb-4 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500">
                                         ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-8 h-8 text-indigo-400"></i>`}
@@ -1990,14 +2149,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const sessions = window.applyGlobalFilters(allSessions);
             const eventos = window.applyGlobalFilters(allEventos);
             const convocatorias = window.applyGlobalFilters(allConvocatorias);
-            
+
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
-            
+
             const monthName = new Intl.DateTimeFormat('es', { month: 'long' }).format(currentCalendarDate);
             const firstDay = new Date(year, month, 1).getDay();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            
+
             let startingDay = firstDay === 0 ? 6 : firstDay - 1;
 
             const selDateStr = `${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`;
@@ -2010,7 +2169,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const { extra } = window.parseLugarMetadata(c.lugar);
                         isExtraDate = (extra.s2?.f === selDateStr) || (extra.s3?.f === selDateStr);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
                 return isMainDate || isExtraDate;
             });
@@ -2019,16 +2178,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ...selectedDaySessions.map(s => ({ ...s, type: 'sesion' })),
                 ...selectedDayEvents.map(e => ({ ...e, type: 'evento' })),
                 ...selectedDayConvocatorias.map(c => ({ ...c, type: 'convocatoria' }))
-            ].sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
+            ].sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
 
-        window.updateSelectedCalendarDay = (dStr) => {
-            selectedCalendarDate = new Date(dStr + 'T12:00:00');
-            renderCalendario(container);
-        };
+            window.updateSelectedCalendarDay = (dStr) => {
+                selectedCalendarDate = new Date(dStr + 'T12:00:00');
+                renderCalendario(container);
+            };
 
-        const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+            const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
 
-        container.innerHTML = `
+            container.innerHTML = `
             <div class="flex flex-col md:flex-row gap-6">
                 <!-- Left Column: Calendar Grid (80%) -->
                 <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
@@ -2050,35 +2209,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="grid grid-cols-7 flex-1 auto-rows-fr">
                             ${Array(startingDay).fill('').map(() => `<div class="border-r border-b border-slate-50/50 bg-slate-50/10"></div>`).join('')}
                             ${Array(daysInMonth).fill('').map((_, i) => {
-                                const day = i + 1;
-                                const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                
-                                const daySessions = sessions.filter(s => s.fecha === dStr);
-                                const dayEvents = eventos.filter(e => e.fecha === dStr);
-                                const dayConcs = convocatorias.filter(c => {
-                                    if (c.fecha === dStr) return true;
-                                    if (c.lugar && c.lugar.includes(' ||| ')) {
-                                        try {
-                                            const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
-                                            return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
-                                        } catch (e) {}
-                                    }
-                                    return false;
-                                });
+                const day = i + 1;
+                const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-                                const combined = [
-                                    ...daySessions.map(s => ({ ...s, color: 'bg-red-500' })),
-                                    ...dayEvents.map(e => ({ ...e, color: 'bg-emerald-500' })),
-                                    ...dayConcs.map(c => ({ ...c, color: (c.tipo || '').toUpperCase() === 'TORNEO' ? 'bg-slate-900' : 'bg-amber-400' }))
-                                ];
+                const daySessions = sessions.filter(s => s.fecha === dStr);
+                const dayEvents = eventos.filter(e => e.fecha === dStr);
+                const dayConcs = convocatorias.filter(c => {
+                    if (c.fecha === dStr) return true;
+                    if (c.lugar && c.lugar.includes(' ||| ')) {
+                        try {
+                            const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
+                            return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
+                        } catch (e) { }
+                    }
+                    return false;
+                });
 
-                                const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-                                const todayDate = new Date();
-                                todayDate.setHours(0,0,0,0);
-                                const cellDate = new Date(year, month, day);
-                                const isPast = cellDate < todayDate;
-                                
-                                return `
+                const combined = [
+                    ...daySessions.map(s => ({ ...s, color: 'bg-red-500' })),
+                    ...dayEvents.map(e => ({ ...e, color: 'bg-emerald-500' })),
+                    ...dayConcs.map(c => ({ ...c, color: (c.tipo || '').toUpperCase() === 'TORNEO' ? 'bg-slate-900' : 'bg-amber-400' }))
+                ];
+
+                const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+                const todayDate = new Date();
+                todayDate.setHours(0, 0, 0, 0);
+                const cellDate = new Date(year, month, day);
+                const isPast = cellDate < todayDate;
+
+                return `
                                     <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-4 min-h-0 cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-2 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''} ${isPast ? 'bg-slate-50/30' : ''}">
                                         <div class="flex justify-between items-center w-full">
                                             <span class="text-sm font-black transition-all ${isToday ? 'w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600')} ${isPast ? 'text-slate-300' : ''}">${day}</span>
@@ -2091,7 +2250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </div>
                                     </div>
                                 `;
-                            }).join('')}
+            }).join('')}
                         </div>
                     </div>
 
@@ -2103,26 +2262,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                         <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10 min-h-[200px]">
                             ${combinedItems.length > 0 ? (() => {
-                                const todayDate = new Date();
-                                todayDate.setHours(0,0,0,0);
-                                const isPastDay = selectedCalendarDate < todayDate;
-                                
-                                return combinedItems.map(item => {
-                                    const isSession = item.type === 'sesion';
-                                    const isConv = item.type === 'convocatoria';
-                                    let accent = 'blue';
-                                    let icon = 'calendar';
-                                    let action = `window.viewEventoFicha('${item.id}')`;
-                                    if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
-                                    else if (isConv) { 
-                                        accent = item.tipo?.toUpperCase() === 'TORNEO' ? 'slate' : 'blue'; 
-                                        icon = item.tipo?.toUpperCase() === 'TORNEO' ? 'trophy' : 'users';
-                                        action = (item.tipo?.toUpperCase() === 'TORNEO') ? `window.viewTorneoRendimiento('${item.id}')` : `window.viewConvocatoria('${item.id}')`; 
-                                    }
+                    const todayDate = new Date();
+                    todayDate.setHours(0, 0, 0, 0);
+                    const isPastDay = selectedCalendarDate < todayDate;
 
-                                    const isChecked = item.completada || isPastDay;
+                    return combinedItems.map(item => {
+                        const isSession = item.type === 'sesion';
+                        const isConv = item.type === 'convocatoria';
+                        let accent = 'blue';
+                        let icon = 'calendar';
+                        let action = `window.viewEventoFicha('${item.id}')`;
+                        if (isSession) { accent = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; }
+                        else if (isConv) {
+                            accent = item.tipo?.toUpperCase() === 'TORNEO' ? 'slate' : 'blue';
+                            icon = item.tipo?.toUpperCase() === 'TORNEO' ? 'trophy' : 'users';
+                            action = (item.tipo?.toUpperCase() === 'TORNEO') ? `window.viewTorneoRendimiento('${item.id}')` : `window.viewConvocatoria('${item.id}')`;
+                        }
 
-                                    return `
+                        const isChecked = item.completada || isPastDay;
+
+                        return `
                                         <div onclick="${action}" class="p-5 rounded-2xl border border-slate-100 bg-white hover:border-${accent}-300 hover:shadow-xl hover:shadow-${accent}-500/10 transition-all cursor-pointer group ${isChecked ? 'opacity-40 grayscale bg-slate-50/50' : ''}">
                                             <div class="flex items-center gap-3 mb-3">
                                                 <div class="w-8 h-8 rounded-lg ${isChecked ? 'bg-slate-100' : `bg-${accent}-50`} flex items-center justify-center group-hover:bg-${accent}-600 transition-colors">
@@ -2133,8 +2292,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <p class="text-xs font-black text-slate-800 uppercase leading-snug ${isChecked ? 'text-slate-400' : ''}">${item.titulo || item.nombre}</p>
                                         </div>
                                     `;
-                                }).join('');
-                            })() : `
+                    }).join('');
+                })() : `
                                 <div class="py-10 text-center flex flex-col items-center gap-3">
                                     <div class="w-12 h-12 bg-white shadow-sm border border-slate-100 rounded-full flex items-center justify-center">
                                         <i data-lucide="coffee" class="w-6 h-6 text-slate-200"></i>
@@ -2159,7 +2318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         try {
                             const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
                             return (extra.s2?.f === dateStr) || (extra.s3?.f === dateStr);
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     return false;
                 });
@@ -2168,7 +2327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ...daySessions.map(s => ({ ...s, type: 'sesion' })),
                     ...dayEvents.map(e => ({ ...e, type: 'evento' })),
                     ...dayConcs.map(c => ({ ...c, type: 'convocatoria' }))
-                ].sort((a,b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
+                ].sort((a, b) => (a.hora || '00:00').localeCompare(b.hora || '00:00'));
 
                 const dateObj = new Date(dateStr + 'T12:00:00');
                 const title = dateObj.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -2192,22 +2351,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                             <div class="space-y-4">
                                 ${combinedItems.length > 0 ? combinedItems.map(item => {
-                                    const isSession = item.type === 'sesion';
-                                    const isConv = item.type === 'convocatoria';
-                                    const isTorneo = isConv && (item.tipo || '').toUpperCase() === 'TORNEO';
+                    const isSession = item.type === 'sesion';
+                    const isConv = item.type === 'convocatoria';
+                    const isTorneo = isConv && (item.tipo || '').toUpperCase() === 'TORNEO';
 
-                                    let accentColor = 'blue';
-                                    let icon = 'alarm-clock';
-                                    let action = `window.viewEventoFicha('${item.id}')`;
-                                    let typeLabel = 'Evento';
+                    let accentColor = 'blue';
+                    let icon = 'alarm-clock';
+                    let action = `window.viewEventoFicha('${item.id}')`;
+                    let typeLabel = 'Evento';
 
-                                    if (isTorneo) { accentColor = 'slate'; icon = 'trophy'; action = `window.viewTorneoRendimiento('${item.id}')`; typeLabel = 'Torneo'; }
-                                    else if (isSession) { accentColor = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; typeLabel = 'Sesión'; }
-                                    else if (isConv) { accentColor = 'blue'; icon = 'users'; action = `window.viewConvocatoria('${item.id}')`; typeLabel = 'Convocatoria'; }
+                    if (isTorneo) { accentColor = 'slate'; icon = 'trophy'; action = `window.viewTorneoRendimiento('${item.id}')`; typeLabel = 'Torneo'; }
+                    else if (isSession) { accentColor = 'red'; icon = 'play'; action = `window.viewSessionFicha('${item.id}')`; typeLabel = 'Sesión'; }
+                    else if (isConv) { accentColor = 'blue'; icon = 'users'; action = `window.viewConvocatoria('${item.id}')`; typeLabel = 'Convocatoria'; }
 
-                                    const isChecked = item.completada;
+                    const isChecked = item.completada;
 
-                                    return `
+                    return `
                                         <div onclick="${action}" class="group relative p-6 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:border-blue-100 transition-all cursor-pointer flex items-center gap-6 ${isChecked ? 'opacity-60 grayscale-[0.5]' : ''}">
                                             <div class="w-14 h-14 rounded-[1.5rem] bg-${accentColor}-50 flex items-center justify-center group-hover:scale-110 transition-transform shadow-inner-sm">
                                                 <i data-lucide="${icon}" class="w-6 h-6 text-${accentColor}-600"></i>
@@ -2228,7 +2387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </div>
                                         </div>
                                     `;
-                                }).join('') : `
+                }).join('') : `
                                     <div class="py-20 text-center bg-slate-50/50 rounded-[3rem] border-2 border-dashed border-slate-200/50">
                                         <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100">
                                             <i data-lucide="coffee" class="w-8 h-8 text-slate-200"></i>
@@ -2257,7 +2416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             if (window.lucide) lucide.createIcons();
-            
+
         } catch (err) {
             console.error(err);
             container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-2xl">Error cargando calendario: ${err.message}</div>`;
@@ -2291,12 +2450,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             ["JUAN PEREZ", "", "2010", "PO", "Derecho", "3", "Masculino", "Buenos reflejos", "ANTIGUOKO"],
             ["MARIA GARCIA", "", "2008", "DCZ", "Zurdo", "4", "Femenino", "Goleadora", "REAL SOCIEDAD"]
         ];
-        
+
         const csvContent = [
             headers.join(";"),
             ...rows.map(r => r.join(";"))
         ].join("\n");
-        
+
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
@@ -2360,11 +2519,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             fileInput.onchange = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                
+
                 const reader = new FileReader();
                 reader.onload = async (re) => {
                     closeModal(); // Close instruction modal
-                    
+
                     const loadingAlert = document.createElement('div');
                     loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
                     loadingAlert.innerHTML = `
@@ -2383,7 +2542,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const firstLine = lines[0];
                         const delimiter = firstLine.includes(';') ? ';' : ',';
                         const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                        
+
                         // Less strict mapping: check if any of the keywords is contained in the header
                         const mapHeader = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
 
@@ -2412,11 +2571,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             if (!row[idxNombre]) continue;
 
                             const rawNombre = row[idxNombre].toUpperCase().trim();
-                            
+
                             // 1. Manejo de Equipo Interno (equipoid)
                             const teamVal = idxEquipo !== -1 ? row[idxEquipo] : '';
                             const team = teams.find(t => t.nombre.split(' ||| ')[0].toLowerCase() === (teamVal || '').toLowerCase());
-                            
+
                             // 2. Manejo de Club Externo (equipoConvenido)
                             let clubVal = idxClub !== -1 ? row[idxClub] : '';
                             // Si no hay club externo explícito pero el "equipo" no es interno, lo tomamos como club
@@ -2474,7 +2633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         // Forzar refresco total de la caché local
                         delete db.cache['jugadores'];
                         delete db.lastSync['jugadores'];
-                        await db.getAll('jugadores'); 
+                        await db.getAll('jugadores');
 
                         window.customAlert('Éxito', `Nuevos: ${playersToInsert.length}, Actualizados: ${updatedCount}`, 'success');
                         window.switchView('jugadores');
@@ -2490,24 +2649,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     };
 
-    window.renderEventos = async function(container, onlyTable = false) {
+    window.renderEventos = async function (container, onlyTable = false) {
         const allEvents = await db.getAll('eventos');
         const tasks = window.applyGlobalFilters(allEvents);
-        
+
         if (!window.eventFilters) window.eventFilters = { search: '', category: 'TODOS' };
 
         const categories = ['TODOS', ...new Set(tasks.map(t => t.categoria || 'Otro').filter(Boolean))].sort();
 
         const filteredTasks = tasks.filter(t => {
             const searchVal = (window.eventFilters.search || '').toLowerCase();
-            const matchesSearch = (t.nombre || '').toLowerCase().includes(searchVal) || 
-                                 (t.categoria || '').toLowerCase().includes(searchVal) ||
-                                 (t.lugar || '').toLowerCase().includes(searchVal);
-            
+            const matchesSearch = (t.nombre || '').toLowerCase().includes(searchVal) ||
+                (t.categoria || '').toLowerCase().includes(searchVal) ||
+                (t.lugar || '').toLowerCase().includes(searchVal);
+
             const matchesCategory = window.eventFilters.category === 'TODOS' || (t.categoria || 'Otro') === window.eventFilters.category;
-            
+
             return matchesSearch && matchesCategory;
-        }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
+        }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
         if (!onlyTable) {
             container.innerHTML = `
@@ -2699,14 +2858,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <p class="text-[10px] font-black text-white/40 uppercase tracking-widest mb-2">Equipos Vinculados</p>
                                         <div class="space-y-2">
                                             ${(evento.equipoids || []).length > 0 ? evento.equipoids.map(eid => {
-                                                const team = teams.find(t => t.id == eid);
-                                                return `
+            const team = teams.find(t => t.id == eid);
+            return `
                                                     <div class="flex items-center gap-2">
                                                         <div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                                                         <span class="text-xs font-bold text-white/80 uppercase">${team ? team.nombre : 'Equipo'}</span>
                                                     </div>
                                                 `;
-                                            }).join('') : '<p class="text-[10px] text-white/30 italic">No hay equipos vinculados</p>'}
+        }).join('') : '<p class="text-[10px] text-white/30 italic">No hay equipos vinculados</p>'}
                                         </div>
                                     </div>
                                     <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
@@ -2736,7 +2895,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tasks = await db.getAll('tareas');
         const team = teams.find(t => t.id == session.equipoid);
         const sessionTasks = (session.taskids || []).map(taskId => tasks.find(t => t.id.toString() === taskId.toString())).filter(t => t);
-        
+
         const players = await db.getAll('jugadores');
         const sessionPlayers = players.filter(p => (session.playerids || []).includes(p.id.toString()));
 
@@ -2751,13 +2910,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="flex items-center gap-3 mb-4">
                             <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
                             ${(() => {
-                                let teamIds = [session.equipoid];
-                                const { extra } = window.parseLugarMetadata(session.lugar);
-                                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
-                                return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
+                let teamIds = [session.equipoid];
+                const { extra } = window.parseLugarMetadata(session.lugar);
+                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
+                return teamIds.filter(id => id && teams.find(t => t.id == id)).map(id => `
                                     <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
                                 `).join('');
-                            })()}
+            })()}
                         </div>
                         <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-none mb-4">${session.titulo || 'Sesión sin título'}</h2>
                         <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
@@ -2948,13 +3107,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
         lucide.createIcons(); modalOverlay.classList.add('active');
-        
+
         document.getElementById('edit-evento-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.sharedWith = formData.getAll('sharedWith');
-            
+
             const eventId = parseInt(data.id);
             delete data.id;
 
@@ -2962,7 +3121,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
 
             const { error } = await supabaseClient.from('eventos').update(data).eq('id', eventId);
-            
+
             if (error) {
                 window.customAlert('Error', 'No se pudo guardar: ' + error.message, 'error');
             } else {
@@ -2986,9 +3145,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tasksPerPage = 12;
     let currentTaskPage = 1;
 
-    window.renderTareas = async function(container, onlyTable = false) {
+    window.renderTareas = async function (container, onlyTable = false) {
         let tasks = await db.getAll('tareas');
-        
+
         if (!onlyTable) {
             container.innerHTML = `
                 <div class="mb-8 flex flex-col md:flex-row gap-4 items-center justify-between animate-in slide-in-from-top-4 duration-500">
@@ -3038,31 +3197,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const f = window.taskFilters || {};
                 const searchLower = (f.search || '').trim().toLowerCase();
                 const matchesSearch = !searchLower || (t.name || '').toLowerCase().includes(searchLower) || (t.description || '').toLowerCase().includes(searchLower);
-                
+
                 const typeVal = (t.type || '').trim().toUpperCase();
                 const filterType = (f.type || 'TODOS').toUpperCase();
                 const matchesType = filterType === 'TODOS' || typeVal === filterType;
-                
+
                 const catVal = (t.categoria || '').trim().toUpperCase();
                 const filterCat = (f.categoria || 'TODAS').toUpperCase();
                 const matchesCat = filterCat === 'TODAS' || catVal === filterCat;
-                
+
                 const objVal = (t.objetivo || '').trim().toUpperCase();
                 const filterObj = (f.objetivo || 'TODOS').toUpperCase();
                 const matchesObj = filterObj === 'TODOS' || objVal === filterObj;
-                
+
                 const espVal = (t.espacio || '').trim().toUpperCase();
                 const filterEsp = (f.espacio || 'TODOS').toUpperCase();
                 const matchesEsp = filterEsp === 'TODOS' || espVal === filterEsp;
-                
+
                 return matchesSearch && matchesType && matchesCat && matchesObj && matchesEsp;
-            }).sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+            }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
             const pageSize = 25;
             const totalTasks = filteredTasks.length;
             const totalPages = Math.ceil(totalTasks / pageSize);
             if (window.taskFilters.currentPage > totalPages) window.taskFilters.currentPage = Math.max(1, totalPages);
-            
+
             const startIdx = (window.taskFilters.currentPage - 1) * pageSize;
             const pageTasks = filteredTasks.slice(startIdx, startIdx + pageSize);
 
@@ -3147,7 +3306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ` : ''}
             `;
         }
-        
+
         window.changeTaskPage = (page) => {
             window.taskFilters.currentPage = page;
             window.renderTareas(container, true);
@@ -3170,7 +3329,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             clearBtn.onclick = (e) => {
                 e.preventDefault(); e.stopPropagation();
                 window.taskFilters = { search: '', type: 'TODOS', categoria: 'TODAS', objetivo: 'TODOS', espacio: 'TODOS', currentPage: 1 };
-                window.renderView('tareas'); 
+                window.renderView('tareas');
             };
         }
 
@@ -3185,7 +3344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }, 300);
             };
         }
-        
+
         if (typeFilter) {
             typeFilter.oninput = (e) => {
                 window.taskFilters.type = e.target.value;
@@ -3223,7 +3382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function updateTaskGrid(container) {
         if (isUpdatingGrid) return;
         isUpdatingGrid = true;
-        
+
         try {
             let tasks = await db.getAll('tareas');
             let filteredTasks = tasks.filter(t => {
@@ -3235,7 +3394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const grid = container.querySelector('#main-task-grid');
             const loadMoreContainer = document.getElementById('load-more-container');
-            
+
             if (grid) {
                 const start = 0;
                 const end = currentTaskPage * tasksPerPage;
@@ -3299,7 +3458,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.getTaskVideoEmbed = (video) => {
         if (!video) return '';
         let embedUrl = '';
-        
+
         if (video.includes('youtube.com/watch?v=')) {
             const id = video.split('v=')[1].split('&')[0];
             embedUrl = `https://www.youtube.com/embed/${id}`;
@@ -3315,7 +3474,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             embedUrl = video;
         }
-        
+
         return `<div class="video-container mb-6 overflow-hidden border-4 border-slate-900 shadow-2xl">
                     <iframe src="${embedUrl}" allow="autoplay; fullscreen" allowfullscreen class="w-full aspect-video"></iframe>
                 </div>`;
@@ -3329,7 +3488,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const previewOverlay = document.getElementById('preview-overlay');
         const previewContent = document.getElementById('preview-content');
-        
+
         const videoEmbed = window.getTaskVideoEmbed(task.video);
 
         previewContent.innerHTML = `
@@ -3419,7 +3578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             previewOverlay.querySelector('#preview-container').classList.remove('scale-95');
             previewOverlay.querySelector('#preview-container').classList.add('scale-100');
         }, 10);
-        
+
         if (window.lucide) lucide.createIcons();
     };
 
@@ -3436,9 +3595,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.viewTask = async (id) => {
         const tasks = await db.getAll('tareas');
         const task = tasks.find(t => t.id == id);
-        
+
         const videoEmbed = window.getTaskVideoEmbed(task.video);
-        
+
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-6">
@@ -3533,10 +3692,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </form>
             </div>
         `;
-        
+
         lucide.createIcons(); modalOverlay.classList.add('active');
-        
-        
+
+
         // Handle input change for preview
         const input = document.getElementById('edit-task-image-input');
         input.addEventListener('change', (e) => {
@@ -3568,7 +3727,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (data.name) data.name = data.name.toUpperCase().trim();
             data.material = formData.getAll('material').join(', ');
 
-            
+
             const imgInput = document.getElementById('edit-task-image-input');
             if (imgInput && imgInput.files[0]) {
                 data.image = await new Promise(resolve => {
@@ -3579,7 +3738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 data.image = task.image; // Keep existing
             }
-            
+
             await db.update('tareas', data);
             closeModal();
             window.switchView('tareas');
@@ -3603,13 +3762,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (files.length === 0) return;
 
         const tasks = await db.getAll('tareas');
-        
+
         window.customConfirm(
             'Vincular Imágenes',
             `¿Deseas intentar vincular ${files.length} imágenes con las tareas por coincidencia de nombre?`,
             async () => {
                 let linkedCount = 0;
-                
+
                 // Mostrar un pequeño indicador de que estamos trabajando
                 const loading = document.createElement('div');
                 loading.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
@@ -3630,13 +3789,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     for (const file of files) {
                         const originalName = file.name.split('.').slice(0, -1).join('.');
                         const fileName = normalize(originalName);
-                        
+
                         const match = tasks.find(t => normalize(t.name) === fileName);
-                        
+
                         if (match) {
                             console.log(`Vinculando: ${originalName} -> ${match.name}`);
                             const publicUrl = await db.uploadImage(file);
-                            
+
                             if (publicUrl) {
                                 match.image = publicUrl;
                                 await db.update('tareas', match);
@@ -3656,7 +3815,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         );
-        input.value = ''; 
+        input.value = '';
     };
 
     window.deleteTask = async (id) => {
@@ -3684,19 +3843,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    window.renderSesiones = async function(container, onlyTable = false) {
+    window.renderSesiones = async function (container, onlyTable = false) {
         const allSessions = await db.getAll('sesiones');
         // Si hay un técnico seleccionado, pedimos a applyGlobalFilters que no filtre por visibilidad personal
         const sessions = window.applyGlobalFilters(allSessions, 'fecha', { skipVisibility: sessionFilters.coach !== 'TODOS' });
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
         const sortedTeams = window.getSortedTeams(teams);
-        
+
         const userRes = await supabaseClient.auth.getUser();
         const currentUser = userRes.data?.user;
 
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
-        
+
         const isGlobal = window.currentVisibilityMode === 'global';
         // En "Mi Espacio" (TODOS + Personal), solo mostramos las creadas por el usuario actual
         const mySessions = (isGlobal || sessionFilters.coach !== 'TODOS') ? sessions : sessions.filter(s => {
@@ -3713,7 +3872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const matchesTeam = sessionFilters.team === 'TODOS' || sessionTeamIds.includes(String(sessionFilters.team));
             const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
-            
+
             const sessionLugar = window.cleanLugar(s.lugar) || 'SIN ASIGNAR';
             const matchesLugar = sessionFilters.lugar === 'TODOS' || sessionLugar.toUpperCase() === sessionFilters.lugar.toUpperCase();
 
@@ -3722,13 +3881,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const searchTerm = (sessionFilters.search || '').toLowerCase();
             const teamName = (teamsMap[s.equipoid] || '').toLowerCase();
-            const matchesSearch = !searchTerm || 
-                                (s.titulo || '').toLowerCase().includes(searchTerm) || 
-                                teamName.includes(searchTerm) ||
-                                (s.lugar || '').toLowerCase().includes(searchTerm);
+            const matchesSearch = !searchTerm ||
+                (s.titulo || '').toLowerCase().includes(searchTerm) ||
+                teamName.includes(searchTerm) ||
+                (s.lugar || '').toLowerCase().includes(searchTerm);
 
             return matchesTeam && matchesCoach && matchesLugar && matchesSearch && matchesComunidad;
-        }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
+        }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
@@ -3813,11 +3972,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </thead>
                         <tbody>
                             ${filteredSessions.map(s => {
-                                const d = new Date(s.fecha);
-                                const day = d.getDate();
-                                const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
-                                const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
-                                return `
+                const d = new Date(s.fecha);
+                const day = d.getDate();
+                const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
+                const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
+                return `
                                     <tr onclick="window.viewSessionFicha('${s.id}')" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
                                             <div class="flex items-center gap-2">
@@ -3841,13 +4000,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <div class="flex flex-col gap-1.5">
                                                 <div class="flex flex-wrap gap-1">
                                                     ${(() => {
-                                                        const { extra } = window.parseLugarMetadata(s.lugar);
-                                                        let teamIds = [s.equipoid];
-                                                        if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
-                                                        return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                        const { extra } = window.parseLugarMetadata(s.lugar);
+                        let teamIds = [s.equipoid];
+                        if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
+                        return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                             <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teamsMap[id].split(' ||| ')[0]}</span>
                                                         `).join('');
-                                                    })()}
+                    })()}
                                                 </div>
                                                 <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">${coach ? (coach.name || coach.nombre) : 'Sistema'}</span>
                                             </div>
@@ -3879,7 +4038,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                     </tr>
                                 `;
-                            }).join('') || '<tr><td colspan="5" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
+            }).join('') || '<tr><td colspan="5" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
                         </tbody>
                     </table>
                     </div>
@@ -3898,13 +4057,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div>
                                         <div class="flex flex-wrap gap-1 mb-1">
                                             ${(() => {
-                                                const { extra } = window.parseLugarMetadata(s.lugar);
-                                                let teamIds = [s.equipoid];
-                                                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
-                                                return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                    const { extra } = window.parseLugarMetadata(s.lugar);
+                    let teamIds = [s.equipoid];
+                    if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
+                    return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                     <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${teamsMap[id].split(' ||| ')[0]}</span>
                                                 `).join('');
-                                            })()}
+                })()}
                                         </div>
                                         <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
                                     </div>
@@ -3938,7 +4097,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data: users } = await supabaseClient.from('profiles').select('*');
         const { data: convs } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false }).order('hora', { ascending: false });
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
-        
+
         const isEdit = sessionData !== null && sessionData.id !== undefined && sessionData.id !== null;
         const session = {
             id: null,
@@ -3979,16 +4138,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2 px-1">Equipos Participantes</label>
                             <div id="session-teams-container" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 max-h-32 overflow-y-auto custom-scrollbar">
                                 ${teams.map(t => {
-                                    const { extra } = window.parseLugarMetadata(session.lugar);
-                                    let isSelected = session.equipoid == t.id;
-                                    if (extra.eids && extra.eids.includes(t.id.toString())) isSelected = true;
-                                    return `
+            const { extra } = window.parseLugarMetadata(session.lugar);
+            let isSelected = session.equipoid == t.id;
+            if (extra.eids && extra.eids.includes(t.id.toString())) isSelected = true;
+            return `
                                         <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
                                             <input type="checkbox" name="equipoids" value="${t.id}" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 session-team-check">
                                             <span class="text-[10px] font-bold text-slate-700 truncate">${t.nombre.split(' ||| ')[0]}</span>
                                         </label>
                                     `;
-                                }).join('')}
+        }).join('')}
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
@@ -4005,13 +4164,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Ciclo</label>
                             <select name="ciclo" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-blue-100 outline-none">
                                 <option value="" ${!session.ciclo ? 'selected' : ''}>Ninguno</option>
-                                ${[1,2,3,4,5,6].map(num => `<option value="${num}" ${session.ciclo == num ? 'selected' : ''}>Ciclo ${num}</option>`).join('')}
+                                ${[1, 2, 3, 4, 5, 6].map(num => `<option value="${num}" ${session.ciclo == num ? 'selected' : ''}>Ciclo ${num}</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Nº Sesión</label>
                             <select name="numSesion" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-blue-100 outline-none">
-                                ${Array.from({length: 25}, (_, i) => i + 1).map(num => `<option value="${num}" ${session.numSesion == num ? 'selected' : ''}>Sesión ${num}</option>`).join('')}
+                                ${Array.from({ length: 25 }, (_, i) => i + 1).map(num => `<option value="${num}" ${session.numSesion == num ? 'selected' : ''}>Sesión ${num}</option>`).join('')}
                             </select>
                         </div>
                         <div class="col-span-2">
@@ -4058,7 +4217,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </div>
                                         <select name="task-select-${num}" id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
                                             <option value="">Seleccionar ejercicio...</option>
-                                            ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num-1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}
+                                            ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num - 1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}
                                         </select>
                                     </div>
                                 </div>
@@ -4110,7 +4269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const teamChecks = document.querySelectorAll('.session-team-check');
 
         // Filtros slots
-        [1,2,3,4,5,6].forEach(num => {
+        [1, 2, 3, 4, 5, 6].forEach(num => {
             const typeSel = document.getElementById(`slot-type-${num}`);
             const taskSel = document.getElementById(`task-select-${num}`);
             typeSel.onchange = () => {
@@ -4138,21 +4297,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <span class="text-[10px] font-bold text-slate-700 truncate player-name">${p.nombre}</span>
                 </label>
             `).join('') || '<p class="col-span-full p-4 text-center text-xs text-slate-400 italic">No hay jugadores vinculados.</p>';
-            
+
             if (window.lucide) lucide.createIcons();
         };
 
         const updateConvsByTeam = () => {
             const selectedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
             if (!convSelect) return;
-            
+
             let filteredConvs = convs || [];
             if (selectedTeamIds.length > 0) {
                 filteredConvs = (convs || []).filter(c => selectedTeamIds.includes(String(c.equipoid)));
             }
 
             const currentVal = convSelect.value;
-            convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` + 
+            convSelect.innerHTML = `<option value="">-- MODO MANUAL --</option>` +
                 filteredConvs.map(c => `<option value="${c.id}" data-players='${JSON.stringify(c.playerids || [])}'>${c.nombre} (${c.fecha}) [${(c.playerids || []).length} JUG]</option>`).join('');
             if (currentVal) convSelect.value = currentVal;
         };
@@ -4213,7 +4372,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 checkboxes.forEach(cb => {
                     cb.checked = playerIds.includes(cb.value) || playerIds.includes(parseInt(cb.value));
                 });
-            } catch(e) { console.error("Error parsing conv players:", e); }
+            } catch (e) { console.error("Error parsing conv players:", e); }
         };
 
         lucide.createIcons();
@@ -4224,32 +4383,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
-                
+
                 const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
                 data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (session.equipoid || null);
-                
+
                 // Reconstruct data structure
                 const extra = {
                     eids: checkedTeamIds,
                     sw: formData.getAll('sharedWith'),
                 };
-                
-                data.taskids = [1,2,3,4,5,6].map(num => formData.get(`task-select-${num}`)).filter(x => x);
+
+                data.taskids = [1, 2, 3, 4, 5, 6].map(num => formData.get(`task-select-${num}`)).filter(x => x);
                 data.playerids = formData.getAll('playerids');
                 data.lugar = window.serializeLugarMetadata(data.lugar, extra);
-                
+
                 // Cleanup: Remove fields that don't belong to the DB schema
                 delete data.equipoids;
                 delete data.sharedWith;
-                [1,2,3,4,5,6].forEach(num => delete data[`task-select-${num}`]);
-                if (data.id) delete data.id; 
+                [1, 2, 3, 4, 5, 6].forEach(num => delete data[`task-select-${num}`]);
+                if (data.id) delete data.id;
 
                 if (isEdit) {
                     await db.update('sesiones', { ...data, id: session.id });
                 } else {
                     await db.add('sesiones', data);
                 }
-                
+
                 window.customAlert('¡Éxito!', 'Sesión guardada correctamente.', 'success');
                 closeModal();
                 window.switchView('sesiones');
@@ -4308,7 +4467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     .replace(/^(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC)\s+/i, '')
                     .replace(/\s+(UD|CD|C\.D\.|S\.D\.|SD|AD|A\.D\.|C\.F\.|CF|E\.F\.|EF|F\.C\.|FC|S\.C\.|SC|KE|K\.E\.|KJKE|KKE|FB)$/i, '')
                     .trim();
-                
+
                 if (!clubsMap[normalized]) {
                     clubsMap[normalized] = {
                         original: raw,
@@ -4323,13 +4482,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         const sortedClubs = Object.entries(clubsMap)
             .map(([id, data]) => ({ id, name: data.original }))
-            .sort((a,b) => a.name.localeCompare(b.name));
+            .sort((a, b) => a.name.localeCompare(b.name));
 
         const isEdit = convData !== null;
         const activeTab = isEdit ? convData.tipo : defaultType;
-        
+
         const { base: baseLugar, extra: meta } = window.parseLugarMetadata(convData?.lugar || ' ||| {}');
-        
+
         const conv = convData || {
             id: null,
             tipo: activeTab,
@@ -4523,15 +4682,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Filtrar por Equipos</label>
                             <div id="unified-conv-teams-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
                                 ${teams.map(t => {
-                                    let precheckedTeams = meta.eids ? meta.eids.map(String) : [];
-                                    if (precheckedTeams.length === 0 && conv.equipoid) precheckedTeams = [String(conv.equipoid)];
-                                    return `
+            let precheckedTeams = meta.eids ? meta.eids.map(String) : [];
+            if (precheckedTeams.length === 0 && conv.equipoid) precheckedTeams = [String(conv.equipoid)];
+            return `
                                         <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all shadow-sm">
                                             <input type="checkbox" value="${t.id}" ${precheckedTeams.includes(String(t.id)) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 unified-conv-team-check">
                                             <span class="text-[9px] font-bold text-slate-700 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
                                         </label>
                                     `;
-                                }).join('')}
+        }).join('')}
                             </div>
                         </div>
 
@@ -4590,11 +4749,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
             const searchText = (searchInput.value || '').toLowerCase();
             const clubFilterId = document.getElementById('unified-conv-club-filter')?.value || 'all';
-            
+
             let filtered = players;
             if (checkedTeamIds.length > 0) filtered = filtered.filter(p => checkedTeamIds.includes(String(p.equipoid)));
             if (searchText) filtered = filtered.filter(p => p.nombre.toLowerCase().includes(searchText));
-            
+
             if (clubFilterId !== 'all') {
                 filtered = filtered.filter(p => {
                     const raw = (p.equipoConvenido || '').trim().toUpperCase()
@@ -4605,7 +4764,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return raw === clubFilterId;
                 });
             }
-            
+
             // Grouping logic for the list
             const grouped = {};
             filtered.forEach(p => {
@@ -4626,7 +4785,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="mb-4">
                     <p class="text-[9px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg uppercase tracking-widest mb-2 inline-block">${groupName}</p>
                     <div class="space-y-1">
-                        ${groupPlayers.sort((a,b) => a.nombre.localeCompare(b.nombre)).map(p => `
+                        ${groupPlayers.sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `
                             <label class="flex items-center justify-between p-3 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:border-slate-100 group">
                                 <div class="flex items-center gap-3">
                                     <input type="checkbox" value="${p.id}" ${selectedPlayerIds.has(String(p.id)) ? 'checked' : ''} class="w-5 h-5 rounded-lg border-2 border-slate-200 text-blue-600 player-check">
@@ -4692,11 +4851,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const data = Object.fromEntries(formData.entries());
                 data.playerids = Array.from(selectedPlayerIds);
                 const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-                
-                let extra = { 
-                    eids: checkedTeamIds, 
-                    hl: data.hl, 
-                    hi: data.hi, 
+
+                let extra = {
+                    eids: checkedTeamIds,
+                    hl: data.hl,
+                    hi: data.hi,
                     hs: data.hs,
                     fecha_fin: data.fecha_fin || null
                 };
@@ -4737,12 +4896,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const allAttendance = await db.getAll('asistencia');
                         const linkedAttendance = allAttendance.filter(a => a.convocatoriaid?.toString() === conv.id.toString());
-                        
+
                         for (const att of linkedAttendance) {
                             const currentPlayers = att.players || att.data || {};
                             const updatedPlayers = {};
                             const newPids = Array.isArray(data.playerids) ? data.playerids : [];
-                            
+
                             newPids.forEach(pid => {
                                 if (currentPlayers[pid]) {
                                     updatedPlayers[pid] = currentPlayers[pid];
@@ -4773,7 +4932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else {
                     const { data: savedArray, error } = await supabaseClient.from('convocatorias').insert([data]).select();
                     if (error) throw error;
-                    
+
                     const convSaved = (savedArray && savedArray[0]) || { ...data, id: Date.now() };
                     if (savedArray && savedArray[0]) {
                         await db.saveLocal('convocatorias', convSaved);
@@ -4799,7 +4958,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             tipo: data.tipo || 'Convocatoria',
                             equipoid: data.equipoid || null,
                             convocatoriaid: convSaved.id,
-                            lugar: data.lugar || '', 
+                            lugar: data.lugar || '',
                             players: playersData,
                             createdBy: currentUser?.id
                         };
@@ -4842,9 +5001,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const { error } = await supabaseClient.from('convocatorias').delete().eq('id', id);
                 if (error) throw error;
-                
+
                 window.customAlert('¡Borrado!', 'La convocatoria ha sido eliminada.', 'success');
-                
+
                 // Refresh reliably
                 if (window.currentView === 'torneos') {
                     window.switchView('torneos');
@@ -4859,24 +5018,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
 
-window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
+    window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!window.formationsState) {
             const saved = localStorage.getItem('ms_coach_formation_state');
             window.formationsState = saved ? JSON.parse(saved) : { teams: {}, torneos: {}, convocatorias: {} };
         }
-        
+
         const sectionMapping = {
             'Torneo': 'torneos',
             'Convocatoria': 'convocatorias'
         };
         const sectionKey = sectionMapping[type] || 'convocatorias';
-        
+
         if (!window.formationsState[sectionKey]) window.formationsState[sectionKey] = {};
         window.formationsState[sectionKey][id] = formationId;
-        
+
         // Persistir en localStorage
         localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
-        
+
         if (type === 'Torneo') {
             window.viewTorneoRendimiento(id);
         } else {
@@ -4899,7 +5058,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.sharedWith = formData.getAll('sharedWith');
-            
+
             const selectedTeams = formData.getAll('equipoids');
             data.equipoid = selectedTeams.length > 0 ? parseInt(selectedTeams[0]) : null;
 
@@ -4908,40 +5067,40 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 hl: data.hl || data.hora_llegada,
                 hi: data.hi || data.hora_inicio || data.hora,
                 hs: data.hs || data.hora_salida,
-                s2: { 
-                    f: data.fecha2, 
-                    hl: data.hl2, 
-                    hi: data.hi2 || data.hora2, 
-                    hs: data.hs2, 
-                    l: (data.lugar2 || '').toUpperCase().trim() 
+                s2: {
+                    f: data.fecha2,
+                    hl: data.hl2,
+                    hi: data.hi2 || data.hora2,
+                    hs: data.hs2,
+                    l: (data.lugar2 || '').toUpperCase().trim()
                 },
-                s3: { 
-                    f: data.fecha3, 
-                    hl: data.hl3, 
-                    hi: data.hi3 || data.hora3, 
-                    hs: data.hs3, 
-                    l: (data.lugar3 || '').toUpperCase().trim() 
+                s3: {
+                    f: data.fecha3,
+                    hl: data.hl3,
+                    hi: data.hi3 || data.hora3,
+                    hs: data.hs3,
+                    l: (data.lugar3 || '').toUpperCase().trim()
                 },
                 sw: data.sharedWith,
                 eids: selectedTeams
             };
-            
+
             const bundledData = { ...data };
             bundledData.hora = extra.hi || data.hora;
-            ['fecha2','hora2','lugar2','fecha3','hora3','lugar3','sharedWith','equipoids', 'hora_llegada', 'hora_inicio', 'hora_salida', 'hl', 'hi', 'hs', 'hl2', 'hi2', 'hs2', 'hl3', 'hi3', 'hs3'].forEach(f => delete bundledData[f]);
+            ['fecha2', 'hora2', 'lugar2', 'fecha3', 'hora3', 'lugar3', 'sharedWith', 'equipoids', 'hora_llegada', 'hora_inicio', 'hora_salida', 'hl', 'hi', 'hs', 'hl2', 'hi2', 'hs2', 'hl3', 'hi3', 'hs3'].forEach(f => delete bundledData[f]);
             bundledData.lugar = window.serializeLugarMetadata(data.lugar, extra);
-            
+
             await db.update('convocatorias', { ...bundledData, id });
-            
+
             window.customAlert('Éxito', 'Convocatoria actualizada', 'success');
             window.viewConvocatoria(id);
-            
+
             // Refresh table
             const currentView = document.querySelector('[data-view].active')?.getAttribute('data-view');
             const container = document.getElementById('content-container');
             if (container && (currentView === 'convocatorias' || currentView === 'torneos')) {
-                 if (currentView === 'convocatorias') window.renderConvocatorias(container);
-                 else window.renderTorneos(container);
+                if (currentView === 'convocatorias') window.renderConvocatorias(container);
+                else window.renderTorneos(container);
             }
         } catch (err) {
             alert("Error al guardar: " + err.message);
@@ -4950,15 +5109,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     window.renderPlayerSelectionForConvocatoria = async (containerId, teamIds) => {
         const container = document.getElementById(containerId);
         if (!container) return;
-        
+
         const allPlayers = await db.getAll('jugadores');
         const teams = window.getSortedTeams(await db.getAll('equipos'));
-        
+
         // Ensure teamIds is an array of strings
         const selectedTeamIds = Array.isArray(teamIds) ? teamIds.map(String) : [String(teamIds)];
-        
+
         const filteredPlayers = allPlayers.filter(p => selectedTeamIds.includes(String(p.equipoid)));
-        
+
         if (filteredPlayers.length === 0) {
             container.innerHTML = `
                 <div class="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -4982,7 +5141,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="space-y-2">
                         <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest px-1">${teamName}</p>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            ${players.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(p => `
+                            ${players.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => `
                                 <label class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-300 transition-all cursor-pointer group">
                                     <input type="checkbox" name="playerids" value="${p.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                     <div class="flex-1 min-w-0">
@@ -5073,7 +5232,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const data = Object.fromEntries(new FormData(e.target));
             const userRes = await supabaseClient.auth.getUser();
             const currentUser = userRes.data?.user;
-            
+
             try {
                 if (data.nombre) data.nombre = data.nombre.toUpperCase().trim();
                 if (data.lugar) data.lugar = data.lugar.toUpperCase().trim();
@@ -5081,7 +5240,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 await db.add('eventos', { ...data, createdBy: currentUser?.id });
                 window.customAlert('¡Guardado!', 'El compromiso se ha añadido a tu agenda.', 'success');
                 closeModal();
-                
+
                 const container = document.getElementById('content-container');
                 if (currentView === 'eventos') window.renderEventos(container);
                 if (currentView === 'calendario') renderCalendario(container);
@@ -5247,14 +5406,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const { data: rawConv, error } = await supabaseClient.from("convocatorias").select("*").eq("id", id).single();
             if (error) throw error;
             let conv = { ...rawConv };
-            
+
             // Refactored to use centralized parseLugarMetadata
             const { base, extra: meta } = window.parseLugarMetadata(conv.lugar);
             conv.lugar = base;
             if (meta.s2) {
-                conv.fecha2 = meta.s2.f; 
+                conv.fecha2 = meta.s2.f;
                 conv.hl2 = meta.s2.hl; conv.hi2 = meta.s2.hi || meta.s2.h; conv.hs2 = meta.s2.hs; conv.lugar2 = meta.s2.l;
-                conv.fecha3 = meta.s3.f; 
+                conv.fecha3 = meta.s3.f;
                 conv.hl3 = meta.s3.hl; conv.hi3 = meta.s3.hi || meta.s3.h; conv.hs3 = meta.s3.hs; conv.lugar3 = meta.s3.l;
             }
             conv.hl = meta.hl; conv.hi = meta.hi || conv.hora; conv.hs = meta.hs;
@@ -5272,38 +5431,38 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 window.currentConvClubFilter = window.currentConvClubFilter || 'all';
             }
             const { data: users } = await (supabaseClient ? supabaseClient.from('profiles').select('*') : { data: [] });
-            
+
             let selectedTeamIds = [];
             const { base: mainLugar, extra } = window.parseLugarMetadata(rawConv.lugar);
             if (extra.eids && Array.isArray(extra.eids)) {
                 selectedTeamIds = extra.eids.map(String);
             }
-            
+
             if (selectedTeamIds.length === 0 && rawConv.equipoid) {
                 selectedTeamIds = [rawConv.equipoid.toString()];
             }
 
             const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
             const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
-            
+
             // Map convocados with potential custom positions (store original for the select)
             const convocados = players.filter(p => pids.includes(p.id.toString())).map(p => {
                 const customPos = extra.pos && extra.pos[p.id];
-                return { 
-                    ...p, 
-                    originalPos: p.posicion, 
-                    posicion: customPos || p.posicion, 
-                    customPos: customPos || null 
+                return {
+                    ...p,
+                    originalPos: p.posicion,
+                    posicion: customPos || p.posicion,
+                    customPos: customPos || null
                 };
             });
-            
+
             // If no teams selected, show all players initially in mgmt list
-            const teamPlayers = selectedTeamIds.length > 0 
+            const teamPlayers = selectedTeamIds.length > 0
                 ? players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()))
                 : players;
 
-        modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
-        modalContainer.innerHTML = `
+            modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
+            modalContainer.innerHTML = `
             <div class="p-4 md:p-12">
                 <div class="flex justify-between items-start mb-8">
                     <div class="flex-1">
@@ -5396,14 +5555,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         ${conv.fecha}
                                     </p>
                                     ${(() => {
-                                        let times = [];
-                                        const { extra: meta } = window.parseLugarMetadata(rawConv.lugar);
-                                        if (meta.hl) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Llegada</span><span class="text-xs font-bold text-slate-700">${meta.hl}</span></div>`);
-                                        if (meta.hi) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Inicio</span><span class="text-xs font-bold text-slate-700">${meta.hi}</span></div>`);
-                                        if (meta.hs) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Salida</span><span class="text-xs font-bold text-slate-700">${meta.hs}</span></div>`);
-                                        if (times.length === 0) return `<p class="text-slate-500 font-bold flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 opacity-40"></i> ${conv.hora || '--:--'}</p>`;
-                                        return `<div class="flex items-center gap-4">${times.join('<div class="w-px h-4 bg-slate-200"></div>')}</div>`;
-                                    })()}
+                    let times = [];
+                    const { extra: meta } = window.parseLugarMetadata(rawConv.lugar);
+                    if (meta.hl) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Llegada</span><span class="text-xs font-bold text-slate-700">${meta.hl}</span></div>`);
+                    if (meta.hi) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Inicio</span><span class="text-xs font-bold text-slate-700">${meta.hi}</span></div>`);
+                    if (meta.hs) times.push(`<div class="flex flex-col"><span class="text-[8px] font-black text-slate-400 uppercase tracking-widest">Salida</span><span class="text-xs font-bold text-slate-700">${meta.hs}</span></div>`);
+                    if (times.length === 0) return `<p class="text-slate-500 font-bold flex items-center gap-2"><i data-lucide="clock" class="w-4 h-4 opacity-40"></i> ${conv.hora || '--:--'}</p>`;
+                    return `<div class="flex items-center gap-4">${times.join('<div class="w-px h-4 bg-slate-200"></div>')}</div>`;
+                })()}
                                     <p class="text-slate-500 font-bold flex items-center gap-2">
                                         <i data-lucide="map-pin" class="w-4 h-4 opacity-40"></i>
                                         ${window.cleanLugar(conv.lugar) || 'Sin lugar asignado'}
@@ -5446,30 +5605,30 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <select id="mgmt-club-filter" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black uppercase text-slate-600 outline-none focus:ring-4 ring-blue-50/30 transition-all cursor-pointer">
                                         <option value="all">TODOS LOS CLUBES</option>
                                         ${(() => {
-                                            const clubsMap = players.reduce((acc, p) => {
-                                                const raw = (p.equipoConvenido || 'Libre').trim();
-                                                const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-                                                if (!acc[key]) acc[key] = raw;
-                                                return acc;
-                                            }, {});
-                                            
-                                            return Object.entries(clubsMap)
-                                                .sort((a,b) => a[1].localeCompare(b[1]))
-                                                .map(([key, name]) => `<option value="${key}">${name.toUpperCase()}</option>`)
-                                                .join('');
-                                        })()}
+                    const clubsMap = players.reduce((acc, p) => {
+                        const raw = (p.equipoConvenido || 'Libre').trim();
+                        const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                        if (!acc[key]) acc[key] = raw;
+                        return acc;
+                    }, {});
+
+                    return Object.entries(clubsMap)
+                        .sort((a, b) => a[1].localeCompare(b[1]))
+                        .map(([key, name]) => `<option value="${key}">${name.toUpperCase()}</option>`)
+                        .join('');
+                })()}
                                     </select>
                                 </div>
                             </div>
 
                             <div id="mgmt-player-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar p-1">
                                 ${teamPlayers.map(p => {
-                                    const isConvocado = pids.includes(p.id.toString());
-                                    // Custom Position Logic
-                                    let currentPos = p.posicion || '';
-                                    if (extra.pos && extra.pos[p.id]) currentPos = extra.pos[p.id];
+                    const isConvocado = pids.includes(p.id.toString());
+                    // Custom Position Logic
+                    let currentPos = p.posicion || '';
+                    if (extra.pos && extra.pos[p.id]) currentPos = extra.pos[p.id];
 
-                                    return `
+                    return `
                                         <div class="flex flex-col gap-2 p-4 bg-white rounded-3xl border border-slate-100 mgmt-player-label shadow-sm hover:shadow-lg transition-all border-transparent hover:border-blue-100 group">
                                             <div class="flex items-center gap-3">
                                                 <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-xl text-blue-600 border-slate-200 focus:ring-blue-100 mgmt-player-check">
@@ -5487,7 +5646,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </div>
                                         </div>
                                     `;
-                                }).join('') || '<p class="col-span-full text-center py-20 text-slate-400 italic text-[10px] uppercase font-black tracking-widest">Selecciona un equipo para reclutar jugadores</p>'}
+                }).join('') || '<p class="col-span-full text-center py-20 text-slate-400 italic text-[10px] uppercase font-black tracking-widest">Selecciona un equipo para reclutar jugadores</p>'}
                             </div>
 
                             <div class="mt-10 pt-8 border-t border-blue-100/30 flex justify-end gap-3">
@@ -5582,29 +5741,29 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <div>
                                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Llegada</label>
                                             <input name="hora_llegada" type="time" value="${(() => {
-                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
-                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hl || ''; } catch(e) {}
-                                                }
-                                                return '';
-                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                    if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                        try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hl || ''; } catch (e) { }
+                    }
+                    return '';
+                })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
                                         </div>
                                         <div>
                                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Inicio</label>
                                             <input name="hora_inicio" type="time" value="${(() => {
-                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
-                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hi || conv.hora || ''; } catch(e) {}
-                                                }
-                                                return conv.hora || '';
-                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                    if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                        try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hi || conv.hora || ''; } catch (e) { }
+                    }
+                    return conv.hora || '';
+                })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
                                         </div>
                                         <div>
                                             <label class="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Hora Salida</label>
                                             <input name="hora_salida" type="time" value="${(() => {
-                                                if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
-                                                    try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hs || ''; } catch(e) {}
-                                                }
-                                                return '';
-                                            })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
+                    if (rawConv.lugar && rawConv.lugar.includes(' ||| ')) {
+                        try { return JSON.parse(rawConv.lugar.split(' ||| ')[1]).hs || ''; } catch (e) { }
+                    }
+                    return '';
+                })()}" class="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 outline-none">
                                         </div>
                                     </div>
                                 `}
@@ -5674,15 +5833,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <!-- List side -->
                         <div class="space-y-4">
                             ${(() => {
-                                const clubCounts = convocados.reduce((acc, p) => {
-                                    let raw = (p.equipoConvenido || 'Sin Club').trim();
-                                    let key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-                                    if (!acc[key]) acc[key] = { name: raw, count: 0 };
-                                    acc[key].count++;
-                                    return acc;
-                                }, {});
+                        const clubCounts = convocados.reduce((acc, p) => {
+                            let raw = (p.equipoConvenido || 'Sin Club').trim();
+                            let key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                            if (!acc[key]) acc[key] = { name: raw, count: 0 };
+                            acc[key].count++;
+                            return acc;
+                        }, {});
 
-                                return `
+                        return `
                                     <div class="flex flex-wrap gap-2 mb-2 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
                                         <button onclick="window.setConvClubFilter('all', ${id})" class="px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${window.currentConvClubFilter === 'all' ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}">
                                             Todos (${convocados.length})
@@ -5695,7 +5854,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         `).join('')}
                                     </div>
                                 `;
-                            })()}
+                    })()}
 
                             <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                                 <div class="flex justify-between items-center px-6 py-4 bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
@@ -5710,19 +5869,19 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                                 <div class="divide-y divide-slate-50">
                                     ${(() => {
-                                        const filtered = window.currentConvClubFilter === 'all' 
-                                            ? convocados 
-                                            : convocados.filter(p => {
-                                                const raw = (p.equipoConvenido || 'Sin Club').trim();
-                                                const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-                                                return key === window.currentConvClubFilter;
-                                            });
-                                        
-                                        if (filtered.length === 0) return '<p class="text-center py-20 text-slate-400 italic text-[10px] uppercase font-black tracking-widest">No hay jugadores para este club</p>';
-                                        
-                                        return filtered.map((p, i) => `
+                        const filtered = window.currentConvClubFilter === 'all'
+                            ? convocados
+                            : convocados.filter(p => {
+                                const raw = (p.equipoConvenido || 'Sin Club').trim();
+                                const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                return key === window.currentConvClubFilter;
+                            });
+
+                        if (filtered.length === 0) return '<p class="text-center py-20 text-slate-400 italic text-[10px] uppercase font-black tracking-widest">No hay jugadores para este club</p>';
+
+                        return filtered.map((p, i) => `
                                             <div class="grid grid-cols-12 items-center p-4 hover:bg-slate-50 transition-colors">
-                                                <div class="col-span-1 text-xs font-black text-blue-600">${i+1}</div>
+                                                <div class="col-span-1 text-xs font-black text-blue-600">${i + 1}</div>
                                                 <div class="col-span-11 flex justify-between items-center">
                                                     <div class="flex flex-col">
                                                         <span class="font-bold text-slate-800 text-sm truncate">${p.nombre}</span>
@@ -5735,7 +5894,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 </div>
                                             </div>
                                         `).join('');
-                                    })()}
+                    })()}
                                 </div>
                             </div>
                             
@@ -5755,9 +5914,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <div class="flex items-center gap-2">
                                         <select onchange="window.updateModalPitch(this.value, '${conv.id}', 'Convocatoria')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
                                             ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                                const current = (window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433';
-                                                return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                            }).join('')}
+                        const current = (window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433';
+                        return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+                    }).join('')}
                                         </select>
                                         <button onclick="window.openFullScreenPitch('conv', '${conv.id}', '${(window.formationsState && window.formationsState.convocatorias && window.formationsState.convocatorias[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                             <i data-lucide="maximize" class="w-4 h-4"></i>
@@ -5779,36 +5938,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             </div>
         `;
 
-        modalOverlay.classList.add('active');
-        if (window.lucide) lucide.createIcons();
+            modalOverlay.classList.add('active');
+            if (window.lucide) lucide.createIcons();
 
-        // Reactive Player List based on teams
-        const teamChecks = modalContainer.querySelectorAll('.conv-team-check');
-        const mgmtList = document.getElementById('mgmt-player-list');
-        
-        // State for recruitment (persists across filter changes)
-        let currentPids = [...pids];
-        let currentCustomPositions = extra.pos ? { ...extra.pos } : {};
+            // Reactive Player List based on teams
+            const teamChecks = modalContainer.querySelectorAll('.conv-team-check');
+            const mgmtList = document.getElementById('mgmt-player-list');
 
-        const updateMgmtList = () => {
-            const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-            const clubFilter = document.getElementById('mgmt-club-filter')?.value || 'all';
-            
-            let filteredPlayers = players.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
-            
-            if (clubFilter !== 'all') {
-                filteredPlayers = filteredPlayers.filter(p => {
-                    const raw = (p.equipoConvenido || 'Libre').trim();
-                    const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-                    return key === clubFilter;
-                });
-            }
-            
-            mgmtList.innerHTML = filteredPlayers.map(p => {
-                const isConvocado = currentPids.includes(p.id.toString());
-                const currentPos = currentCustomPositions[p.id] || p.posicion || '';
+            // State for recruitment (persists across filter changes)
+            let currentPids = [...pids];
+            let currentCustomPositions = extra.pos ? { ...extra.pos } : {};
 
-                return `
+            const updateMgmtList = () => {
+                const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+                const clubFilter = document.getElementById('mgmt-club-filter')?.value || 'all';
+
+                let filteredPlayers = players.filter(p => checkedTeamIds.includes(p.equipoid?.toString()));
+
+                if (clubFilter !== 'all') {
+                    filteredPlayers = filteredPlayers.filter(p => {
+                        const raw = (p.equipoConvenido || 'Libre').trim();
+                        const key = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                        return key === clubFilter;
+                    });
+                }
+
+                mgmtList.innerHTML = filteredPlayers.map(p => {
+                    const isConvocado = currentPids.includes(p.id.toString());
+                    const currentPos = currentCustomPositions[p.id] || p.posicion || '';
+
+                    return `
                     <div class="flex flex-col gap-2 p-4 bg-white rounded-3xl border border-slate-100 mgmt-player-label shadow-sm hover:shadow-lg transition-all border-transparent hover:border-blue-100 group">
                         <div class="flex items-center gap-3">
                             <input type="checkbox" data-pid="${p.id}" ${isConvocado ? 'checked' : ''} class="w-5 h-5 rounded-xl text-blue-600 border-slate-200 focus:ring-blue-100 mgmt-player-check">
@@ -5826,136 +5985,136 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                     </div>
                 `;
-            }).join('') || '<p class="col-span-full text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona al menos un equipo para ver jugadores.</p>';
-        };
-
-        teamChecks.forEach(cb => cb.onchange = updateMgmtList);
-        const mgmtClubFilter = document.getElementById('mgmt-club-filter');
-        if (mgmtClubFilter) mgmtClubFilter.onchange = updateMgmtList;
-
-
-
-
-        // Toggle Player Management
-        const toggleMgmtBtn = document.getElementById('toggle-player-mgmt');
-        const mgmtArea = document.getElementById('player-mgmt-area');
-        if (toggleMgmtBtn && mgmtArea) {
-            toggleMgmtBtn.onclick = () => {
-                mgmtArea.classList.toggle('hidden');
-                if (window.lucide) lucide.createIcons();
+                }).join('') || '<p class="col-span-full text-center py-10 text-slate-400 italic text-[10px] uppercase font-black">Selecciona al menos un equipo para ver jugadores.</p>';
             };
-        }
 
-        const mgmtPlayerSearch = document.getElementById('mgmt-player-search');
-        if (mgmtPlayerSearch) {
-            mgmtPlayerSearch.oninput = (e) => {
-                const term = e.target.value.toLowerCase();
-                const list = document.getElementById('mgmt-player-list');
-                const labels = list.querySelectorAll('.mgmt-player-label');
-                labels.forEach(label => {
-                    const name = label.querySelector('.mgmt-player-name').textContent.toLowerCase();
-                    label.style.display = name.includes(term) ? 'flex' : 'none';
-                });
-            };
-        }
+            teamChecks.forEach(cb => cb.onchange = updateMgmtList);
+            const mgmtClubFilter = document.getElementById('mgmt-club-filter');
+            if (mgmtClubFilter) mgmtClubFilter.onchange = updateMgmtList;
 
-        const savePlayersBtn = document.getElementById('save-conv-players');
-        if (savePlayersBtn) {
-            savePlayersBtn.onclick = async () => {
-                try {
-                    // Update extra info with custom positions
-                    let currentExtra = {};
-                    if (rawConv.lugar && rawConv.lugar.includes(" ||| ")) {
-                        try { currentExtra = JSON.parse(rawConv.lugar.split(" ||| ")[1]); } catch (e) {}
-                    }
-                    currentExtra.pos = currentCustomPositions;
-                    const mainLugar = (rawConv.lugar || "").split(" ||| ")[0];
-                    const updatedLugar = `${mainLugar} ||| ${JSON.stringify(currentExtra)}`;
 
-                    await db.update('convocatorias', { 
-                        id: Number(id),
-                        playerids: currentPids,
-                        lugar: updatedLugar
+
+
+            // Toggle Player Management
+            const toggleMgmtBtn = document.getElementById('toggle-player-mgmt');
+            const mgmtArea = document.getElementById('player-mgmt-area');
+            if (toggleMgmtBtn && mgmtArea) {
+                toggleMgmtBtn.onclick = () => {
+                    mgmtArea.classList.toggle('hidden');
+                    if (window.lucide) lucide.createIcons();
+                };
+            }
+
+            const mgmtPlayerSearch = document.getElementById('mgmt-player-search');
+            if (mgmtPlayerSearch) {
+                mgmtPlayerSearch.oninput = (e) => {
+                    const term = e.target.value.toLowerCase();
+                    const list = document.getElementById('mgmt-player-list');
+                    const labels = list.querySelectorAll('.mgmt-player-label');
+                    labels.forEach(label => {
+                        const name = label.querySelector('.mgmt-player-name').textContent.toLowerCase();
+                        label.style.display = name.includes(term) ? 'flex' : 'none';
                     });
+                };
+            }
 
-                    // SYNC ASISTENCIA
+            const savePlayersBtn = document.getElementById('save-conv-players');
+            if (savePlayersBtn) {
+                savePlayersBtn.onclick = async () => {
                     try {
-                        const allAsist = await db.getAll('asistencia');
-                        let currentEids = [];
-                        if (updatedLugar.includes(" ||| ")) {
-                            try { const ex = JSON.parse(updatedLugar.split(" ||| ")[1]); currentEids = ex.eids || []; } catch(e){}
+                        // Update extra info with custom positions
+                        let currentExtra = {};
+                        if (rawConv.lugar && rawConv.lugar.includes(" ||| ")) {
+                            try { currentExtra = JSON.parse(rawConv.lugar.split(" ||| ")[1]); } catch (e) { }
                         }
-                        const syncTeams = currentEids.length > 0 ? currentEids.map(String) : [String(conv.equipoid)];
-                        const reports = allAsist.filter(a => a.fecha === conv.fecha && syncTeams.includes(String(a.equipoid)));
-                        for (const r of reports) {
-                            let changed = false;
-                            const updatedPls = { ...r.players };
-                            const newPidsStrings = currentPids.map(String);
-                            for (const pid in updatedPls) {
-                                if (!newPidsStrings.includes(String(pid))) {
-                                    delete updatedPls[pid];
-                                    changed = true;
-                                }
+                        currentExtra.pos = currentCustomPositions;
+                        const mainLugar = (rawConv.lugar || "").split(" ||| ")[0];
+                        const updatedLugar = `${mainLugar} ||| ${JSON.stringify(currentExtra)}`;
+
+                        await db.update('convocatorias', {
+                            id: Number(id),
+                            playerids: currentPids,
+                            lugar: updatedLugar
+                        });
+
+                        // SYNC ASISTENCIA
+                        try {
+                            const allAsist = await db.getAll('asistencia');
+                            let currentEids = [];
+                            if (updatedLugar.includes(" ||| ")) {
+                                try { const ex = JSON.parse(updatedLugar.split(" ||| ")[1]); currentEids = ex.eids || []; } catch (e) { }
                             }
-                            if (changed) await db.update('asistencia', { ...r, players: updatedPls });
-                        }
-                    } catch (e) { console.warn("Asistencia sync failed:", e); }
-                    
-                    window.customAlert('¡Convocatoria Actualizada!', 'Los jugadores y sus posiciones han sido guardados correctamente.', 'success');
-                    window.viewConvocatoria(id, activeTab);
-                    
-                    // Trigger a background refresh of the underlying list if possible
-                    const currentViewSelection = document.querySelector('.nav-link.active')?.getAttribute('data-view');
-                    if (currentViewSelection === 'convocatorias' || currentViewSelection === 'torneos') {
-                        const container = document.getElementById('content-container');
-                        if (container) {
-                            if (currentViewSelection === 'convocatorias') window.renderConvocatorias(container);
-                            else window.renderTorneos(container);
-                        }
-                    }
-                } catch (err) {
-                    alert("Error actualizando: " + err.message);
-                }
-            };
-        }
+                            const syncTeams = currentEids.length > 0 ? currentEids.map(String) : [String(conv.equipoid)];
+                            const reports = allAsist.filter(a => a.fecha === conv.fecha && syncTeams.includes(String(a.equipoid)));
+                            for (const r of reports) {
+                                let changed = false;
+                                const updatedPls = { ...r.players };
+                                const newPidsStrings = currentPids.map(String);
+                                for (const pid in updatedPls) {
+                                    if (!newPidsStrings.includes(String(pid))) {
+                                        delete updatedPls[pid];
+                                        changed = true;
+                                    }
+                                }
+                                if (changed) await db.update('asistencia', { ...r, players: updatedPls });
+                            }
+                        } catch (e) { console.warn("Asistencia sync failed:", e); }
 
-        // Delegate listener for real-time count and state sync
-        if (mgmtList) {
-            mgmtList.onchange = (e) => {
-                const row = e.target.closest('.mgmt-player-label');
-                if (!row) return;
-                const pid = row.querySelector('.mgmt-player-check').getAttribute('data-pid');
-                
-                if (e.target.classList.contains('mgmt-player-check')) {
-                    if (e.target.checked) {
-                        if (!currentPids.includes(pid.toString())) currentPids.push(pid.toString());
-                    } else {
-                        currentPids = currentPids.filter(id => id !== pid.toString());
-                    }
-                }
-                
-                if (e.target.classList.contains('mgmt-player-pos')) {
-                    if (e.target.value) {
-                        currentCustomPositions[pid] = e.target.value;
-                    } else {
-                        delete currentCustomPositions[pid];
-                    }
-                }
-                
-                const badge = document.getElementById('conv-player-count-badge');
-                if (badge) badge.textContent = currentPids.length;
-            };
-        }
+                        window.customAlert('¡Convocatoria Actualizada!', 'Los jugadores y sus posiciones han sido guardados correctamente.', 'success');
+                        window.viewConvocatoria(id, activeTab);
 
-        // Handle async sessions loading
-        if (activeTab === 'sesiones') {
-            const container = document.getElementById('async-sessions-container');
-            const allSesiones = await db.getAll('sesiones');
-            const convTeamIds = Array.isArray(conv.equipoid) ? conv.equipoid.map(String) : [String(conv.equipoid)];
-            const relatedSesiones = allSesiones.filter(s => s.fecha === conv.fecha && convTeamIds.includes(String(s.equipoid)));
-            
-            if (relatedSesiones.length === 0) {
-                container.innerHTML = `
+                        // Trigger a background refresh of the underlying list if possible
+                        const currentViewSelection = document.querySelector('.nav-link.active')?.getAttribute('data-view');
+                        if (currentViewSelection === 'convocatorias' || currentViewSelection === 'torneos') {
+                            const container = document.getElementById('content-container');
+                            if (container) {
+                                if (currentViewSelection === 'convocatorias') window.renderConvocatorias(container);
+                                else window.renderTorneos(container);
+                            }
+                        }
+                    } catch (err) {
+                        alert("Error actualizando: " + err.message);
+                    }
+                };
+            }
+
+            // Delegate listener for real-time count and state sync
+            if (mgmtList) {
+                mgmtList.onchange = (e) => {
+                    const row = e.target.closest('.mgmt-player-label');
+                    if (!row) return;
+                    const pid = row.querySelector('.mgmt-player-check').getAttribute('data-pid');
+
+                    if (e.target.classList.contains('mgmt-player-check')) {
+                        if (e.target.checked) {
+                            if (!currentPids.includes(pid.toString())) currentPids.push(pid.toString());
+                        } else {
+                            currentPids = currentPids.filter(id => id !== pid.toString());
+                        }
+                    }
+
+                    if (e.target.classList.contains('mgmt-player-pos')) {
+                        if (e.target.value) {
+                            currentCustomPositions[pid] = e.target.value;
+                        } else {
+                            delete currentCustomPositions[pid];
+                        }
+                    }
+
+                    const badge = document.getElementById('conv-player-count-badge');
+                    if (badge) badge.textContent = currentPids.length;
+                };
+            }
+
+            // Handle async sessions loading
+            if (activeTab === 'sesiones') {
+                const container = document.getElementById('async-sessions-container');
+                const allSesiones = await db.getAll('sesiones');
+                const convTeamIds = Array.isArray(conv.equipoid) ? conv.equipoid.map(String) : [String(conv.equipoid)];
+                const relatedSesiones = allSesiones.filter(s => s.fecha === conv.fecha && convTeamIds.includes(String(s.equipoid)));
+
+                if (relatedSesiones.length === 0) {
+                    container.innerHTML = `
                     <div class="py-20 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-100">
                         <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
                             <i data-lucide="calendar-x" class="w-8 h-8 text-slate-300"></i>
@@ -5963,8 +6122,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <p class="text-xs font-black text-slate-400 uppercase tracking-widest">No hay sesiones este día</p>
                     </div>
                 `;
-            } else {
-                container.innerHTML = `
+                } else {
+                    container.innerHTML = `
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         ${relatedSesiones.map(s => `
                             <div class="p-8 bg-white border border-slate-100 rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:border-blue-100 transition-all group">
@@ -5974,9 +6133,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         `).join('')}
                     </div>
                 `;
+                }
+                if (window.lucide) lucide.createIcons();
             }
-            if (window.lucide) lucide.createIcons();
-        }
 
         } catch (err) {
             console.error("Error viewConvocatoria:", err);
@@ -5990,7 +6149,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             if (error) throw error;
 
             const { base: mainLugar, extra } = window.parseLugarMetadata(conv.lugar);
-            
+
             if (!extra.pos) extra.pos = {};
             if (newPos === "") {
                 delete extra.pos[playerId];
@@ -6000,7 +6159,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             const updatedLugar = window.serializeLugarMetadata(mainLugar, extra);
 
-            await db.update('convocatorias', { 
+            await db.update('convocatorias', {
                 id: Number(convId),
                 lugar: updatedLugar
             });
@@ -6021,7 +6180,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const previewOverlay = document.getElementById('preview-overlay');
         const previewContainer = document.getElementById('preview-container');
         const previewContent = document.getElementById('preview-content');
-        
+
         const isImage = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(url);
         const isPdf = /\.pdf$/i.test(url) || url.startsWith('blob:') || url.startsWith('data:application/pdf');
 
@@ -6077,7 +6236,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (window.lucide) lucide.createIcons();
     };
 
-    
+
     window.previewConvocatoriaPDF = async (id) => {
         const url = await window.exportConvocatoria(id, 'preview');
         if (url) window.previewDocument(url, 'Convocatoria');
@@ -6092,16 +6251,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const btn = document.querySelector(`button[onclick*="torneo-doc-upload"]`);
         const originalHtml = btn.innerHTML;
         btn.innerHTML = '<i class="w-4 h-4 animate-spin text-blue-600">...</i>';
-        
+
         try {
             const uploadPromises = Array.from(files).map(async (file) => {
                 // Probamos con la ruta 'tasks' que es la que sabemos que funciona para otros módulos
                 const publicUrl = await db.uploadFile(file, 'tareas', 'tasks');
                 return publicUrl ? { name: file.name, url: publicUrl } : null;
             });
-            
+
             const results = (await Promise.all(uploadPromises)).filter(r => r !== null);
-            
+
             if (results.length > 0) {
                 // Buscamos la convocatoria asegurando el tipo de ID
                 const { data: conv, error: fetchError } = await supabaseClient
@@ -6119,7 +6278,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const metadata = window.getConvMetadata(conv);
                 const docs = metadata.documentos || [];
                 const updatedDocs = [...docs, ...results];
-                
+
                 await window.saveConvMetadata(id, 'documentos', updatedDocs);
                 window.viewTorneoRendimiento(id);
                 window.customAlert('Éxito', `${results.length} archivo(s) subido(s) correctamente`, 'success');
@@ -6138,11 +6297,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         try {
             const { data: conv, error: fetchError } = await supabaseClient.from('convocatorias').select('lugar').eq('id', Number(id)).single();
             if (fetchError || !conv) throw new Error('No se pudo encontrar el torneo');
-            
+
             const metadata = window.getConvMetadata(conv);
             const docs = metadata.documentos || [];
             docs.splice(docIndex, 1);
-            
+
             await window.saveConvMetadata(id, 'documentos', docs);
             window.viewTorneoRendimiento(id);
         } catch (err) {
@@ -6162,7 +6321,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // Aplicar posiciones específicas del torneo (herencia del rendimiento)
         const rendimiento = conv.rendimiento || {};
-            const docs = window.getConvMetadata(conv).documentos || [];
+        const docs = window.getConvMetadata(conv).documentos || [];
         convocados.forEach(p => {
             if (rendimiento[p.id] && rendimiento[p.id].pos) {
                 p.posicion = rendimiento[p.id].pos;
@@ -6254,12 +6413,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // --- ADD TACTICAL PITCH (CAMPOGRAMA) ON NEW PAGE ---
         doc.addPage();
-        
+
         // Titulo de la página
         doc.setFontSize(16);
         doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
         doc.text("DISPOSICIÓN TÁCTICA", 15, 25);
-        
+
         let formationId = 'F11_433';
         if (window.formationsState) {
             if (isTorneo) formationId = window.formationsState.torneos?.[id] || 'F11_433';
@@ -6274,25 +6433,25 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const px = 15, py = 40, pw = 180, ph = 120;
         doc.setFillColor(26, 77, 46); // Dark green
         doc.roundedRect(px, py, pw, ph, 5, 5, 'F');
-        
+
         // Draw Pitch Lines
         doc.setDrawColor(255, 255, 255);
         doc.setLineWidth(0.3);
-        
+
         // Outer line
         doc.rect(px + 10, py + 10, pw - 20, ph - 20);
         // Middle line
-        doc.line(px + pw/2, py + 10, px + pw/2, py + ph - 10);
+        doc.line(px + pw / 2, py + 10, px + pw / 2, py + ph - 10);
         // Center circle
-        doc.circle(px + pw/2, py + ph/2, 12);
-        
+        doc.circle(px + pw / 2, py + ph / 2, 12);
+
         // Areas
         // Left Area
-        doc.rect(px + 10, py + ph/2 - 25, 25, 50);
-        doc.rect(px + 10, py + ph/2 - 10, 8, 20);
+        doc.rect(px + 10, py + ph / 2 - 25, 25, 50);
+        doc.rect(px + 10, py + ph / 2 - 10, 8, 20);
         // Right Area
-        doc.rect(px + pw - 35, py + ph/2 - 25, 25, 50);
-        doc.rect(px + pw - 18, py + ph/2 - 10, 8, 20);
+        doc.rect(px + pw - 35, py + ph / 2 - 25, 25, 50);
+        doc.rect(px + pw - 18, py + ph / 2 - 10, 8, 20);
 
         // Draw Players - Intelligent Assignment
         const assignments = activeFormation.positions.map(() => []);
@@ -6323,7 +6482,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         (convocados || []).forEach(player => {
             const rawPos = player.posicion || '--';
             const choices = rawPos.split(',').map(c => c.trim());
-            
+
             let validSlots = [];
             // P1
             activeFormation.positions.forEach((s, idx) => {
@@ -6351,7 +6510,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         activeFormation.positions.forEach((pos, idx) => {
             const playersInPos = assignments[idx];
-            
+
             // Renaming logic for single slots
             let displayPos = pos.pos;
             const groupingRules = [
@@ -6366,18 +6525,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     if (countInFormation === 1) displayPos = rule.key;
                 }
             }
-            
+
             const realX = px + 10 + (pos.x * (pw - 20) / 100);
             const realY = py + 10 + (pos.y * (ph - 20) / 100);
 
             // Always render Position Icon (Circle)
             doc.setFillColor(255, 255, 255);
             doc.circle(realX, realY, 4, 'F');
-            
+
             // Position Text
             doc.setFontSize(5);
             doc.setTextColor(0, 0, 0);
-            doc.setFont("helvetica", "bold");
+            doc.setFont("Montserrat", "bold");
             doc.text(pos.pos, realX, realY + 0.5, { align: 'center' });
 
             // Render Player Names (if any)
@@ -6417,11 +6576,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const { jsPDF } = window.jspdf;
         const session = (await db.getAll('sesiones')).find(s => s.id == id);
         if (!session) return;
-        
+
         const allTasks = await db.getAll('tareas');
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const players = await db.getAll('jugadores');
-        
+
         const currentTeam = teams.find(t => t.id == session.equipoid);
         const sessionTasks = (session.taskids || []).map(taskId => allTasks.find(t => t.id == taskId)).filter(Boolean);
         const sessionPlayers = players.filter(p => (session.playerids || []).includes(p.id.toString()));
@@ -6440,12 +6599,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.setFontSize(8);
         doc.setTextColor(gray[0], gray[1], gray[2]);
         doc.setFont("helvetica", "bold");
-        
+
         // Main Labels
         doc.text("NOMBRE DE LA SESIÓN", 20, 25);
         doc.text("EQUIPO", 100, 25);
         doc.text("FECHA / HORA", 135, 25);
-        
+
         // Lugar with blue bracket
         doc.setDrawColor(blue[0], blue[1], blue[2]);
         doc.setLineWidth(1.5);
@@ -6457,11 +6616,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         // Values
         doc.setFontSize(9);
         doc.setTextColor(slate[0], slate[1], slate[2]);
-        
+
         // Use maxWidth to prevent overlapping
         const sessionTitle = (session.titulo || 'S/N').toUpperCase();
         doc.text(sessionTitle, 20, 32, { maxWidth: 75 });
-        
+
         doc.text((session.equiponombre || 'GENERACIÓN').toUpperCase(), 100, 32, { maxWidth: 30 });
         doc.text(`${session.fecha}\n${session.hora || '--:--'}`, 135, 32);
         doc.text((window.cleanLugar(session.lugar) || 'ZUBIETA').toUpperCase(), 170, 32, { maxWidth: 25 });
@@ -6470,20 +6629,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         let boxY = 48;
         doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
         doc.setLineWidth(0.5);
-        
+
         // Convocatoria & Material Box
         doc.roundedRect(15, boxY, 110, 25, 5, 5, 'D');
         doc.setFontSize(7);
         doc.setTextColor(gray[0], gray[1], gray[2]);
         doc.text("CONVOCATORIA", 22, boxY + 8);
         doc.text("MATERIAL REQUERIDO", 60, boxY + 8);
-        
+
         doc.setFontSize(10);
         doc.setTextColor(slate[0], slate[1], slate[2]);
         doc.text(`${sessionPlayers.length}`, 22, boxY + 15);
         doc.setFontSize(8);
         doc.text("JUGADORES", 22, boxY + 20);
-        
+
         doc.setFontSize(8);
         const materialLines = doc.splitTextToSize(materials || 'BALONES, CHINOS, PETOS', 65);
         doc.text(materialLines, 60, boxY + 15);
@@ -6503,7 +6662,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         doc.setFontSize(8);
         doc.setTextColor(gray[0], gray[1], gray[2]);
         doc.text("LISTADO DE JUGADORES CONVOCADOS", 22, listY + 8);
-        
+
         doc.setFontSize(6.5);
         doc.setTextColor(slate[0], slate[1], slate[2]);
         let colW = 60; // Increased width
@@ -6512,13 +6671,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             let col = i % 3; // 3 columns instead of 4 to give more space
             let row = Math.floor(i / 3);
             if (row > 4) return; // Cap at 15 for this box layout
-            
+
             // Format: Nombre. Inicial del 1er Apellido + (Club)
             const nameParts = p.nombre.trim().split(/\s+/);
             const shortName = (nameParts.length > 1 ? `${nameParts[0]}. ${nameParts[1][0]}` : nameParts[0]).toUpperCase();
             const club = p.equipoConvenido ? `(${p.equipoConvenido})` : '';
             const playerStr = `${shortName} ${club}`.toUpperCase();
-            
+
             doc.text(playerStr, startX + (col * colW), listY + 18 + (row * 6), { maxWidth: 58 });
         });
 
@@ -6540,7 +6699,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 currentY = 25;
                 doc.setFontSize(9);
                 doc.setTextColor(gray[0], gray[1], gray[2]);
-                doc.text(`DESGLOSE DE TAREAS - PARTE ${Math.floor((i-1)/2) + 2}`, 15, currentY);
+                doc.text(`DESGLOSE DE TAREAS - PARTE ${Math.floor((i - 1) / 2) + 2}`, 15, currentY);
                 doc.setDrawColor(lightGray[0], lightGray[1], lightGray[2]);
                 doc.line(15, currentY + 3, 195, currentY + 3);
                 currentY += 15;
@@ -6573,7 +6732,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             doc.setFontSize(8);
             doc.setTextColor(gray[0], gray[1], gray[2]);
             doc.text("EXPLICACIÓN TÉCNICA", 110, taskBoxY + 10);
-            doc.setFont("helvetica", "normal");
+            doc.setFont("Montserrat", "bold");
             doc.setTextColor(slate[0], slate[1], slate[2]);
             const splitDesc = doc.splitTextToSize(t.description || 'Sin descripción.', 80);
             doc.text(splitDesc, 110, taskBoxY + 18);
@@ -6583,27 +6742,27 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const videoUrl = t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`;
                 const vidX = 110;
                 const vidY = taskBoxY + 45;
-                
-                doc.setFillColor(239, 246, 255); 
+
+                doc.setFillColor(239, 246, 255);
                 doc.roundedRect(vidX - 2, vidY - 2, 75, 18, 3, 3, 'F');
-                
+
                 doc.setFillColor(blue[0], blue[1], blue[2]);
                 doc.roundedRect(vidX, vidY, 12, 12, 2, 2, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(10);
                 doc.text(">", vidX + 6, vidY + 8.5, { align: 'center' });
-                
+
                 doc.setTextColor(blue[0], blue[1], blue[2]);
                 doc.setFontSize(7);
-                doc.setFont("helvetica", "bold");
+                doc.setFont("Montserrat", "bold");
                 doc.text("VER VIDEO INTERACTIVO", vidX + 16, vidY + 7);
-                
+
                 doc.link(vidX, vidY, 75, 18, { url: videoUrl });
 
                 try {
                     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(videoUrl)}`;
                     doc.addImage(qrUrl, 'PNG', vidX + 60, vidY - 2, 14, 14);
-                } catch (e) {}
+                } catch (e) { }
             }
 
             currentY += 85;
@@ -6637,77 +6796,103 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     const FORMATIONS = {
         // --- FÚTBOL 11 ---
-        'F11_433': { name: '4-3-3 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
-            { pos: 'MCD', x: 48, y: 50 }, { pos: 'MVD', x: 65, y: 75 }, { pos: 'MVZ', x: 65, y: 25 }, { pos: 'MBD', x: 85, y: 85 }, { pos: 'ACZ', x: 92, y: 50 }, { pos: 'MBZ', x: 85, y: 15 }
-        ]},
-        'F11_442': { name: '4-4-2 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
-            { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 60 }, { pos: 'ACZ', x: 90, y: 40 }
-        ]},
-        'F11_4231': { name: '4-2-3-1 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
-            { pos: 'MCD', x: 45, y: 65 }, { pos: 'MCZ', x: 45, y: 35 }, { pos: 'MBD', x: 70, y: 85 }, { pos: 'MPZ', x: 70, y: 50 }, { pos: 'MBZ', x: 70, y: 15 }, { pos: 'ACZ', x: 92, y: 50 }
-        ]},
-        'F11_352': { name: '3-5-2 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 75 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 25 },
-            { pos: 'MBD', x: 50, y: 90 }, { pos: 'MCD', x: 50, y: 65 }, { pos: 'MCZ', x: 50, y: 35 }, { pos: 'MBZ', x: 50, y: 10 }, { pos: 'MPZ', x: 68, y: 50 },
-            { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
-        ]},
-        'F11_541': { name: '5-4-1 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 90 }, { pos: 'DCD', x: 25, y: 70 }, { pos: 'DCZ', x: 25, y: 50 }, { pos: 'DCD', x: 25, y: 30 }, { pos: 'DBZ', x: 25, y: 10 },
-            { pos: 'MBD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 20 }, { pos: 'ACZ', x: 92, y: 50 }
-        ]},
-        'F11_4141': { name: '4-1-4-1 (F11)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
-            { pos: 'MCD', x: 45, y: 50 }, { pos: 'MVD', x: 65, y: 80 }, { pos: 'MVD', x: 65, y: 60 }, { pos: 'MVZ', x: 65, y: 40 }, { pos: 'MVZ', x: 65, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
-        ]},
+        'F11_433': {
+            name: '4-3-3 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
+                { pos: 'MCD', x: 48, y: 50 }, { pos: 'MVD', x: 65, y: 75 }, { pos: 'MVZ', x: 65, y: 25 }, { pos: 'MBD', x: 85, y: 85 }, { pos: 'ACZ', x: 92, y: 50 }, { pos: 'MBZ', x: 85, y: 15 }
+            ]
+        },
+        'F11_442': {
+            name: '4-4-2 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
+                { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 60 }, { pos: 'ACZ', x: 90, y: 40 }
+            ]
+        },
+        'F11_4231': {
+            name: '4-2-3-1 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
+                { pos: 'MCD', x: 45, y: 65 }, { pos: 'MCZ', x: 45, y: 35 }, { pos: 'MBD', x: 70, y: 85 }, { pos: 'MPZ', x: 70, y: 50 }, { pos: 'MBZ', x: 70, y: 15 }, { pos: 'ACZ', x: 92, y: 50 }
+            ]
+        },
+        'F11_352': {
+            name: '3-5-2 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 75 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 25 },
+                { pos: 'MBD', x: 50, y: 90 }, { pos: 'MCD', x: 50, y: 65 }, { pos: 'MCZ', x: 50, y: 35 }, { pos: 'MBZ', x: 50, y: 10 }, { pos: 'MPZ', x: 68, y: 50 },
+                { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+            ]
+        },
+        'F11_541': {
+            name: '5-4-1 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 90 }, { pos: 'DCD', x: 25, y: 70 }, { pos: 'DCZ', x: 25, y: 50 }, { pos: 'DCD', x: 25, y: 30 }, { pos: 'DBZ', x: 25, y: 10 },
+                { pos: 'MBD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 20 }, { pos: 'ACZ', x: 92, y: 50 }
+            ]
+        },
+        'F11_4141': {
+            name: '4-1-4-1 (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
+                { pos: 'MCD', x: 45, y: 50 }, { pos: 'MVD', x: 65, y: 80 }, { pos: 'MVD', x: 65, y: 60 }, { pos: 'MVZ', x: 65, y: 40 }, { pos: 'MVZ', x: 65, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
+            ]
+        },
 
         // --- FÚTBOL 8 ---
-        'F8_331': { name: '3-3-1 (F8)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
-            { pos: 'MVD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
-        ]},
-        'F8_322': { name: '3-2-2 (F8)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
-            { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
-        ]},
-        'F8_241': { name: '2-4-1 (F8)', positions: [
-            { pos: 'PO', x: 8, y: 50 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 },
-            { pos: 'MBD', x: 55, y: 90 }, { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'MBZ', x: 55, y: 10 }, { pos: 'ACZ', x: 90, y: 50 }
-        ]},
+        'F8_331': {
+            name: '3-3-1 (F8)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
+                { pos: 'MVD', x: 55, y: 80 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 20 }, { pos: 'ACZ', x: 90, y: 50 }
+            ]
+        },
+        'F8_322': {
+            name: '3-2-2 (F8)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 80 }, { pos: 'DCD', x: 25, y: 50 }, { pos: 'DBZ', x: 25, y: 20 },
+                { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+            ]
+        },
+        'F8_241': {
+            name: '2-4-1 (F8)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 },
+                { pos: 'MBD', x: 55, y: 90 }, { pos: 'MCD', x: 55, y: 65 }, { pos: 'MCZ', x: 55, y: 35 }, { pos: 'MBZ', x: 55, y: 10 }, { pos: 'ACZ', x: 90, y: 50 }
+            ]
+        },
 
         // --- FÚTBOL 7 ---
-        'F7_321': { name: '3-2-1 (F7)', positions: [
-            { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
-            { pos: 'MCD', x: 60, y: 65 }, { pos: 'MCZ', x: 60, y: 35 }, { pos: 'ACZ', x: 90, y: 50 }
-        ]},
-        'F7_231': { name: '2-3-1 (F7)', positions: [
-            { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 65 }, { pos: 'DCZ', x: 30, y: 35 },
-            { pos: 'MVD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 15 }, { pos: 'ACZ', x: 90, y: 50 }
-        ]},
-        'F7_132': { name: '1-3-2 (F7)', positions: [
-            { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 50 },
-            { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
-        ]},
-        'F7_312': { name: '3-1-2 (F7)', positions: [
-            { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
-            { pos: 'MCD', x: 60, y: 50 }, { pos: 'ACD', x: 92, y: 65 }, { pos: 'ACZ', x: 92, y: 35 }
-        ]}
+        'F7_321': {
+            name: '3-2-1 (F7)', positions: [
+                { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
+                { pos: 'MCD', x: 60, y: 65 }, { pos: 'MCZ', x: 60, y: 35 }, { pos: 'ACZ', x: 90, y: 50 }
+            ]
+        },
+        'F7_231': {
+            name: '2-3-1 (F7)', positions: [
+                { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 65 }, { pos: 'DCZ', x: 30, y: 35 },
+                { pos: 'MVD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MVZ', x: 55, y: 15 }, { pos: 'ACZ', x: 90, y: 50 }
+            ]
+        },
+        'F7_132': {
+            name: '1-3-2 (F7)', positions: [
+                { pos: 'PO', x: 10, y: 50 }, { pos: 'DCD', x: 30, y: 50 },
+                { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 50 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 65 }, { pos: 'ACZ', x: 90, y: 35 }
+            ]
+        },
+        'F7_312': {
+            name: '3-1-2 (F7)', positions: [
+                { pos: 'PO', x: 10, y: 50 }, { pos: 'DBD', x: 30, y: 80 }, { pos: 'DCD', x: 30, y: 50 }, { pos: 'DBZ', x: 30, y: 20 },
+                { pos: 'MCD', x: 60, y: 50 }, { pos: 'ACD', x: 92, y: 65 }, { pos: 'ACZ', x: 92, y: 35 }
+            ]
+        }
     };
 
     function renderTacticalPitchHtml(filteredPlayers, formationId = 'F11_433', orientation = 'horizontal') {
         const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
-        
+
         // Force vertical on mobile for better visibility
         if (window.innerWidth < 768) orientation = 'vertical';
         const isVert = orientation === 'vertical';
-        
+
         const aspect = isVert ? 'aspect-[2/3]' : 'aspect-[3/2]';
-        const bgGradient = isVert ? 
+        const bgGradient = isVert ?
             'repeating-linear-gradient(0deg, #1a4d2e, #1a4d2e 40px, #164328 40px, #164328 80px)' :
             'repeating-linear-gradient(90deg, #1a4d2e, #1a4d2e 40px, #164328 40px, #164328 80px)';
-        
+
         return `
             <div class="relative w-full mx-auto ${aspect} max-h-[70vh] md:max-h-[85vh] bg-[#1a4d2e] rounded-[2.5rem] p-4 shadow-xl overflow-hidden border-[10px] border-[#133a22] group/pitch">
                 <!-- Grass Stripes -->
@@ -6743,74 +6928,74 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
 
                 ${(() => {
-                    const assignments = activeFormation.positions.map(() => []);
-                    
-                    const checkMatch = (pPos, targetSlot) => {
-                        const groupingRules = [
-                            { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
-                            { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
-                            { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
-                            { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
-                        ];
-                        for (const rule of groupingRules) {
-                            if (rule.list.includes(targetSlot)) {
-                                const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
-                                if (countInFormation === 1) return rule.list.includes(pPos);
-                            }
+                const assignments = activeFormation.positions.map(() => []);
+
+                const checkMatch = (pPos, targetSlot) => {
+                    const groupingRules = [
+                        { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                        { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                        { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                        { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+                    ];
+                    for (const rule of groupingRules) {
+                        if (rule.list.includes(targetSlot)) {
+                            const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                            if (countInFormation === 1) return rule.list.includes(pPos);
                         }
-                        const staticGroups = {
-                            'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
-                            'DBD': ['DBD', 'LD', 'CAD'],
-                            'DBZ': ['DBZ', 'LI', 'CAI'],
-                            'DCD': ['DCD', 'DFC', 'CD'],
-                            'DCZ': ['DCZ', 'DFC', 'CZ']
-                        };
-                        if (staticGroups[targetSlot]) return staticGroups[targetSlot].includes(pPos);
-                        return pPos === targetSlot;
+                    }
+                    const staticGroups = {
+                        'PO': ['PO', 'POR', 'GK', 'POD', 'POZ'],
+                        'DBD': ['DBD', 'LD', 'CAD'],
+                        'DBZ': ['DBZ', 'LI', 'CAI'],
+                        'DCD': ['DCD', 'DFC', 'CD'],
+                        'DCZ': ['DCZ', 'DFC', 'CZ']
                     };
+                    if (staticGroups[targetSlot]) return staticGroups[targetSlot].includes(pPos);
+                    return pPos === targetSlot;
+                };
 
-                    (filteredPlayers || []).forEach(player => {
-                        const choices = window.parsePosition(player.posicion);
-                        if (choices.length === 0) return;
-                        
-                        let validSlots = [];
+                (filteredPlayers || []).forEach(player => {
+                    const choices = window.parsePosition(player.posicion);
+                    if (choices.length === 0) return;
+
+                    let validSlots = [];
+                    activeFormation.positions.forEach((s, idx) => {
+                        if (checkMatch(choices[0], s.pos)) validSlots.push({ idx, priority: 1 });
+                    });
+                    if (choices[1]) {
                         activeFormation.positions.forEach((s, idx) => {
-                            if (checkMatch(choices[0], s.pos)) validSlots.push({ idx, priority: 1 });
+                            if (checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
                         });
-                        if (choices[1]) {
-                            activeFormation.positions.forEach((s, idx) => {
-                                if (checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
-                            });
-                        }
+                    }
 
-                        if (validSlots.length === 0) return;
+                    if (validSlots.length === 0) return;
 
-                        validSlots.sort((a, b) => {
-                            const countA = assignments[a.idx].length;
-                            const countB = assignments[b.idx].length;
-                            if (countA !== countB) return countA - countB;
-                            return a.priority - b.priority;
-                        });
-
-                        assignments[validSlots[0].idx].push(player);
+                    validSlots.sort((a, b) => {
+                        const countA = assignments[a.idx].length;
+                        const countB = assignments[b.idx].length;
+                        if (countA !== countB) return countA - countB;
+                        return a.priority - b.priority;
                     });
 
-                    return activeFormation.positions.map((pos, idx) => {
-                        let displayPos = pos.pos;
-                        const playersInPos = assignments[idx];
-                        
-                        const groupingRules = [
-                            { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
-                            { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
-                            { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
-                            { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
-                        ];
-                        for (const rule of groupingRules) {
-                            if (rule.list.includes(pos.pos)) {
-                                const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
-                                if (countInFormation === 1) displayPos = rule.key;
-                            }
+                    assignments[validSlots[0].idx].push(player);
+                });
+
+                return activeFormation.positions.map((pos, idx) => {
+                    let displayPos = pos.pos;
+                    const playersInPos = assignments[idx];
+
+                    const groupingRules = [
+                        { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
+                        { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                        { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
+                        { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
+                    ];
+                    for (const rule of groupingRules) {
+                        if (rule.list.includes(pos.pos)) {
+                            const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
+                            if (countInFormation === 1) displayPos = rule.key;
                         }
+                    }
 
                     // Map coordinates based on orientation
                     const left = isVert ? pos.y : pos.x;
@@ -6825,9 +7010,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 ${playersInPos.map(player => `
                                     <div class="bg-slate-900 border border-white/10 px-2 py-1.5 rounded-xl shadow-xl overflow-hidden">
                                         <p class="text-[8px] font-black text-white text-center uppercase truncate">${(() => {
-                                            const parts = player.nombre.trim().split(/\s+/);
-                                            return parts.length > 1 ? `${parts[0]}. ${parts[1][0]}` : parts[0];
-                                        })()}</p>
+                            const parts = player.nombre.trim().split(/\s+/);
+                            return parts.length > 1 ? `${parts[0]}. ${parts[1][0]}` : parts[0];
+                        })()}</p>
                                         <div class="flex justify-center gap-0.5 mt-0.5">
                                             ${Array(Number(player.nivel || 3)).fill(0).map(() => `<div class="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>`).join('')}
                                         </div>
@@ -6836,7 +7021,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                         </div>
                     `;
-                }).join('')})()}
+                }).join('')
+            })()}
             </div>
         `;
     }
@@ -6844,23 +7030,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     async function renderCampograma(container) {
         const players = await db.getAll('jugadores');
         const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const years = [...new Set(players.map(p => p.anionacimiento).filter(y => y))].sort((a,b) => b-a);
+        const years = [...new Set(players.map(p => p.anionacimiento).filter(y => y))].sort((a, b) => b - a);
         const clubs = [...new Set(players.map(p => p.equipoConvenido).filter(c => c))].sort();
-        
-        const hasActiveFilters = 
-            campogramaFilters.equipos.length > 0 || 
-            campogramaFilters.posiciones.length > 0 || 
-            campogramaFilters.years.length > 0 || 
-            campogramaFilters.clubesConvenidos.length > 0 || 
+
+        const hasActiveFilters =
+            campogramaFilters.equipos.length > 0 ||
+            campogramaFilters.posiciones.length > 0 ||
+            campogramaFilters.years.length > 0 ||
+            campogramaFilters.clubesConvenidos.length > 0 ||
             campogramaFilters.niveles.length > 0;
 
-            const filteredPlayers = !hasActiveFilters ? [] : players.filter(p => {
+        const filteredPlayers = !hasActiveFilters ? [] : players.filter(p => {
             const teamMatch = campogramaFilters.equipos.length === 0 || campogramaFilters.equipos.includes((p.equipoid || "").toString());
             const levelMatch = campogramaFilters.niveles.length === 0 || campogramaFilters.niveles.includes(Number(p.nivel || 3));
-            
+
             const playerPositions = window.parsePosition(p.posicion);
             const posMatch = campogramaFilters.posiciones.length === 0 || playerPositions.some(pos => campogramaFilters.posiciones.includes(pos));
-            
+
             const yearMatch = campogramaFilters.years.length === 0 || campogramaFilters.years.includes(p.anionacimiento?.toString());
             const clubMatch = campogramaFilters.clubesConvenidos.length === 0 || campogramaFilters.clubesConvenidos.includes(p.equipoConvenido);
             return teamMatch && levelMatch && posMatch && yearMatch && clubMatch;
@@ -6880,15 +7066,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div id="${id}-menu" class="hidden absolute z-[50] top-full left-0 w-64 bg-white border border-slate-100 shadow-2xl rounded-3xl mt-2 p-4 max-h-64 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 duration-200">
                         <div class="space-y-1">
                             ${options.map(opt => {
-                                const isSelected = selectedValues.includes(opt.value.toString());
-                                return `
+                const isSelected = selectedValues.includes(opt.value.toString());
+                return `
                                     <label class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
                                         <input type="checkbox" onchange="${onToggle}('${opt.value}')" ${isSelected ? 'checked' : ''} 
                                             class="w-5 h-5 rounded-md border-2 border-slate-200 text-blue-600 focus:ring-4 focus:ring-blue-100">
                                         <span class="text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-slate-600'}">${opt.label.toUpperCase()}</span>
                                     </label>
                                 `;
-                            }).join('')}
+            }).join('')}
                         </div>
                     </div>
                 </div>
@@ -6918,7 +7104,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     ${renderMultiSelect('Posiciones', PLAYER_POSITIONS.map(p => ({ label: p, value: p })), campogramaFilters.posiciones, 'window.toggleCampogramaPos', 'positions')}
                     ${renderMultiSelect('Año Nac.', years.map(y => ({ label: y.toString(), value: y })), campogramaFilters.years, 'window.toggleCampogramaYear', 'years')}
                     ${renderMultiSelect('Club Convenido', clubs.map(c => ({ label: c, value: c })), campogramaFilters.clubesConvenidos, 'window.toggleCampogramaClub', 'clubs')}
-                    ${renderMultiSelect('Nivel Pro', [1,2,3,4,5].map(lvl => ({ label: `NIVEL ${lvl}`, value: lvl })), campogramaFilters.niveles, 'window.toggleCampogramaLevel', 'levels')}
+                    ${renderMultiSelect('Nivel Pro', [1, 2, 3, 4, 5].map(lvl => ({ label: `NIVEL ${lvl}`, value: lvl })), campogramaFilters.niveles, 'window.toggleCampogramaLevel', 'levels')}
                 </div>
             </div>
 
@@ -6956,7 +7142,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const savedPrefs = JSON.parse(localStorage.getItem('ms_coach_formation_prefs') || '{}');
             savedPrefs.campograma = value;
             localStorage.setItem('ms_coach_formation_prefs', JSON.stringify(savedPrefs));
-            
+
             if (!window.formationsState) window.formationsState = {};
             window.formationsState.campograma = value;
         }
@@ -7016,7 +7202,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             modalContainer.innerHTML = '';
         }, 300);
     };
-    
+
     // --- SECCIÓN DE TORNEOS ---
     let torneoSearchTerm = '';
     let currentTorneoTeamId = 'all';
@@ -7080,7 +7266,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderView('convocatorias');
     };
 
-    window.renderConvocatorias = async function(container) {
+    window.renderConvocatorias = async function (container) {
         const allConvs = await db.getAll('convocatorias');
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
@@ -7091,11 +7277,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const convs = window.applyGlobalFilters(allConvs, 'fecha', { skipVisibility: currentCoachId !== 'all' })
             .filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
-            .sort((a,b) => {
+            .sort((a, b) => {
                 if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
                 return (b.hora || '').localeCompare(a.hora || '');
             });
-        
+
         // En "Mi Espacio" (Personal + Todas), solo lo que yo he creado
         const myConvs = (isGlobal || currentCoachId !== 'all') ? convs : convs.filter(c => {
             if (!currentUser) return false;
@@ -7109,7 +7295,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const filtered = myConvs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
-            
+
             // Filter by TYPE tab
             const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
 
@@ -7117,9 +7303,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const matchesCoach = currentCoachId === 'all' || (c.createdBy && c.createdBy.toString() === currentCoachId.toString());
 
             // Filter by Team tab
-            const matchesTeam = currentConvocatoriaTeamId === 'all' || 
-                              (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
-                              (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
+            const matchesTeam = currentConvocatoriaTeamId === 'all' ||
+                (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
+                (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
 
             const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
             const matchesLugar = currentConvocatoriaLugar === 'all' || sessionLugar.toUpperCase() === currentConvocatoriaLugar.toUpperCase();
@@ -7128,10 +7314,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const comunidad = window.getComunidadByLugar(c.lugar, c.nombre);
             const matchesComunidad = currentConvocatoriaComunidad === 'all' || comunidad === currentConvocatoriaComunidad;
 
-            const matchesSearch = !convocatoriaSearchTerm || 
+            const matchesSearch = !convocatoriaSearchTerm ||
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
-            
+
             return matchesType && matchesTeam && matchesLugar && matchesSearch && matchesComunidad && matchesCoach;
         });
 
@@ -7144,7 +7330,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <div onclick="window.viewConvocatoria(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
                     <div class="flex justify-between items-start mb-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
+                            <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg">${(c.nombre || 'C').substring(0, 1).toUpperCase()}</div>
                             <div>
                                 <div class="flex items-center gap-2">
                                     <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
@@ -7174,12 +7360,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
             const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
             const { extra } = window.parseLugarMetadata(c.lugar);
-            
+
             return `
                 <tr class="hover:bg-slate-50 transition-colors group cursor-pointer" onclick="window.viewConvocatoria(${c.id})">
                     <td class="p-6">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
+                            <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg">${(c.nombre || 'C').substring(0, 1).toUpperCase()}</div>
                             <div>
                                 <div class="flex items-center gap-2">
                                     <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
@@ -7223,11 +7409,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             `;
         };
 
-        const teamsWithConvs = teams.filter(t => 
+        const teamsWithConvs = teams.filter(t =>
             convs.some(c => {
                 const { extra } = window.parseLugarMetadata(c.lugar);
-                return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
-                       (extra.eids && extra.eids.map(String).includes(t.id.toString()));
+                return (c.equipoid && c.equipoid.toString() === t.id.toString()) ||
+                    (extra.eids && extra.eids.map(String).includes(t.id.toString()));
             })
         );
 
@@ -7346,7 +7532,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             </div>
         `;
         if (window.lucide) lucide.createIcons();
-        
+
         const searchInput = document.getElementById('convocatoria-search-input');
         if (searchInput && convocatoriaSearchTerm) {
             searchInput.focus();
@@ -7354,14 +7540,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     }
 
-    window.renderTorneos = async function(container) {
+    window.renderTorneos = async function (container) {
         const allConvs = await db.getAll('convocatorias');
         const convs = window.applyGlobalFilters(allConvs).filter(c => ['Torneo', 'TORNEO'].includes(c.tipo))
-            .sort((a,b) => {
+            .sort((a, b) => {
                 if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
                 return (b.hora || '').localeCompare(a.hora || '');
             });
-        
+
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
@@ -7370,18 +7556,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const filtered = convs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
 
-            const matchesTeam = currentTorneoTeamId === 'all' || 
-                              (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
-                              (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
-                              (extra.sw && extra.sw.map(String).includes(currentTorneoTeamId.toString()));
+            const matchesTeam = currentTorneoTeamId === 'all' ||
+                (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
+                (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
+                (extra.sw && extra.sw.map(String).includes(currentTorneoTeamId.toString()));
 
             const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
             const matchesLugar = currentTorneoLugar === 'all' || sessionLugar.toUpperCase() === currentTorneoLugar.toUpperCase();
 
-            const matchesSearch = !torneoSearchTerm || 
+            const matchesSearch = !torneoSearchTerm ||
                 (c.nombre || '').toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(torneoSearchTerm.toLowerCase());
-            
+
             return matchesTeam && matchesLugar && matchesSearch;
         });
 
@@ -7393,7 +7579,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (showStatusTabs) {
             const upcoming = filtered.filter(c => c.fecha >= today);
             const finished = filtered.filter(c => c.fecha < today);
-            
+
             if (currentTorneoStatusTab === 'upcoming') {
                 displaySections = [{ title: 'Próximos Torneos y Citas', items: upcoming }];
             } else {
@@ -7411,7 +7597,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
                     <div class="flex justify-between items-start mb-4">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
+                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0, 1).toUpperCase()}</div>
                             <div>
                                 <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
                                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
@@ -7442,7 +7628,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTorneoRendimiento(${c.id})">
                     <td class="p-4 md:p-6">
                         <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0,1).toUpperCase()}</div>
+                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0, 1).toUpperCase()}</div>
                             <p class="text-xs md:text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
                         </div>
                     </td>
@@ -7451,10 +7637,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
                             <span class="text-[9px] font-black text-slate-400 uppercase">
                                 ${(() => {
-                                    const { extra } = window.parseLugarMetadata(c.lugar);
-                                    if (extra.hi) return `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}`;
-                                    return c.hora || '--:--';
-                                })()}
+                    const { extra } = window.parseLugarMetadata(c.lugar);
+                    if (extra.hi) return `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}`;
+                    return c.hora || '--:--';
+                })()}
                             </span>
                         </div>
                     </td>
@@ -7484,11 +7670,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             `;
         };
 
-        let teamsWithTorneos = teams.filter(t => 
+        let teamsWithTorneos = teams.filter(t =>
             convs.some(c => {
                 const { extra } = window.parseLugarMetadata(c.lugar);
-                return (c.equipoid && c.equipoid.toString() === t.id.toString()) || 
-                       (extra.eids && extra.eids.map(String).includes(t.id.toString()));
+                return (c.equipoid && c.equipoid.toString() === t.id.toString()) ||
+                    (extra.eids && extra.eids.map(String).includes(t.id.toString()));
             })
         );
 
@@ -7609,7 +7795,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             </div>
         `;
         if (window.lucide) lucide.createIcons();
-        
+
         const searchInput = document.getElementById('torneo-search-input');
         if (searchInput && torneoSearchTerm) {
             searchInput.focus();
@@ -7631,12 +7817,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const { data: players } = await supabaseClient.from('jugadores').select('*');
             const teams = window.getSortedTeams(await db.getAll('equipos'));
             const { data: users } = await supabaseClient.from('profiles').select('*');
-            
+
             const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
             const convocados = players.filter(p => pids.includes(p.id.toString()));
             const rendimiento = conv.rendimiento || {};
             const docs = window.getConvMetadata(conv).documentos || [];
-            
+
             // Aplicar posiciones específicas del torneo (herencia)
             convocados.forEach(p => {
                 if (rendimiento[p.id] && rendimiento[p.id].pos) {
@@ -7684,9 +7870,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </thead>
                                             <tbody id="torneo-table-body">
                                                 ${convocados.map(p => {
-                                                    const { extra: meta } = window.parseLugarMetadata(conv.lugar);
-                                                    const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '' };
-                                                    return `
+                const { extra: meta } = window.parseLugarMetadata(conv.lugar);
+                const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '' };
+                return `
                                                         <tr class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
                                                             <td class="p-4">
                                                                 <p class="text-[11px] font-black text-slate-800 uppercase truncate">${p.nombre}</p>
@@ -7695,17 +7881,17 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
                                                                     ${(() => {
-                                                                        const currentPos = evalData.pos || window.parsePosition(p.posicion)[0] || '';
-                                                                        return PLAYER_POSITIONS.map(pos => `
+                        const currentPos = evalData.pos || window.parsePosition(p.posicion)[0] || '';
+                        return PLAYER_POSITIONS.map(pos => `
                                                                             <option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>
                                                                         `).join('');
-                                                                    })()}
+                    })()}
                                                                 </select>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="score_${p.id}" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50 text-blue-600">
                                                                     <option value="">-</option>
-                                                                    ${Array.from({length: 10}, (_, i) => i + 1).map(n => `<option value="${n}" ${evalData.score == n ? 'selected' : ''}>${n}</option>`).join('')}
+                                                                    ${Array.from({ length: 10 }, (_, i) => i + 1).map(n => `<option value="${n}" ${evalData.score == n ? 'selected' : ''}>${n}</option>`).join('')}
                                                                 </select>
                                                             </td>
                                                             <td class="p-4">
@@ -7718,7 +7904,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                             </td>
                                                         </tr>
                                                     `;
-                                                }).join('')}
+            }).join('')}
                                                 
                                                 <!-- Row for adding new players -->
                                                 <tr class="bg-blue-50/10">
@@ -7788,9 +7974,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                      <div class="flex items-center gap-2">
                                          <select onchange="window.updateModalPitch(this.value, '${conv.id}', 'Torneo')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
                                              ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                                                 const current = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
-                                                 return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
-                                             }).join('')}
+                const current = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
+                return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
+            }).join('')}
                                          </select>
                                          <button onclick="window.openFullScreenPitch('torneo', '${conv.id}', '${(window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                             <i data-lucide="maximize" class="w-4 h-4"></i>
@@ -7856,71 +8042,71 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 </div>
             `;
             modalOverlay.classList.add('active');
-        if (window.lucide) lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
 
-        // Helper to update pitch in memory
-        window.updateLocalPlayerPos = (pid, newPos) => {
-            const p = convocados.find(player => player.id == pid);
-            if (p) {
-                p.posicion = newPos;
-                const pitchArea = document.getElementById('pitch-display-area');
-                const currentFormation = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
-                pitchArea.innerHTML = renderTacticalPitchHtml(convocados, currentFormation, 'horizontal');
-                if (window.lucide) lucide.createIcons();
-            }
-        };
-
-        // Helper to remove player
-        window.removePlayerFromTorneo = async (tid, pid) => {
-            window.customConfirm('QUITAR JUGADOR', '¿Seguro que quieres quitar a este futbolista del torneo?', async () => {
-                const newPids = pids.filter(id => id.toString() !== pid.toString());
-                try {
-                    const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
-                    if (error) throw error;
-                    window.viewTorneoRendimiento(tid);
-                } catch (err) {
-                    window.customAlert('Error al quitar', err.message, 'error');
+            // Helper to update pitch in memory
+            window.updateLocalPlayerPos = (pid, newPos) => {
+                const p = convocados.find(player => player.id == pid);
+                if (p) {
+                    p.posicion = newPos;
+                    const pitchArea = document.getElementById('pitch-display-area');
+                    const currentFormation = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
+                    pitchArea.innerHTML = renderTacticalPitchHtml(convocados, currentFormation, 'horizontal');
+                    if (window.lucide) lucide.createIcons();
                 }
-            });
-        };
+            };
 
-        // Add player search logic
-        const addInput = document.getElementById('add-player-torneo-input');
-        const teamAddFilter = document.getElementById('torneo-team-add-filter');
-        const addResults = document.getElementById('add-player-results');
-        const confirmBtn = document.getElementById('confirm-bulk-add');
-        
-        const bulkSelection = new Set();
+            // Helper to remove player
+            window.removePlayerFromTorneo = async (tid, pid) => {
+                window.customConfirm('QUITAR JUGADOR', '¿Seguro que quieres quitar a este futbolista del torneo?', async () => {
+                    const newPids = pids.filter(id => id.toString() !== pid.toString());
+                    try {
+                        const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
+                        if (error) throw error;
+                        window.viewTorneoRendimiento(tid);
+                    } catch (err) {
+                        window.customAlert('Error al quitar', err.message, 'error');
+                    }
+                });
+            };
 
-        const updateAddResults = () => {
-            const term = (addInput.value || '').toLowerCase().trim();
-            const teamId = String(teamAddFilter.value);
+            // Add player search logic
+            const addInput = document.getElementById('add-player-torneo-input');
+            const teamAddFilter = document.getElementById('torneo-team-add-filter');
+            const addResults = document.getElementById('add-player-results');
+            const confirmBtn = document.getElementById('confirm-bulk-add');
 
-            if (teamId === 'none' && term.length < 2) {
-                addResults.classList.add('hidden');
-                addResults.innerHTML = '';
-                return;
-            }
+            const bulkSelection = new Set();
 
-            if (!players) return;
+            const updateAddResults = () => {
+                const term = (addInput.value || '').toLowerCase().trim();
+                const teamId = String(teamAddFilter.value);
 
-            // Filtrar los que NO están ya en el torneo
-            let filtered = players.filter(p => !pids.includes(String(p.id)));
-            
-            // Filtro por equipo
-            if (teamId !== 'none') {
-                filtered = filtered.filter(p => String(p.equipoid) === teamId);
-            }
-            
-            // Filtro por término
-            if (term.length >= 2) {
-                filtered = filtered.filter(p => (p.nombre || '').toLowerCase().includes(term));
-            }
+                if (teamId === 'none' && term.length < 2) {
+                    addResults.classList.add('hidden');
+                    addResults.innerHTML = '';
+                    return;
+                }
 
-            addResults.classList.remove('hidden');
+                if (!players) return;
 
-            if (filtered.length > 0) {
-                addResults.innerHTML = `
+                // Filtrar los que NO están ya en el torneo
+                let filtered = players.filter(p => !pids.includes(String(p.id)));
+
+                // Filtro por equipo
+                if (teamId !== 'none') {
+                    filtered = filtered.filter(p => String(p.equipoid) === teamId);
+                }
+
+                // Filtro por término
+                if (term.length >= 2) {
+                    filtered = filtered.filter(p => (p.nombre || '').toLowerCase().includes(term));
+                }
+
+                addResults.classList.remove('hidden');
+
+                if (filtered.length > 0) {
+                    addResults.innerHTML = `
                     <div class="p-3 bg-slate-50 border-b border-blue-50 flex justify-between items-center">
                         <span class="text-[9px] font-black text-blue-600 uppercase tracking-widest">Disponibles (${filtered.length})</span>
                         <button type="button" id="add-select-all-ficha" class="text-[9px] font-black text-slate-400 uppercase hover:text-blue-600">Marcar Todos</button>
@@ -7941,107 +8127,107 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     </div>
                 `;
 
-                addResults.classList.remove('hidden');
+                    addResults.classList.remove('hidden');
 
-                // Toggle logic
-                addResults.querySelectorAll('.torneo-add-check').forEach(chk => {
-                    chk.onchange = (e) => {
-                        if (e.target.checked) bulkSelection.add(String(e.target.value));
-                        else bulkSelection.delete(String(e.target.value));
-                        confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
-                    };
-                });
+                    // Toggle logic
+                    addResults.querySelectorAll('.torneo-add-check').forEach(chk => {
+                        chk.onchange = (e) => {
+                            if (e.target.checked) bulkSelection.add(String(e.target.value));
+                            else bulkSelection.delete(String(e.target.value));
+                            confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
+                        };
+                    });
 
-                const selectAll = addResults.querySelector('#add-select-all-ficha');
-                if (selectAll) {
-                    selectAll.onclick = () => {
-                        const checks = addResults.querySelectorAll('.torneo-add-check');
-                        const allChecked = Array.from(checks).every(c => c.checked);
-                        checks.forEach(c => {
-                            c.checked = !allChecked;
-                            if (c.checked) bulkSelection.add(String(c.value));
-                            else bulkSelection.delete(String(c.value));
-                        });
-                        confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
-                    };
+                    const selectAll = addResults.querySelector('#add-select-all-ficha');
+                    if (selectAll) {
+                        selectAll.onclick = () => {
+                            const checks = addResults.querySelectorAll('.torneo-add-check');
+                            const allChecked = Array.from(checks).every(c => c.checked);
+                            checks.forEach(c => {
+                                c.checked = !allChecked;
+                                if (c.checked) bulkSelection.add(String(c.value));
+                                else bulkSelection.delete(String(c.value));
+                            });
+                            confirmBtn.classList.toggle('hidden', bulkSelection.size === 0);
+                        };
+                    }
+                } else {
+                    addResults.innerHTML = '<div class="p-6 text-center text-[10px] text-slate-400 uppercase tracking-widest font-bold">No hay jugadores disponibles</div>';
+                    addResults.classList.remove('hidden');
                 }
-            } else {
-                addResults.innerHTML = '<div class="p-6 text-center text-[10px] text-slate-400 uppercase tracking-widest font-bold">No hay jugadores disponibles</div>';
-                addResults.classList.remove('hidden');
+                if (window.lucide) lucide.createIcons();
+            };
+
+            if (addInput) addInput.oninput = updateAddResults;
+            if (teamAddFilter) teamAddFilter.onchange = updateAddResults;
+
+            if (confirmBtn) {
+                confirmBtn.onclick = async () => {
+                    if (bulkSelection.size === 0) return;
+                    const newPids = [...pids, ...Array.from(bulkSelection)];
+                    try {
+                        const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
+                        if (error) throw error;
+                        window.viewTorneoRendimiento(id);
+                    } catch (err) {
+                        window.customAlert('Error al añadir', err.message, 'error');
+                    }
+                };
             }
-            if (window.lucide) lucide.createIcons();
-        };
 
-        if (addInput) addInput.oninput = updateAddResults;
-        if (teamAddFilter) teamAddFilter.onchange = updateAddResults;
-
-        if (confirmBtn) {
-            confirmBtn.onclick = async () => {
-                if (bulkSelection.size === 0) return;
-                const newPids = [...pids, ...Array.from(bulkSelection)];
+            window.addPlayerToTorneo = async (tid, pid) => {
+                const newPids = [...pids, pid.toString()];
                 try {
-                    const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
+                    const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                     if (error) throw error;
-                    window.viewTorneoRendimiento(id);
+                    window.viewTorneoRendimiento(tid);
                 } catch (err) {
                     window.customAlert('Error al añadir', err.message, 'error');
                 }
             };
-        }
 
-        window.addPlayerToTorneo = async (tid, pid) => {
-            const newPids = [...pids, pid.toString()];
-            try {
-                const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
-                if (error) throw error;
-                window.viewTorneoRendimiento(tid);
-            } catch (err) {
-                window.customAlert('Error al añadir', err.message, 'error');
+            const shareTorneoBtn = document.getElementById('save-torneo-sharing');
+            if (shareTorneoBtn) {
+                shareTorneoBtn.onclick = async () => {
+                    const sharingChecks = document.getElementById('torneo-sharing-list').querySelectorAll('input[name="sharedWith"]');
+                    const sharedWithList = Array.from(sharingChecks).filter(c => c.checked).map(c => c.value);
+
+                    try {
+                        const { error } = await supabaseClient.from('convocatorias').update({ sharedWith: sharedWithList }).eq('id', id);
+                        if (error) throw error;
+                        window.customAlert('Compartido', 'Lista de staff actualizada correctamente.', 'success');
+                    } catch (err) {
+                        window.customAlert('Error compartiendo', err.message, 'error');
+                    }
+                };
             }
-        };
 
-        const shareTorneoBtn = document.getElementById('save-torneo-sharing');
-        if (shareTorneoBtn) {
-            shareTorneoBtn.onclick = async () => {
-                const sharingChecks = document.getElementById('torneo-sharing-list').querySelectorAll('input[name="sharedWith"]');
-                const sharedWithList = Array.from(sharingChecks).filter(c => c.checked).map(c => c.value);
-                
+            document.getElementById('torneo-rendimiento-form').onsubmit = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const convId = formData.get('convocatoriaId');
+
+                const newRendimiento = {};
+                convocados.forEach(p => {
+                    const score = formData.get(`score_${p.id}`);
+                    const comment = formData.get(`comment_${p.id}`);
+                    const pos = formData.get(`pos_${p.id}`);
+                    if (score || comment || pos) {
+                        newRendimiento[p.id] = { score, comment, pos };
+                    }
+                });
+
                 try {
-                    const { error } = await supabaseClient.from('convocatorias').update({ sharedWith: sharedWithList }).eq('id', id);
+                    const { error } = await supabaseClient.from('convocatorias').update({ rendimiento: newRendimiento }).eq('id', convId);
                     if (error) throw error;
-                    window.customAlert('Compartido', 'Lista de staff actualizada correctamente.', 'success');
+                    window.customAlert('¡Éxito!', 'Rendimiento guardado correctamente', 'success');
+                    closeModal();
+                    window.switchView('torneos');
                 } catch (err) {
-                    window.customAlert('Error compartiendo', err.message, 'error');
+                    console.error(err);
+                    window.customAlert('Error al guardar', err.message, 'error');
                 }
             };
-        }
-
-        document.getElementById('torneo-rendimiento-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const convId = formData.get('convocatoriaId');
-            
-            const newRendimiento = {};
-            convocados.forEach(p => {
-                const score = formData.get(`score_${p.id}`);
-                const comment = formData.get(`comment_${p.id}`);
-                const pos = formData.get(`pos_${p.id}`);
-                if (score || comment || pos) {
-                    newRendimiento[p.id] = { score, comment, pos };
-                }
-            });
-
-            try {
-                const { error } = await supabaseClient.from('convocatorias').update({ rendimiento: newRendimiento }).eq('id', convId);
-                if (error) throw error;
-                window.customAlert('¡Éxito!', 'Rendimiento guardado correctamente', 'success');
-                closeModal();
-                window.switchView('torneos');
-            } catch (err) {
-                console.error(err);
-                window.customAlert('Error al guardar', err.message, 'error');
-            }
-        };
 
         } catch (err) {
             console.error(err);
@@ -8055,7 +8241,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (e.target === modalOverlay) {
             closeModal();
         }
-        
+
         // Close custom multiselects if clicking outside
         if (!e.target.closest('.group\\/ms')) {
             document.querySelectorAll('[id$="-menu"]').forEach(m => m.classList.add('hidden'));
@@ -8203,13 +8389,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const sTeamSel = document.getElementById('session-master-equipo');
         const sTemplSel = document.getElementById('session-template-selector');
         const sTasksInput = document.querySelector('input[name="session_tasks"]');
-        
+
         sTeamSel.onchange = () => {
             const tid = sTeamSel.value;
             if (!tid) { sTemplSel.classList.add('hidden'); return; }
             const filtered = sesiones.filter(s => s.equipoid == tid);
             if (filtered.length > 0) {
-                sTemplSel.innerHTML = '<option value="">Opcional: Importar sesión existente...</option>' + 
+                sTemplSel.innerHTML = '<option value="">Opcional: Importar sesión existente...</option>' +
                     filtered.map(s => `<option value="${s.id}">${(s.titulo || 'Sin título').toUpperCase()} (${s.fecha || '--'})</option>`).join('');
                 sTemplSel.classList.remove('hidden');
             } else {
@@ -8236,10 +8422,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         teamSel.onchange = () => {
             const tid = teamSel.value;
-            if (!tid) { 
-                pList.classList.add('hidden'); 
+            if (!tid) {
+                pList.classList.add('hidden');
                 cTemplSel.classList.add('hidden');
-                return; 
+                return;
             }
 
             // Población de jugadores
@@ -8255,13 +8441,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             // Población de plantillas de convocatoria
             const filteredConvs = convocatorias.filter(c => c.equipoid == tid);
             if (filteredConvs.length > 0) {
-                cTemplSel.innerHTML = '<option value="">Opcional: Importar convocatoria existente...</option>' + 
+                cTemplSel.innerHTML = '<option value="">Opcional: Importar convocatoria existente...</option>' +
                     filteredConvs.map(c => `<option value="${c.id}">${(c.nombre || 'Sin título').toUpperCase()} (${c.fecha || '--'})</option>`).join('');
                 cTemplSel.classList.remove('hidden');
             } else {
                 cTemplSel.classList.add('hidden');
             }
-            
+
             if (window.lucide) lucide.createIcons();
         };
 
@@ -8316,7 +8502,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 // 2. Crear Sesión si procede
                 if (sCheck.checked) {
                     const session = {
-                        titulo: baseData.nombre, 
+                        titulo: baseData.nombre,
                         fecha: baseData.fecha,
                         hora: baseData.hora,
                         equipoid: baseData.session_equipoid,
@@ -8344,7 +8530,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     try {
                         const playersData = {};
                         playerIds.forEach(pid => { playersData[pid] = { status: 'asiste' }; });
-                        
+
                         const team = teams.find(t => t.id.toString() === (baseData.conv_equipoid || '').toString());
                         const teamName = team ? team.nombre : 'EQUIPO';
 
@@ -8369,7 +8555,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 window.customAlert('¡Planificado!', 'Se han creado los registros solicitados.', 'success');
                 closeModal();
-                
+
                 // Refresh calendar view
                 window.switchView('calendario');
             } catch (err) {
@@ -8400,7 +8586,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 // Opening: refresh first to get latest IDs
                 await window.refreshNotifications();
                 notifPanel.classList.remove('hidden');
-                
+
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 const ringIcon = notifBtn.querySelector('i');
@@ -8434,7 +8620,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const allEventos = await db.getAll('eventos');
                 const allSesiones = await db.getAll('sesiones');
                 const allConvocatorias = await db.getAll('convocatorias');
-                
+
                 const userRes = await supabaseClient.auth.getUser();
                 const currentUser = userRes.data?.user;
                 if (!currentUser) return;
@@ -8445,10 +8631,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const allItems = [
                     ...allEventos.map(e => ({ ...e, type: 'evento', color: 'amber', icon: 'alarm-clock', view: 'eventos' })),
                     ...allSesiones.map(s => ({ ...s, type: 'sesion', color: 'blue', icon: 'calendar', nombre: s.titulo || 'Sesión', view: 'sesiones' })),
-                    ...allConvocatorias.map(c => ({ 
-                        ...c, 
-                        type: 'convocatoria', 
-                        color: c.tipo === 'Torneo' ? 'emerald' : 'indigo', 
+                    ...allConvocatorias.map(c => ({
+                        ...c,
+                        type: 'convocatoria',
+                        color: c.tipo === 'Torneo' ? 'emerald' : 'indigo',
                         icon: c.tipo === 'Torneo' ? 'trophy' : 'users',
                         view: c.tipo === 'Torneo' ? 'torneos' : 'convocatorias'
                     }))
@@ -8457,15 +8643,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const agendaItems = allItems.filter(item => {
                     const defaultTime = '09:00';
                     const itemDateTime = new Date(`${item.fecha}T${item.hora || defaultTime}`);
-                    
+
                     const isTime = itemDateTime <= now;
                     const isMine = item.createdBy === currentUser.id;
                     const isSharedWithMe = item.sharedWith && item.sharedWith.includes(currentUser.id);
                     const notSeen = !seenNotifs.includes(`${item.type}_${item.id}`);
                     const isDismissed = dismissedNotifs.includes(`${item.type}_${item.id}`);
-                    
+
                     const isUpcomingShared = isSharedWithMe && !isMine && notSeen;
-                    
+
                     return (isTime || isUpcomingShared) && !item.completada && !isDismissed;
                 }).sort((a, b) => {
                     const timeA = new Date(`${a.fecha}T${a.hora || '09:00'}`).getTime();
@@ -8493,7 +8679,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     notifList.innerHTML = agendaItems.map(item => {
                         const isSeen = seenNotifs.includes(`${item.type}_${item.id}`);
                         const isShared = item.sharedWith && item.sharedWith.includes(currentUser.id) && item.createdBy !== currentUser.id;
-                        
+
                         let dateLabel = item.fecha === today ? 'Hoy' : item.fecha === tomorrowStr ? 'Mañana' : item.fecha;
                         if (isShared && !isSeen) dateLabel = "¡NUEVO!";
 
@@ -8510,12 +8696,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 </div>
                             </div>
                             <div class="notif-swipe-content flex items-start gap-3 p-3 hover:bg-slate-50 transition-colors rounded-2xl cursor-pointer group">
-                                <div class="w-10 h-10 ${
-                                    item.color === 'blue' ? 'bg-blue-50 text-blue-600' : 
-                                    item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
+                                <div class="w-10 h-10 ${item.color === 'blue' ? 'bg-blue-50 text-blue-600' :
+                                item.color === 'amber' ? 'bg-amber-50 text-amber-600' :
                                     item.color === 'emerald' ? 'bg-emerald-50 text-emerald-600' :
-                                    'bg-indigo-50 text-indigo-600'
-                                } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white relative" onclick="window.switchView('${item.view}')">
+                                        'bg-indigo-50 text-indigo-600'
+                            } rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-white relative" onclick="window.switchView('${item.view}')">
                                     <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                                     ${!isSeen ? '<span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-white"></span>' : ''}
                                 </div>
@@ -8559,7 +8744,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
                 const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
                 localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(updatedSeen));
-                
+
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
@@ -8574,7 +8759,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
                 const updatedDismissed = [...new Set([...dismissedNotifs, ...currentIds])];
                 localStorage.setItem('ms_coach_dismissed_notifs', JSON.stringify(updatedDismissed));
-                
+
                 notifBadge.classList.add('hidden');
                 if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                 if (notifBtn.querySelector('i')) notifBtn.querySelector('i').classList.remove('animate-ring');
@@ -8612,7 +8797,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const actionLeft = container.querySelector('.notif-swipe-action-left');
                 const actionRight = container.querySelector('.notif-swipe-action-right');
                 const fullId = container.dataset.notifId;
-                
+
                 if (!content) return;
 
                 let startX = 0;
@@ -8624,7 +8809,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     startX = (e.type === 'touchstart') ? e.touches[0].clientX : e.clientX;
                     isDragging = true;
                     content.style.transition = 'none';
-                    
+
                     // Attach global listeners for move and end
                     if (e.type === 'touchstart') {
                         document.addEventListener('touchmove', onMove, { passive: false });
@@ -8637,11 +8822,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 const onMove = (e) => {
                     if (!isDragging) return;
-                    
+
                     // Prevent default scrolling if swiping horizontally
                     const x = (e.type === 'touchmove') ? e.touches[0].clientX : e.clientX;
                     currentTranslate = x - startX;
-                    
+
                     if (Math.abs(currentTranslate) > 10) {
                         if (e.cancelable) e.preventDefault();
                     }
@@ -8650,7 +8835,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     if (currentTranslate < -120) currentTranslate = -120;
 
                     content.style.transform = `translateX(${currentTranslate}px)`;
-                    
+
                     if (currentTranslate > 20) {
                         actionLeft.style.opacity = Math.min(1, currentTranslate / 60);
                         actionRight.style.opacity = 0;
@@ -8666,9 +8851,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const onEnd = (e) => {
                     if (!isDragging) return;
                     isDragging = false;
-                    
+
                     content.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
-                    
+
                     if (currentTranslate > threshold) {
                         content.style.transform = 'translateX(0px)';
                         const isSeen = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]').includes(fullId);
@@ -8681,13 +8866,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         actionLeft.style.opacity = 0;
                         actionRight.style.opacity = 0;
                     }
-                    
+
                     // Clean up global listeners
                     document.removeEventListener('touchmove', onMove);
                     document.removeEventListener('touchend', onEnd);
                     document.removeEventListener('mousemove', onMove);
                     document.removeEventListener('mouseup', onEnd);
-                    
+
                     currentTranslate = 0;
                 };
 
@@ -8698,7 +8883,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         // Trigger check at start
         await window.refreshNotifications();
-        
+
         // Refresh every minute to check time-based notifications
         setInterval(window.refreshNotifications, 60 * 1000);
     };
@@ -8739,12 +8924,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 body: { to: user.email, subject, html }
             });
             */
-            
+
             // Simulación en consola por ahora (hasta configurar la clave de Resend/Edge Function)
             console.log("SIMULACIÓN DE ENVÍO DE EMAIL:");
             console.log(`Para: ${user.email}`);
             console.log(`Asunto: ${subject}`);
-            
+
             // Si el usuario tiene una Edge Function llamada 'send-email', se activaría aquí.
             window.customAlert('Aviso Email', `Se ha programado el recordatorio para ${user.email}. (Asegúrate de tener configurada la Edge Function en Supabase)`, 'success');
 
@@ -8757,10 +8942,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const checked = Array.from(document.querySelectorAll('input[name="posicion"]:checked')).map(i => i.value);
         const select = document.querySelector('select[name="lateralidad"]');
         if (!select) return;
-        
+
         let hasD = checked.some(p => p.endsWith('D'));
         let hasZ = checked.some(p => p.endsWith('Z'));
-        
+
         if (hasD && hasZ) select.value = 'Ambidiestro';
         else if (hasD) select.value = 'Derecho';
         else if (hasZ) select.value = 'Zurdo';
@@ -8770,7 +8955,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         if (!pos) return [];
         if (Array.isArray(pos)) return pos;
         if (typeof pos !== 'string') return [pos];
-        
+
         let cleanPos = pos.trim();
         // Handle strings that look like arrays: ["ACD"] or ['ACD'] or [ACD]
         if (cleanPos.startsWith('[') && cleanPos.endsWith(']')) {
@@ -8782,7 +8967,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 cleanPos = cleanPos.substring(1, cleanPos.length - 1).replace(/['"]/g, '');
             }
         }
-        
+
         // Handle comma or slash separated strings
         return cleanPos.split(/[,/]/).map(s => s.trim()).filter(Boolean);
     };
@@ -8813,21 +8998,21 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             for (let i = 0; i < total; i++) {
                 const p = players[i];
-                
+
                 // Actualizar progreso visual en el botón
                 btn.innerHTML = `<i class="w-4 h-4 animate-spin text-amber-600"></i> ${i + 1}/${total}`;
-                
+
                 const positions = window.parsePosition(p.posicion);
                 if (positions.length === 0) continue;
-                
+
                 let hasD = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('D'));
                 let hasZ = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('Z'));
-                
+
                 let newPie = '';
                 if (hasD && hasZ) newPie = 'Ambidiestro';
                 else if (hasD) newPie = 'Derecho';
                 else if (hasZ) newPie = 'Zurdo';
-                
+
                 if (newPie && (!p.lateralidad || p.lateralidad.trim() === '')) {
                     p.lateralidad = newPie;
                     await db.update('jugadores', p);
@@ -8846,9 +9031,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.renderJugadores = async function(container) {
-        const players = await db.getAll('jugadores');
-        const teams = window.getSortedTeams(await db.getAll('equipos'));
+    window.renderJugadores = async function (container) {
+        const [players, teams] = await Promise.all([
+            db.getAll('jugadores'),
+            db.getAll('equipos')
+        ]);
         const sortedTeams = window.getSortedTeams(teams);
 
         const currentTeamId = window.currentJugadoresTeamId || 'all';
@@ -8859,43 +9046,35 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const currentClub = window.currentJugadoresClub || 'all';
 
         // Obtener años y clubes únicos para los filtros (Menor a Mayor)
-        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a,b) => a - b);
-        const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a, b) => a - b);
+        const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
         const filtered = players.filter(p => {
-            const matchesTeam = currentTeamId === 'all' || 
-                                p.equipoid?.toString() === currentTeamId.toString() ||
-                                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(currentTeamId.toString()));
-            
+            const matchesTeam = currentTeamId === 'all' ||
+                p.equipoid?.toString() === currentTeamId.toString() ||
+                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(currentTeamId.toString()));
+
             const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesAno = currentAno === 'all' || p.anionacimiento?.toString() === currentAno.toString();
-            const matchesSexo = currentSexo === 'all' || 
-                                (currentSexo === 'none' ? !(p.sexo || '').trim() : 
-                                (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0,1)));
+            const matchesSexo = currentSexo === 'all' ||
+                (currentSexo === 'none' ? !(p.sexo || '').trim() :
+                    (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0, 1)));
             const matchesPosicion = currentPosicion === 'all' || window.parsePosition(p.posicion).includes(currentPosicion);
             const matchesClub = currentClub === 'all' || p.equipoConvenido === currentClub;
             return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub;
-        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         window.currentFilteredPlayers = filtered;
 
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
-                <!-- Main Header & Search -->
+                <!-- Search & Filters Toolbar -->
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
-                        <div class="flex items-center gap-4">
-                            <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Directorio de Jugadores</h2>
-                            <button onclick="window.showBulkPhotoUpload()" class="px-4 py-2 bg-blue-50 text-blue-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-500 hover:text-white transition-all flex items-center gap-2 border border-blue-100/50 shadow-sm mr-2">
-                                <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
-                                Carga Masiva Fotos
-                            </button>
-                            <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm">
-                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                                Limpiar Duplicados
-                            </button>
-                        </div>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Gestión centralizada de talento y rendimiento</p>
+                        <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm mr-2">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                            Limpiar Duplicados
+                        </button>
                     </div>
                     <div class="relative w-full md:w-96 group">
                         <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
@@ -8987,23 +9166,26 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </thead>
                             <tbody>
                                 ${filtered.map(p => {
-                                    return `
+            const playerTeam = teams.find(t => t.id?.toString() === p.equipoid?.toString());
+            const playerTeamName = playerTeam ? playerTeam.nombre.split(' ||| ')[0] : '';
+            return `
                                         <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-4">
                                                 <div class="flex items-center gap-4">
-                                                    <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer" onclick="window.editPlayer('${p.id}')">
-                                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='Imagenes/Foto Jugador General.png'">
+                                                    <div class="w-12 h-12 rounded-xl bg-slate-50 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer flex items-center justify-center" onclick="window.editPlayer('${p.id}')">
+                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden')">` : ''}
+                                                        <i data-lucide="user" class="w-5 h-5 text-slate-300 ${p.foto ? 'hidden' : ''}"></i>
                                                     </div>
                                                     <div>
                                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
                                                         <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
                                                             <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
-                                                            ${p.equipoid ? `<span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${teams.find(t => t.id?.toString() === p.equipoid?.toString())?.nombre.split(' ||| ')[0] || ''}</span>` : ''}
+                                                            ${p.equipoid ? `<span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${playerTeamName}</span>` : ''}
                                                             ${(p.equipo_ids || []).map(tid => {
-                                                                const t = teams.find(tm => tm.id?.toString() === tid.toString());
-                                                                if (!t) return '';
-                                                                return `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${t.nombre.split(' ||| ')[0]}</span>`;
-                                                            }).join('')}
+                const t = teams.find(tm => tm.id?.toString() === tid.toString());
+                if (!t) return '';
+                return `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${t.nombre.split(' ||| ')[0]}</span>`;
+            }).join('')}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -9030,7 +9212,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                             <td class="px-6 py-4 text-center">
                                                 <button onclick="window.togglePlayerSexo('${p.id}', '${p.sexo || ''}')" class="text-[10px] font-black uppercase tracking-widest transition-all hover:scale-110 ${p.sexo?.toUpperCase().startsWith('F') ? 'text-rose-500' : (p.sexo?.toUpperCase().startsWith('M') ? 'text-blue-500' : 'text-slate-300')}">
-                                                    ${p.sexo?.substring(0,1).toUpperCase() || '?'}
+                                                    ${p.sexo?.substring(0, 1).toUpperCase() || '?'}
                                                 </button>
                                             </td>
                                             <td class="px-6 py-4 text-right">
@@ -9045,9 +9227,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                         </tr>
                                     `;
-                                }).join('') || `
+        }).join('') || `
                                     <tr>
-                                        <td colspan="5" class="py-20 text-center">
+                                        <td colspan="7" class="py-20 text-center">
                                             <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
                                             <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No se han encontrado jugadores</p>
                                         </td>
@@ -9060,7 +9242,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             </div>
         `;
 
-        if (window.lucide) lucide.createIcons();
+        if (window.lucide) {
+            requestAnimationFrame(() => {
+                lucide.createIcons();
+            });
+        }
 
         const searchInput = document.getElementById('jugadores-search-input');
         if (searchInput && searchTerm) {
@@ -9074,10 +9260,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         window.renderJugadores(document.getElementById('content-container'));
     };
 
-    window.updateJugadoresSearch = (val) => {
+    window.updateJugadoresSearch = window.debounce((val) => {
         window.jugadoresSearchTerm = val;
         window.renderJugadores(document.getElementById('content-container'));
-    };
+    }, 300);
 
     window.switchJugadoresAno = (val) => {
         window.currentJugadoresAno = val;
@@ -9149,6 +9335,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </label>
                                     `).join('')}
                                 </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha de Nacimiento</label>
+                                <input name="fechanacimiento" type="date" onchange="const y = this.value.split('-')[0]; if(y) this.form.anionacimiento.value = y;" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año Nacimiento</label>
@@ -9243,11 +9433,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const data = Object.fromEntries(formData.entries());
             data.posicion = formData.getAll('posicion').join(', '); // Save as clean string
             data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
-            
+
             // Cast numeric fields
             if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
             if (data.nivel) data.nivel = parseInt(data.nivel);
-            
+
             // Handle equipoid (should be number or null)
             if (data.equipoid === "") data.equipoid = null;
             else if (data.equipoid) data.equipoid = parseInt(data.equipoid);
@@ -9259,11 +9449,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
             // Forzar el campo exacto para Supabase
             data.equipoConvenido = formData.get('equipoConvenido') || null;
-            
+
             try {
                 if (photoInput.files[0]) {
                     data.foto = await db.uploadImage(photoInput.files[0]);
+                    data.foto_blob = await window.generatePdfBlob(photoInput.files[0]);
                 }
+
                 await db.add('jugadores', data);
                 window.customAlert('¡Éxito!', 'Jugador creado correctamente.', 'success');
                 closeModal();
@@ -9282,11 +9474,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const attendance = await db.getAll('asistencia');
         const convocatorias = await db.getAll('convocatorias');
-        
+
         // --- SEASON TABS CALCULATION ---
         const allDates = [...attendance.map(a => a.fecha), ...convocatorias.map(c => c.fecha)].filter(Boolean);
         const availableSeasons = [...new Set(allDates.map(d => window.getSeason(d)))].sort().reverse();
-        
+
         // Cache for inner scopes
         const rawPlayerConvs = convocatorias.filter(c => {
             const pids = c.playerids || [];
@@ -9301,12 +9493,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         const playerConvs = filterBySeason(rawPlayerConvs);
         const playerAttendance = filterBySeason(attendance.filter(a => a.players && a.players[playerId]));
-        
+
         const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
 
         // --- PRE-CALCULATE CATEGORIZED DATA ---
         const categorized = { ciclos: [], sesiones: [], torneos: [] };
-        
+
         // Detailed Attendance Counts
         const attendanceSummary = {};
         playerAttendance.forEach(a => {
@@ -9344,7 +9536,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             totalSesiones: convocatorias.filter(c => (c.playerids || []).map(String).includes(String(playerId)) && (c.tipo === 'Sesión' || c.tipo === 'Zubieta')).length,
             totalCiclos: convocatorias.filter(c => c.equipoid?.toString() === teamId && c.tipo === 'Ciclo').length
         };
-        
+
         const playerStats = {
             torneoPercent: teamStats.totalTorneos > 0 ? Math.round((playerTorneoConvs.length / teamStats.totalTorneos) * 100) : 0,
             sesionPercent: teamStats.totalSesiones > 0 ? Math.round((categorized.sesiones.length / teamStats.totalSesiones) * 100) : 0,
@@ -9361,8 +9553,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 
                 <div class="px-8 pb-8 -mt-12 relative z-10">
                     <div class="flex flex-col md:flex-row gap-8 items-start">
-                        <div class="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl">
-                            <img src="${player.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='Imagenes/Foto Jugador General.png'">
+                        <div class="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl flex items-center justify-center overflow-hidden border border-slate-50">
+                            ${player.foto ? `<img src="${player.foto}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden')">` : ''}
+                            <i data-lucide="user" class="w-12 h-12 text-slate-300 ${player.foto ? 'hidden' : ''}"></i>
                         </div>
                         <div class="flex-1 pt-14">
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -9407,13 +9600,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </div>
                     </div>
 
+                    ${(() => {
+                // Background Repair: If player has photo but no blob, try to generate it now
+                if (player.foto && !player.foto_blob) {
+                    window.generatePdfBlob(player.foto).then(blob => {
+                        if (blob) db.update('jugadores', { id: playerId, foto_blob: blob });
+                    });
+                }
+                return '';
+            })()}
+
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
                         <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                             <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Información Personal</p>
                             <div class="space-y-4">
                                 <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
-                                    <span class="text-[10px] font-bold text-slate-500">Año de Nacimiento</span>
-                                    <span class="text-[11px] font-black text-slate-800">${player.anionacimiento || '----'}</span>
+                                    <span class="text-[10px] font-bold text-slate-500">Fecha de Nacimiento</span>
+                                    <span class="text-[11px] font-black text-slate-800">${player.fechanacimiento || player.anionacimiento || '----'}</span>
                                 </div>
                                 <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
                                     <span class="text-[10px] font-bold text-slate-500">Sexo</span>
@@ -9476,7 +9679,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                         ${(() => {
-                            return `
+                return `
                                 <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/50 flex flex-col justify-between">
                                     <div>
                                         <div class="flex justify-between items-center mb-3">
@@ -9527,15 +9730,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <div>
                                         <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
                                         ${(() => {
-                                            const allEvents = [...categorized.sesiones, ...categorized.ciclos, ...categorized.torneos];
-                                            const ratings = allEvents.map(t => {
-                                                return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
-                                            }).filter(r => r.rating && r.rating !== '--');
-                                            
-                                            const avgRating = ratings.length > 0 ? (ratings.reduce((acc, r) => acc + parseFloat(r.rating), 0) / ratings.length).toFixed(1) : null;
-                                            const ratingPercent = avgRating ? Math.round((avgRating / 10) * 100) : 0;
+                        const allEvents = [...categorized.sesiones, ...categorized.ciclos, ...categorized.torneos];
+                        const ratings = allEvents.map(t => {
+                            return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
+                        }).filter(r => r.rating && r.rating !== '--');
 
-                                            if (ratings.length === 0) return `
+                        const avgRating = ratings.length > 0 ? (ratings.reduce((acc, r) => acc + parseFloat(r.rating), 0) / ratings.length).toFixed(1) : null;
+                        const ratingPercent = avgRating ? Math.round((avgRating / 10) * 100) : 0;
+
+                        if (ratings.length === 0) return `
                                                 <div class="flex items-center gap-4 mb-4">
                                                     <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
                                                         <i data-lucide="award" class="w-6 h-6 text-rose-300"></i>
@@ -9548,7 +9751,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 <div class="py-6 text-center bg-white/30 rounded-xl border border-dashed border-rose-100"><p class="text-[8px] text-slate-300 italic uppercase">Sin puntuaciones</p></div>
                                             `;
 
-                                            return `
+                        return `
                                                 <div class="flex justify-between items-center mb-3">
                                                     <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
                                                     <span class="text-[10px] font-black text-rose-600">${ratingPercent}%</span>
@@ -9580,12 +9783,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     `).join('')}
                                                 </div>
                                             `;
-                                        })()}
+                    })()}
                                     </div>
                                     <p class="text-[9px] font-bold text-rose-500/60 mt-4 leading-relaxed uppercase italic">Media histórica en competición.</p>
                                 </div>
                             `;
-                        })()}
+            })()}
                     </div>
                     
 
@@ -9601,13 +9804,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         
                         <div class="space-y-12">
                             ${(() => {
-                                if (categorized.sesiones.length === 0 && categorized.ciclos.length === 0 && categorized.torneos.length === 0) {
-                                    return '<div class="py-20 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-100"><p class="text-xs font-black text-slate-300 uppercase tracking-widest italic">No hay registros de asistencia</p></div>';
-                                }
-                                
-                                const renderGroup = (title, items, icon, colorClass) => {
-                                    if (items.length === 0) return '';
-                                    return `
+                if (categorized.sesiones.length === 0 && categorized.ciclos.length === 0 && categorized.torneos.length === 0) {
+                    return '<div class="py-20 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-100"><p class="text-xs font-black text-slate-300 uppercase tracking-widest italic">No hay registros de asistencia</p></div>';
+                }
+
+                const renderGroup = (title, items, icon, colorClass) => {
+                    if (items.length === 0) return '';
+                    return `
                                         <div class="space-y-4">
                                             <div class="flex items-center gap-3 pb-2 border-b-2 border-slate-50">
                                                 <i data-lucide="${icon}" class="w-4 h-4 ${colorClass}"></i>
@@ -9623,40 +9826,40 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                         </tr>
                                                     </thead>
                                                     <tbody class="divide-y divide-slate-50">
-                                                        ${items.sort((a,b) => b.fecha.localeCompare(a.fecha)).map(a => {
-                                                            const status = a.players[playerId];
-                                                            const reason = (typeof status === 'object') ? status.reason : '';
-                                                            const statusValue = (typeof status === 'object') ? status.status : status;
-                                                            let badge = '';
-                                                            if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
-                                                            else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
-                                                            else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
-                                                            else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
+                                                        ${items.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(a => {
+                        const status = a.players[playerId];
+                        const reason = (typeof status === 'object') ? status.reason : '';
+                        const statusValue = (typeof status === 'object') ? status.status : status;
+                        let badge = '';
+                        if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
+                        else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
+                        else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
+                        else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
-                                                            return `
+                        return `
                                                                 <tr class="hover:bg-slate-50/50 transition-colors">
                                                                     <td class="py-4 px-4">
                                                                         <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Evento'}</p>
                                                                         <p class="text-[8px] font-black text-slate-400 uppercase">${a.fecha}</p>
                                                                     </td>
                                                                     <td class="py-4 px-4 text-center">${badge}</td>
-                                                                    <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : '...') }</td>
+                                                                    <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : '...')}</td>
                                                                 </tr>
                                                             `;
-                                                        }).join('')}
+                    }).join('')}
                                                     </tbody>
                                                 </table>
                                             </div>
                                         </div>
                                     `;
-                                };
+                };
 
-                                return `
+                return `
                                     ${renderGroup('Ciclos de Perfeccionamiento', categorized.ciclos, 'refresh-ccw', 'text-blue-500')}
                                     ${renderGroup('Entrenamientos', categorized.sesiones, 'calendar', 'text-amber-500')}
                                     ${renderGroup('Torneos', categorized.torneos, 'trophy', 'text-indigo-500')}
                                 `;
-                            })()}
+            })()}
                         </div>
                     </div>
                 </div>
@@ -9669,9 +9872,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.editPlayer = async (playerId) => {
         const player = await db.get('jugadores', playerId);
+        if (!player) return;
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const clubs = await db.getAll('clubes');
-        
+
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
@@ -9711,9 +9915,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Posiciones</label>
                                 <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                                     ${PLAYER_POSITIONS.map(pos => {
-                                        const playerPositions = window.parsePosition(player.posicion);
-                                        const isSelected = playerPositions.includes(pos);
-                                        return `
+            const playerPositions = window.parsePosition(player.posicion);
+            const isSelected = playerPositions.includes(pos);
+            return `
                                             <label class="cursor-pointer group">
                                                 <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" ${isSelected ? 'checked' : ''} onchange="window.autoDetectLateralidad(this)">
                                                 <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
@@ -9721,8 +9925,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 </span>
                                             </label>
                                         `;
-                                    }).join('')}
+        }).join('')}
                                 </div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha de Nacimiento</label>
+                                <input name="fechanacimiento" type="date" value="${player.fechanacimiento || ''}" onchange="const y = this.value.split('-')[0]; if(y) this.form.anionacimiento.value = y;" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año Nacimiento</label>
@@ -9762,15 +9970,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
                                     ${teams.map(t => {
-                                        const isMain = player.equipoid?.toString() === t.id.toString();
-                                        const isSecondary = (player.equipo_ids || []).map(String).includes(t.id.toString());
-                                        return `
+            const isMain = player.equipoid?.toString() === t.id.toString();
+            const isSecondary = (player.equipo_ids || []).map(String).includes(t.id.toString());
+            return `
                                             <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all ${isMain ? 'opacity-50 pointer-events-none bg-slate-50' : ''}">
                                                 <input type="checkbox" name="equipo_ids" value="${t.id}" ${isSecondary ? 'checked' : ''} ${isMain ? 'disabled' : ''} class="w-4 h-4 rounded text-blue-600">
                                                 <span class="text-[9px] font-bold text-slate-600 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
                                             </label>
                                         `;
-                                    }).join('')}
+        }).join('')}
                                 </div>
                             </div>
                         </div>
@@ -9839,7 +10047,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             try {
                 if (photoInput.files[0]) {
                     data.foto = await db.uploadImage(photoInput.files[0]);
+                    data.foto_blob = await window.generatePdfBlob(photoInput.files[0]);
                 }
+
                 await db.update('jugadores', data);
                 window.customAlert('¡Actualizado!', 'Datos guardados correctamente.', 'success');
                 closeModal();
@@ -9865,7 +10075,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.renderEquipos = async function(container) {
+    window.renderEquipos = async function (container) {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const players = await db.getAll('jugadores');
         const sortedTeams = window.getSortedTeams(teams);
@@ -9885,9 +10095,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </thead>
                             <tbody>
                                 ${sortedTeams.map(t => {
-                                    const teamPlayers = players.filter(p => p.equipoid?.toString() === t.id.toString());
-                                    const teamName = (t.nombre || '').split(' ||| ')[0];
-                                    return `
+            const teamPlayers = players.filter(p => p.equipoid?.toString() === t.id.toString());
+            const teamName = (t.nombre || '').split(' ||| ')[0];
+            return `
                                         <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-5">
                                                 <div class="flex items-center gap-4">
@@ -9925,7 +10135,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                         </tr>
                                     `;
-                                }).join('')}
+        }).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -9984,7 +10194,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const preview = document.getElementById('team-logo-preview');
                 const btn = document.getElementById('btn-save-team');
                 const originalText = btn.innerText;
-                
+
                 btn.disabled = true;
                 btn.innerText = 'SUBIENDO...';
                 preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
@@ -10065,7 +10275,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const preview = document.getElementById('team-logo-preview');
                 const btn = document.getElementById('btn-save-team');
                 const originalText = btn.innerText;
-                
+
                 btn.disabled = true;
                 btn.innerText = 'SUBIENDO...';
                 preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
@@ -10112,9 +10322,9 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.renderClubes = async function(container) {
+    window.renderClubes = async function (container) {
         const clubes = await db.getAll('clubes');
-        
+
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
@@ -10134,8 +10344,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay clubes registrados</p>
                                         </td>
                                     </tr>
-                                ` : clubes.sort((a,b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => {
-                                    return `
+                                ` : clubes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => {
+            return `
                                         <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-5">
                                                 <div class="flex items-center gap-4">
@@ -10168,7 +10378,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                         </tr>
                                     `;
-                                }).join('')}
+        }).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -10235,7 +10445,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const preview = document.getElementById('club-logo-preview');
                 const btn = document.getElementById('btn-save-club');
                 const originalText = btn.innerText;
-                
+
                 btn.disabled = true;
                 btn.innerText = 'SUBIENDO...';
                 preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
@@ -10337,11 +10547,11 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const allPlayers = await db.getAll('jugadores');
         const sesiones = await db.getAll('sesiones');
         const convocatorias = await db.getAll('convocatorias');
-        
+
         // Calculate Stats
         const clubPlayers = allPlayers.filter(p => p.equipoConvenido === clubName);
         const clubPlayerIds = new Set(clubPlayers.map(p => p.id.toString()));
-        
+
         let sesionCount = 0;
         sesiones.forEach(s => {
             if (s.playerids) {
@@ -10402,24 +10612,24 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <div class="space-y-6">
                     <div class="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar space-y-12">
                         ${(() => {
-                            if (clubPlayers.length === 0) return `
+                if (clubPlayers.length === 0) return `
                                 <div class="py-20 text-center">
                                     <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
                                     <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay jugadores registrados para este club</p>
                                 </div>
                             `;
 
-                            // Group by birth year
-                            const grouped = {};
-                            clubPlayers.forEach(p => {
-                                const year = p.anionacimiento || 'Sin Año';
-                                if (!grouped[year]) grouped[year] = [];
-                                grouped[year].push(p);
-                            });
+                // Group by birth year
+                const grouped = {};
+                clubPlayers.forEach(p => {
+                    const year = p.anionacimiento || 'Sin Año';
+                    if (!grouped[year]) grouped[year] = [];
+                    grouped[year].push(p);
+                });
 
-                            return Object.keys(grouped).sort((a,b) => b.localeCompare(a)).map(year => {
-                                const players = grouped[year].sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
-                                return `
+                return Object.keys(grouped).sort((a, b) => b.localeCompare(a)).map(year => {
+                    const players = grouped[year].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                    return `
                                     <div class="space-y-4">
                                         <div class="flex items-center gap-4 px-4">
                                             <h4 class="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">GENERACIÓN ${year}</h4>
@@ -10430,7 +10640,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             ${players.map(p => `
                                                 <div onclick="window.viewPlayerProfile('${p.id}')" class="flex items-center gap-3 p-4 bg-white rounded-3xl border border-slate-100 hover:border-blue-300 hover:shadow-lg transition-all cursor-pointer group">
                                                     <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden shrink-0">
-                                                        <img src="${p.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                                        <div class="w-full h-full flex items-center justify-center bg-slate-50 text-slate-300">
+                                                            ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden')">` : ''}
+                                                            <i data-lucide="user" class="w-12 h-12 ${p.foto ? 'hidden' : ''}"></i>
+                                                        </div>
                                                     </div>
                                                     <div class="flex-1 min-w-0">
                                                         <p class="text-[10px] font-bold text-slate-700 truncate group-hover:text-blue-600 transition-colors">${p.nombre}</p>
@@ -10442,8 +10655,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </div>
                                     </div>
                                 `;
-                            }).join('');
-                        })()}
+                }).join('');
+            })()}
                     </div>
                     
                     <div class="pt-6 border-t border-slate-100 flex justify-end">
@@ -10482,13 +10695,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             for (const asist of asistencias) {
                 const team = teams.find(t => t.id == asist.equipoid);
                 const teamName = team ? team.nombre : 'EQUIPO';
-                
+
                 const linkedConv = convocatorias.find(c => c.id.toString() === asist.convocatoriaid?.toString());
                 const eventName = linkedConv ? linkedConv.nombre : asist.nombre;
                 const eventType = linkedConv ? linkedConv.tipo : asist.tipo;
 
                 const newName = window.formatAttendanceName(asist.fecha, teamName, eventType, eventName);
-                
+
                 let needsUpdate = false;
                 const updatePayload = { id: asist.id };
 
@@ -10502,7 +10715,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     updatePayload.lugar = linkedConv.lugar;
                     needsUpdate = true;
                 }
-                
+
                 if (needsUpdate) {
                     await db.update('asistencia', updatePayload);
                     renamedCount++;
@@ -10548,8 +10761,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 // Comprobación de duplicados: por ID vinculado o por coincidencia de nombre/fecha/equipo
                 const alreadyLinked = linkedIds.has(conv.id.toString());
-                const alreadyExistsByName = asistencias.some(a => 
-                    a.fecha === conv.fecha && 
+                const alreadyExistsByName = asistencias.some(a =>
+                    a.fecha === conv.fecha &&
                     String(a.equipoid) === String(conv.equipoid) &&
                     a.nombre === standardName
                 );
@@ -10567,7 +10780,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     const attendanceData = {
                         fecha: conv.fecha || new Date().toISOString().split('T')[0],
                         nombre: window.formatAttendanceName(conv.fecha, teamName, conv.tipo, conv.nombre),
-                        tipo: conv.tipo || 'Sesión', 
+                        tipo: conv.tipo || 'Sesión',
                         equipoid: conv.equipoid || null,
                         convocatoriaid: conv.id,
                         lugar: conv.lugar || '',
@@ -10594,19 +10807,19 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.renderAsistencia = async function(container) {
+    window.renderAsistencia = async function (container) {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const allAttendance = await db.getAll('asistencia');
         const attendance = window.applyGlobalFilters(allAttendance);
         const sortedTeams = window.getSortedTeams(teams);
-        
+
         // Inicializar filtros si no existen
         if (!window.asistenciaFilters) window.asistenciaFilters = { activeTeamId: 'TODOS', activeType: 'Sesión', activeLugar: 'TODOS' };
-        
+
         const activeType = window.asistenciaFilters.activeType || 'Sesión';
         const activeTeamId = window.asistenciaFilters.activeTeamId || 'TODOS';
         const activeLugar = window.asistenciaFilters.activeLugar || 'TODOS';
-        
+
         const filteredAttendance = attendance.filter(a => {
             if (activeType === 'all') {
                 return activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
@@ -10615,7 +10828,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const clean = (t) => (t || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
             const target = clean(activeType);
             let item = clean(a.tipo);
-            
+
             let matchesType = false;
             if (target === 'sesion') {
                 matchesType = item === 'sesion' || item === 'convocatoria' || item === '' || (!['ciclo', 'torneo'].includes(item));
@@ -10626,10 +10839,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             } else {
                 matchesType = item === target;
             }
-            
+
             const matchesTeam = activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
             return matchesType && matchesTeam;
-        }).sort((a,b) => b.fecha.localeCompare(a.fecha));
+        }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
         container.innerHTML = `
             <div class="space-y-6 animate-in fade-in duration-500">
@@ -10640,10 +10853,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         TODAS
                     </button>
                     ${[
-                        { id: 'Sesión', label: 'SESIONES' },
-                        { id: 'Ciclo', label: 'CICLOS' },
-                        { id: 'Torneo', label: 'TORNEOS' }
-                    ].map(type => `
+                { id: 'Sesión', label: 'SESIONES' },
+                { id: 'Ciclo', label: 'CICLOS' },
+                { id: 'Torneo', label: 'TORNEOS' }
+            ].map(type => `
                         <button onclick="window.filterAsistenciaType('${type.id}')" 
                             class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === type.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
                             ${type.label}
@@ -10681,13 +10894,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </thead>
                             <tbody class="divide-y divide-slate-50">
                                 ${filteredAttendance.length > 0 ? filteredAttendance.map(a => {
-                                    const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
-                                    const pls = a.players || a.data || {};
-                                    const total = Object.keys(pls).length;
-                                    const present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
-                                    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+                const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
+                const pls = a.players || a.data || {};
+                const total = Object.keys(pls).length;
+                const present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                const percent = total > 0 ? Math.round((present / total) * 100) : 0;
 
-                                    return `
+                return `
                                         <tr class="hover:bg-slate-50/50 transition-colors group">
                                             <td class="px-8 py-5">
                                                 <div class="flex items-center gap-3">
@@ -10733,7 +10946,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             </td>
                                         </tr>
                                     `;
-                                }).join('') : `
+            }).join('') : `
                                     <tr>
                                         <td colspan="5" class="px-8 py-20 text-center">
                                             <div class="flex flex-col items-center gap-4 opacity-30">
@@ -10849,7 +11062,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const asisteBtn = document.getElementById(`as-btn-${pid}`);
         const opts = document.getElementById(`abs-opts-${pid}`);
         if (!ausenteBtn || !asisteBtn || !opts) return;
-        
+
         if (value === 'asiste') {
             ausenteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
             asisteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
@@ -10865,16 +11078,16 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const players = await db.getAll('jugadores');
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
-        
+
         // Find players called via Convocatorias
-        const matchingConvs = allConvs.filter(c => 
-            String(c.equipoid) === String(preData.equipoid) && 
+        const matchingConvs = allConvs.filter(c =>
+            String(c.equipoid) === String(preData.equipoid) &&
             c.fecha === preData.fecha
         );
-        
+
         // Find players called via Sesiones
-        const matchingSesiones = allSesiones.filter(s => 
-            String(s.equipoid) === String(preData.equipoid) && 
+        const matchingSesiones = allSesiones.filter(s =>
+            String(s.equipoid) === String(preData.equipoid) &&
             s.fecha === preData.fecha
         );
 
@@ -10884,7 +11097,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         matchingSesiones.forEach(s => (s.playerids || []).forEach(id => expectedPlayerIds.add(String(id))));
 
         let teamPlayers = players.filter(p => p.equipoid?.toString() === preData.equipoid.toString());
-        let filteredPlayers = expectedPlayerIds.size > 0 
+        let filteredPlayers = expectedPlayerIds.size > 0
             ? teamPlayers.filter(p => expectedPlayerIds.has(String(p.id)))
             : teamPlayers;
 
@@ -10896,7 +11109,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const renderTable = (list) => {
             const tbody = document.getElementById('asistencia-roster-tbody');
             if (!tbody) return;
-            
+
             tbody.innerHTML = list.map(p => `
                 <tr class="group hover:bg-slate-50 transition-all">
                     <td class="py-4 px-2">
@@ -10928,13 +11141,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             <!-- Sub-opciones de Ausente -->
                                 <div id="abs-opts-${p.id}" class="hidden grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
                                 ${[
-                                    {v:'falta', l:'Sin Mot.'}, 
-                                    {v:'zubieta', l:'Zub'}, 
-                                    {v:'estudios', l:'Est'}, 
-                                    {v:'lesion', l:'Les'}, 
-                                    {v:'enfermo', l:'Enf'}, 
-                                    {v:'seleccion', l:'Sel'}
-                                ].map(opt => `
+                    { v: 'falta', l: 'Sin Mot.' },
+                    { v: 'zubieta', l: 'Zub' },
+                    { v: 'estudios', l: 'Est' },
+                    { v: 'lesion', l: 'Les' },
+                    { v: 'enfermo', l: 'Enf' },
+                    { v: 'seleccion', l: 'Sel' }
+                ].map(opt => `
                                     <label class="flex-1">
                                         <input type="radio" name="p_${p.id}" value="${opt.v}" 
                                                onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
@@ -11022,7 +11235,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const playersStatus = {};
             const tbody = document.getElementById('asistencia-roster-tbody');
             const checkedRadios = tbody.querySelectorAll('input[type="radio"]:checked');
-            
+
             checkedRadios.forEach(radio => {
                 const pid = radio.name.replace('p_', '');
                 playersStatus[pid] = radio.value;
@@ -11055,43 +11268,43 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             console.error("No se encontró el registro de asistencia con ID:", id);
             return;
         }
-        
+
         const pls = a.players || a.data || {};
         const pids = Object.keys(pls);
-        
+
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
         const players = await db.getAll('jugadores');
-        
+
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
-        
-        const matchingConvs = allConvs.filter(c => 
-            String(c.equipoid) === String(a.equipoid) && 
+
+        const matchingConvs = allConvs.filter(c =>
+            String(c.equipoid) === String(a.equipoid) &&
             c.fecha === a.fecha
         );
-        const matchingSesiones = allSesiones.filter(s => 
-            String(s.equipoid) === String(a.equipoid) && 
+        const matchingSesiones = allSesiones.filter(s =>
+            String(s.equipoid) === String(a.equipoid) &&
             s.fecha === a.fecha
         );
 
         const expectedPlayerIds = new Set();
         matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
         matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
-        
+
         const teamPlayers = players.filter(p => {
             const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
             const isConvocado = expectedPlayerIds.has(String(p.id));
-            
+
             // Si hay registros de asistencia específicos, solo mostramos esos
             if (pids.length > 0) return isRecorded;
-            
+
             // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
             if (expectedPlayerIds.size > 0) return isConvocado;
 
             // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
             return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         const mContainer = document.getElementById('modal-container');
         const mOverlay = document.getElementById('modal-overlay');
@@ -11119,37 +11332,37 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
                 <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
                     ${['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion', 'viaje', 'vacaciones'].map(status => {
-                        const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
-                        const labelMap = {
-                            'asiste': 'PRESENTES',
-                            'falta': 'SIN MOTIVO',
-                            'zubieta': 'ZUBIETA',
-                            'estudios': 'ESTUDIOS',
-                            'lesion': 'LESION.',
-                            'enfermo': 'ENFERMOS',
-                            'seleccion': 'SELECCIÓN',
-                            'viaje': 'VIAJE COL.',
-                            'vacaciones': 'VACACIONES'
-                        };
-                        const colorMap = {
-                            'asiste': 'emerald',
-                            'falta': 'rose',
-                            'zubieta': 'indigo',
-                            'estudios': 'blue',
-                            'lesion': 'amber',
-                            'enfermo': 'orange',
-                            'seleccion': 'sky',
-                            'viaje': 'cyan',
-                            'vacaciones': 'purple'
-                        };
-                        
-                        return `
+            const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
+            const labelMap = {
+                'asiste': 'PRESENTES',
+                'falta': 'SIN MOTIVO',
+                'zubieta': 'ZUBIETA',
+                'estudios': 'ESTUDIOS',
+                'lesion': 'LESION.',
+                'enfermo': 'ENFERMOS',
+                'seleccion': 'SELECCIÓN',
+                'viaje': 'VIAJE COL.',
+                'vacaciones': 'VACACIONES'
+            };
+            const colorMap = {
+                'asiste': 'emerald',
+                'falta': 'rose',
+                'zubieta': 'indigo',
+                'estudios': 'blue',
+                'lesion': 'amber',
+                'enfermo': 'orange',
+                'seleccion': 'sky',
+                'viaje': 'cyan',
+                'vacaciones': 'purple'
+            };
+
+            return `
                             <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
                                 <p class="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-1">${labelMap[status]}</p>
                                 <p class="text-lg font-black text-${colorMap[status]}-600">${count}</p>
                             </div>
                         `;
-                    }).join('')}
+        }).join('')}
                 </div>
 
                 <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -11162,24 +11375,24 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${teamPlayers.map(p => {
-                                const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
-                                const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' : 
-                                              (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
+            const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
+            const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' :
+                (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
 
-                                let statusLabel = 'Presente';
-                                let colorClass = 'bg-emerald-100 text-emerald-700';
-                                
-                                if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
-                                else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
-                                else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
-                                else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
-                                else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
-                                else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
-                                else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
-                                else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
-                                else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
+            let statusLabel = 'Presente';
+            let colorClass = 'bg-emerald-100 text-emerald-700';
 
-                                return `
+            if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
+            else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
+            else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
+            else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
+            else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
+            else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
+            else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
+            else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
+            else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
+
+            return `
                                     <tr class="group hover:bg-slate-50 transition-all">
                                         <td class="py-3">
                                             <p class="font-bold text-slate-700 uppercase transition-all">${p.nombre} ${p.apellidos || ''}</p>
@@ -11190,7 +11403,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </td>
                                     </tr>
                                 `;
-                            }).join('')}
+        }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -11208,36 +11421,36 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const pls = a.players || a.data || {};
         const pids = Object.keys(pls);
         const players = await db.getAll('jugadores');
-        
+
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
-        
-        const matchingConvs = allConvs.filter(c => 
-            String(c.equipoid) === String(a.equipoid) && 
+
+        const matchingConvs = allConvs.filter(c =>
+            String(c.equipoid) === String(a.equipoid) &&
             c.fecha === a.fecha
         );
-        const matchingSesiones = allSesiones.filter(s => 
-            String(s.equipoid) === String(a.equipoid) && 
+        const matchingSesiones = allSesiones.filter(s =>
+            String(s.equipoid) === String(a.equipoid) &&
             s.fecha === a.fecha
         );
 
         const expectedPlayerIds = new Set();
         matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
         matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
-        
+
         const teamPlayers = players.filter(p => {
             const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
             const isConvocado = expectedPlayerIds.has(String(p.id));
-            
+
             // Si hay registros de asistencia específicos, solo mostramos esos
             if (pids.length > 0) return isRecorded;
-            
+
             // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
             if (expectedPlayerIds.size > 0) return isConvocado;
 
             // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
             return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-        }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
+        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         const mContainer = document.getElementById('modal-container');
         const mOverlay = document.getElementById('modal-overlay');
@@ -11264,8 +11477,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         </thead>
                         <tbody class="divide-y divide-slate-50">
                             ${teamPlayers.map(p => {
-                                const status = pls[p.id]?.status || pls[p.id] || 'asiste';
-                                return `
+            const status = pls[p.id]?.status || pls[p.id] || 'asiste';
+            return `
                                     <tr>
                                         <td class="py-4">
                                             <div class="flex items-center gap-3">
@@ -11289,14 +11502,14 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                 </div>
                                                 <div id="abs-opts-${p.id}" class="${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? '' : 'hidden'} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
                                                     ${[
-                                                        {v:'falta', l:'S.M'}, 
-                                                        {v:'zubieta', l:'Zub'}, 
-                                                        {v:'estudios', l:'Est'}, 
-                                                        {v:'lesion', l:'Les'}, 
-                                                        {v:'enfermo', l:'Enf'},
-                                                        {v:'viaje', l:'Viaj'},
-                                                        {v:'vacaciones', l:'Vac'}
-                                                    ].map(opt => `
+                    { v: 'falta', l: 'S.M' },
+                    { v: 'zubieta', l: 'Zub' },
+                    { v: 'estudios', l: 'Est' },
+                    { v: 'lesion', l: 'Les' },
+                    { v: 'enfermo', l: 'Enf' },
+                    { v: 'viaje', l: 'Viaj' },
+                    { v: 'vacaciones', l: 'Vac' }
+                ].map(opt => `
                                                         <label class="flex-1">
                                                             <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
                                                             <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
@@ -11307,7 +11520,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         </td>
                                     </tr>
                                 `;
-                            }).join('')}
+        }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -11361,7 +11574,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const clubs = await db.getAll('clubes');
             const club = clubs.find(c => c.nombre === clubName);
             if (!club) return;
-            
+
             const reader = new FileReader();
             reader.onload = async (e) => {
                 club.escudo = e.target.result;
@@ -11395,7 +11608,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         }
     };
 
-    window.renderConvocatoriasPDF = async function(container) {
+    window.renderConvocatoriasPDF = async function (container) {
         try {
             const players = await db.getAll('jugadores');
             const convocatorias = await db.getAll('convocatorias');
@@ -11415,7 +11628,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 const sortedConvs = [...convocatorias]
                     .filter(c => c.tipo === type)
                     .filter(c => currentPdfComunidad === 'all' || window.getComunidadByLugar(c.lugar, c.nombre) === currentPdfComunidad)
-                    .sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+                    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
                 container.innerHTML = `
                     <div class="max-w-5xl mx-auto space-y-8 pb-20">
@@ -11490,7 +11703,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Jugador a convocar</label>
                                         <select name="playerid" id="pdf-player-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
                                             <option value="">Selecciona un jugador...</option>
-                                            ${players.sort((a,b) => (a.nombre||'').localeCompare(b.nombre||'')).map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+                                            ${players.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
                                         </select>
                                         <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
                                     </div>
@@ -11603,51 +11816,51 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     convSelect.value = "";
                 };
 
-                    const mapsInput = container.querySelector('#pdf-ubicacion');
-                    const lugarInput = container.querySelector('#pdf-lugar');
-                    const btnAll = container.querySelector('#btn-generate-all');
+                const mapsInput = container.querySelector('#pdf-ubicacion');
+                const lugarInput = container.querySelector('#pdf-lugar');
+                const btnAll = container.querySelector('#btn-generate-all');
 
-                    const updateMapsFromLugar = async () => {
-                        const val = lugarInput.value.trim().toUpperCase();
-                        if (!val) return;
-                        const clubes = await db.getAll('clubes');
-                        const match = clubes.find(c => 
-                            (c.lugar || '').toUpperCase() === val || 
-                            (c.nombre || '').toUpperCase().includes(val)
-                        );
-                        if (match && match.ubicacion) {
-                            mapsInput.value = match.ubicacion;
-                        }
-                    };
+                const updateMapsFromLugar = async () => {
+                    const val = lugarInput.value.trim().toUpperCase();
+                    if (!val) return;
+                    const clubes = await db.getAll('clubes');
+                    const match = clubes.find(c =>
+                        (c.lugar || '').toUpperCase() === val ||
+                        (c.nombre || '').toUpperCase().includes(val)
+                    );
+                    if (match && match.ubicacion) {
+                        mapsInput.value = match.ubicacion;
+                    }
+                };
 
-                    lugarInput.oninput = updateMapsFromLugar;
+                lugarInput.oninput = updateMapsFromLugar;
 
-                    convSelect.onchange = async (e) => {
-                        const opt = e.target.selectedOptions[0];
-                        if (!opt || !opt.value) {
-                            if (btnAll) btnAll.classList.add('hidden');
-                            return;
-                        }
-                        const pids = JSON.parse(opt.dataset.players || '[]');
-                        const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
-                        playerSelect.innerHTML = `<option value="">Selecciona un jugador...</option>` + 
-                            filtered.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+                convSelect.onchange = async (e) => {
+                    const opt = e.target.selectedOptions[0];
+                    if (!opt || !opt.value) {
+                        if (btnAll) btnAll.classList.add('hidden');
+                        return;
+                    }
+                    const pids = JSON.parse(opt.dataset.players || '[]');
+                    const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
+                    playerSelect.innerHTML = `<option value="">Selecciona un jugador...</option>` +
+                        filtered.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
 
-                        if (filtered.length > 0 && btnAll) {
-                            btnAll.classList.remove('hidden');
-                            btnAll.innerText = `GENERAR TODAS LAS INDIVIDUALES (${filtered.length})`;
-                        } else if (btnAll) {
-                            btnAll.classList.add('hidden');
-                        }
+                    if (filtered.length > 0 && btnAll) {
+                        btnAll.classList.remove('hidden');
+                        btnAll.innerText = `GENERAR TODAS LAS INDIVIDUALES (${filtered.length})`;
+                    } else if (btnAll) {
+                        btnAll.classList.add('hidden');
+                    }
 
-                        container.querySelector('#pdf-titulo').value = (opt.dataset.nombre || '').toUpperCase();
-                        const meta = window.parseLugarMetadata(opt.dataset.lugar);
-                        lugarInput.value = meta.base;
-                        
-                        // Auto-buscar el link de maps según el lugar
-                        await updateMapsFromLugar();
-                        
-                        if (type === 'Ciclo') {
+                    container.querySelector('#pdf-titulo').value = (opt.dataset.nombre || '').toUpperCase();
+                    const meta = window.parseLugarMetadata(opt.dataset.lugar);
+                    lugarInput.value = meta.base;
+
+                    // Auto-buscar el link de maps según el lugar
+                    await updateMapsFromLugar();
+
+                    if (type === 'Ciclo') {
                         const sessions = [
                             { f: opt.dataset.fecha, hl: meta.extra.hl, hi: meta.extra.hi, hs: meta.extra.hs },
                             meta.extra.s2 || {},
@@ -11706,7 +11919,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                             }
                             const pids = JSON.parse(opt.dataset.players || '[]');
                             const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
-                            
+
                             if (filtered.length === 0) {
                                 window.customAlert('Atención', 'No hay jugadores en esta convocatoria.', 'warning');
                                 return;
@@ -11758,7 +11971,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
     async function generateIndividualConvocatoriaPDF(player, info) {
         console.log("Iniciando generación de PDF para:", player?.nombre);
-        
+
         if (!window.jspdf || !window.jspdf.jsPDF) {
             console.error("Librería jsPDF no encontrada");
             throw new Error("Librería de PDF no cargada correctamente.");
@@ -11766,12 +11979,12 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
-        
+
         if (typeof doc.autoTable !== 'function') {
             console.error("Plugin autoTable no encontrado");
             throw new Error("Plugin de tablas no cargado.");
         }
-        
+
         const loadImage = (url) => new Promise((resolve) => {
             if (!url) return resolve(null);
             const img = new Image();
@@ -11866,7 +12079,7 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
             ['Superficie / Gainazala'],
             ['Hora / Ordua']
         ];
-        
+
         let head = [['']];
         let colStyles = { 0: { cellWidth: 40, fontStyle: 'bold', fillColor: [230, 230, 230] } };
 
@@ -11876,7 +12089,7 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
                 if (f) {
                     head[0].push(`SESIÓN ${i}`);
                     body[0].push(getSafeDayLabel(f));
-                    
+
                     body[1].push({
                         content: `${(info.lugar || '').toUpperCase()}\n\nVER UBICACIÓN EN GOOGLE MAPS`,
                         data: { url: (info.ubicacion || '').trim() },
@@ -11931,7 +12144,7 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
         const drawSection = (title, content, y, fullHighlight = false) => {
             if (!content || content === 'Notas...' || content === 'Importante...') return y;
             if (y > 270) doc.addPage();
-            
+
             const splitContent = doc.splitTextToSize(content, 170);
 
             if (fullHighlight) {
@@ -11942,15 +12155,15 @@ EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de 
                 const titleWidth = doc.getTextWidth(title + " ") + 4;
                 doc.rect(20, y - 5, titleWidth, 7, 'F');
             }
-            
-            doc.setFont("helvetica", "bold");
+
+            doc.setFont("Montserrat", "bold");
             doc.setFontSize(11);
             doc.text(title, 22, y);
-            
-            doc.setFont("helvetica", "normal");
+
+            doc.setFont("Montserrat", "bold");
             doc.setFontSize(8.5);
             doc.text(splitContent, 20, y + 6);
-            
+
             return y + (splitContent.length * 4.5) + 10;
         };
 
@@ -11994,7 +12207,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         doc.setFont("helvetica", "bold");
         doc.setFontSize(20);
         doc.text("CONTROL DE ASISTENCIA", 105, 20, { align: "center" });
-        
+
         doc.setFontSize(12);
         doc.setTextColor(100);
         doc.text(`${team?.nombre || 'EQUIPO'} - ${a.fecha}`, 105, 30, { align: "center" });
@@ -12033,7 +12246,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 2: { halign: 'center', cellWidth: 65 },
                 3: { fontStyle: 'bold', halign: 'center', cellWidth: 35 }
             },
-            didParseCell: function(data) {
+            didParseCell: function (data) {
                 if (data.section === 'body' && data.column.index === 3) {
                     const status = data.cell.raw;
                     if (status === 'Presente') data.cell.styles.textColor = [16, 185, 129];
@@ -12052,31 +12265,39 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
     };
 
     window.showPdfPreviewModal = (url, filename, originalId) => {
-        const mContainer = document.getElementById('modal-container');
-        if (!mContainer) return;
-        
-        mContainer.innerHTML = `
-            <div class="h-[90vh] flex flex-col bg-white rounded-3xl overflow-hidden shadow-2xl">
+        console.log("Opening High-Z Preview Modal for:", filename);
+
+        const isPlayer = filename.startsWith('DOSSIER_');
+        const backAction = isPlayer ? `window.viewPlayerProfile('${originalId}')` : `window.viewAsistenciaDetail('${originalId}')`;
+
+        const previewOverlay = document.createElement('div');
+        previewOverlay.id = 'pdf-preview-overlay';
+        previewOverlay.className = 'fixed inset-0 z-[150] flex items-center justify-center p-0 md:p-8 animate-in fade-in duration-300';
+        previewOverlay.innerHTML = `
+            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md"></div>
+            <div class="bg-white w-full max-w-5xl h-full md:h-[90vh] rounded-none md:rounded-[2.5rem] relative shadow-2xl overflow-hidden flex flex-col transform animate-in zoom-in duration-300">
                 <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <div>
                         <h3 class="text-xl font-black text-slate-800 uppercase tracking-tight">Previsualización</h3>
                         <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${filename}.pdf</p>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="window.viewAsistenciaDetail('${originalId}')" class="flex items-center gap-2 px-6 py-3 bg-slate-200 text-slate-600 font-black rounded-2xl hover:bg-slate-300 transition-all uppercase tracking-widest text-[10px]">
+                        <button onclick="document.getElementById('pdf-preview-overlay').remove(); ${backAction}" class="flex items-center gap-2 px-6 py-3 bg-slate-200 text-slate-600 font-black rounded-2xl hover:bg-slate-300 transition-all uppercase tracking-widest text-[10px]">
                             <i data-lucide="arrow-left" class="w-4 h-4"></i> Volver
                         </button>
                         <a href="${url}" download="${filename}.pdf" class="flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">
                             <i data-lucide="download" class="w-4 h-4"></i> Descargar PDF
                         </a>
-                        <button onclick="closeModal()" class="p-3 bg-white rounded-full text-slate-400 hover:bg-slate-200 transition-all shadow-sm border border-slate-100"><i data-lucide="x" class="w-5 h-5"></i></button>
+                        <button onclick="document.getElementById('pdf-preview-overlay').remove()" class="p-3 bg-white rounded-full text-slate-400 hover:bg-slate-200 transition-all shadow-sm border border-slate-100"><i data-lucide="x" class="w-5 h-5"></i></button>
                     </div>
                 </div>
-                <div class="flex-1 bg-slate-800 p-4">
-                    <iframe src="${url}#toolbar=0" class="w-full h-full border-none rounded-xl bg-white shadow-2xl"></iframe>
+                <div class="flex-1 bg-slate-800 p-2 md:p-4">
+                    <iframe src="${url}#toolbar=0" class="w-full h-full border-none rounded-none md:rounded-xl bg-white shadow-2xl"></iframe>
                 </div>
             </div>
         `;
+
+        document.body.appendChild(previewOverlay);
         if (window.lucide) lucide.createIcons();
     };
 
@@ -12086,248 +12307,252 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         window.renderAsistencia(document.getElementById('content-container'));
     };
 
-    window.generatePlayerPDF = async (playerId, selectedSeason = 'ALL') => {
-        const player = await db.get('jugadores', playerId);
-        if (!player) return;
 
-        if (!window.jspdf || !window.jspdf.jsPDF) {
-            return window.customAlert('Error', 'Librería PDF no disponible.', 'error');
-        }
+    window.generatePlayerPDF = async (playerId, selectedSeason = 'ALL', mode = 'save') => {
+        try {
+            const player = await db.get('jugadores', playerId);
+            if (!player) throw new Error("Jugador no encontrado");
 
-        const teams = await db.getAll('equipos');
-        const team = teams.find(t => String(t.id) === String(player.equipoid));
-        
-        const allAttendance = await db.getAll('asistencia');
-        const allConvocatorias = await db.getAll('convocatorias');
-
-        const filterBySeason = (items, dateField = 'fecha') => {
-            if (selectedSeason === 'ALL') return items;
-            return items.filter(i => window.getSeason(i[dateField]) === selectedSeason);
-        };
-
-        const playerAttendance = filterBySeason(allAttendance.filter(a => a.players && a.players[playerId]));
-        const torneos = filterBySeason(allConvocatorias.filter(c => {
-            const pids = c.playerids || [];
-            return pids.map(String).includes(String(playerId)) && (['Torneo', 'Partido'].includes(c.tipo));
-        }));
-
-        const attendanceSummary = { asiste: 0, falta: 0, lesion: 0, enfermo: 0, total: playerAttendance.length };
-        playerAttendance.forEach(a => {
-            const s = a.players[playerId];
-            const statusRaw = (typeof s === 'object' ? s.status : s) || 'N/A';
-            const status = String(statusRaw).toLowerCase();
-            if (status === 'asiste' || status === 'presente') attendanceSummary.asiste++;
-            else if (status === 'falta' || status === 'no_asiste') attendanceSummary.falta++;
-            else if (status === 'lesion' || status === 'lesionado') attendanceSummary.lesion++;
-            else if (status === 'enfermo') attendanceSummary.enfermo++;
-        });
-
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-
-        // Professional Colors
-        const primaryColor = [37, 99, 235]; // Blue 600
-        const textColor = [30, 41, 59]; // Slate 800
-
-        // Header Background
-        doc.setFillColor(...primaryColor);
-        doc.rect(0, 0, 210, 60, 'F');
-
-        // Helper for images
-        const loadImage = (url) => {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.crossOrigin = 'Anonymous';
-                img.onload = () => resolve(img);
-                img.onerror = () => resolve(null);
-                img.src = url;
-            });
-        };
-
-        // Photo logic: draw to canvas to get a reliable data URL
-        const photoUrl = player.foto || 'Foto Jugador General.png';
-        const img = await loadImage(photoUrl);
-        if (img) {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                const imgData = canvas.toDataURL('image/jpeg', 0.9);
-                
-                doc.setFillColor(255, 255, 255);
-                doc.roundedRect(15, 12, 40, 40, 4, 4, 'F');
-                doc.addImage(imgData, 'JPEG', 17, 14, 36, 36);
-            } catch (e) {
-                console.warn("PDF Photo Error:", e);
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                throw new Error("La librería PDF (jsPDF) no está cargada correctamente.");
             }
-        }
 
-        // Name & Team in Header
-        doc.setTextColor(255, 255, 255);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(22);
-        doc.text(player.nombre.toUpperCase(), 65, 32);
-        
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
-        const teamName = team ? team.nombre.split(' ||| ')[0] : 'JUGADOR LIBRE';
-        doc.text(teamName.toUpperCase(), 65, 39);
-        if (player.equipoConvenido) {
-            doc.text(`CLUB ASOCIADO: ${player.equipoConvenido.toUpperCase()}`, 65, 44);
-        }
+            const teams = await db.getAll('equipos');
+            const team = teams.find(t => String(t.id) === String(player.equipoid));
+            const allAttendance = await db.getAll('asistencia');
+            const allConvocatorias = await db.getAll('convocatorias');
 
-        // Season Label
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        const seasonLabel = selectedSeason === 'ALL' ? 'HISTORIAL COMPLETO' : `TEMPORADA: ${selectedSeason}`;
-        doc.text(seasonLabel, 195, 20, { align: 'right' });
+            const filterBySeason = (items, dateField = 'fecha') => {
+                if (selectedSeason === 'ALL') return items;
+                return items.filter(i => window.getSeason(i[dateField]) === selectedSeason);
+            };
 
-        // Info Sections
-        let yPos = 75;
+            const playerAttendance = filterBySeason(allAttendance.filter(a => a.players && a.players[playerId]));
+            const torneos = filterBySeason(allConvocatorias.filter(c => {
+                const pids = c.playerids || [];
+                return pids.map(String).includes(String(playerId)) && (['Torneo', 'Partido'].includes(c.tipo));
+            }));
 
-        // --- SECTION: PERSONAL INFO ---
-        doc.setTextColor(...primaryColor);
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.text("INFORMACIÓN PERSONAL Y TÉCNICA", 15, yPos);
-        yPos += 3;
-        doc.setDrawColor(...primaryColor);
-        doc.setLineWidth(0.5);
-        doc.line(15, yPos, 85, yPos);
-        yPos += 7;
+            const attendanceSummary = { asiste: 0, falta: 0, lesion: 0, enfermo: 0, total: playerAttendance.length };
+            playerAttendance.forEach(a => {
+                const s = a.players[playerId];
+                const statusRaw = (typeof s === 'object' ? s.status : s) || 'N/A';
+                const status = String(statusRaw).toLowerCase();
+                if (status === 'asiste' || status === 'presente') attendanceSummary.asiste++;
+                else if (status === 'falta' || status === 'no_asiste') attendanceSummary.falta++;
+                else if (status === 'lesion' || status === 'lesionado') attendanceSummary.lesion++;
+                else if (status === 'enfermo') attendanceSummary.enfermo++;
+            });
 
-        const personalInfo = [
-            ["AÑO DE NACIMIENTO", String(player.anionacimiento || '----').toUpperCase()],
-            ["SEXO", String(player.sexo || 'MASCULINO').toUpperCase()],
-            ["LATERALIDAD", String(player.lateralidad || player.pie || 'DIESTRO').toUpperCase()],
-            ["POSICIÓN", window.formatPosition(player.posicion).toUpperCase()],
-            ["NIVEL TÉCNICO", player.nivel || 3]
-        ];
-
-        doc.autoTable({
-            startY: yPos,
-            body: personalInfo,
-            theme: 'plain',
-            styles: { fontSize: 9, cellPadding: 3 },
-            columnStyles: {
-                0: { fontStyle: 'bold', textColor: [100, 116, 139], cellWidth: 50 },
-                1: { textColor: textColor, fontStyle: 'bold' }
-            },
-            margin: { left: 15 }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 15;
-
-        // --- SECTION: ATTENDANCE STATS ---
-        doc.setTextColor(...primaryColor);
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "bold");
-        doc.text("ESTADÍSTICAS DE ASISTENCIA", 15, yPos);
-        yPos += 3;
-        doc.line(15, yPos, 75, yPos);
-        yPos += 7;
-
-        const assistRate = attendanceSummary.total > 0 ? Math.round((attendanceSummary.asiste / attendanceSummary.total) * 100) : 0;
-        
-        doc.autoTable({
-            startY: yPos,
-            head: [['TOTAL SESIONES', 'ASISTENCIAS', 'FALTAS', 'TORNEOS', '% ASISTENCIA']],
-            body: [[
-                attendanceSummary.total,
-                attendanceSummary.asiste,
-                attendanceSummary.falta,
-                torneos.length,
-                `${assistRate}%`
-            ]],
-            headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
-            styles: { halign: 'center', fontSize: 9, cellPadding: 4 },
-            margin: { left: 15 }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 20;
-
-        // --- SECTION: DETAILED ACTIVITY ---
-        const activityData = playerAttendance.sort((a,b) => b.fecha.localeCompare(a.fecha)).slice(0, 30).map(a => {
-            const c = allConvocatorias.find(cv => cv.id == a.convocatoriaid);
-            const status = a.players[playerId];
-            const statusValue = (typeof status === 'object' ? status.status : status) || 'ASISTE';
-            let finalStatus = statusValue.toUpperCase();
-            if (finalStatus === 'ASISTE') finalStatus = 'PRESENTE';
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
             
-            return [
-                a.fecha,
-                (a.nombre || c?.nombre || 'SESIÓN').split(' ||| ')[0].toUpperCase(),
-                (c?.tipo || 'SESIÓN').toUpperCase(),
-                finalStatus
+            // --- FONT INTEGRATION ---
+            if (window.MONTSERRAT_BOLD) {
+                doc.addFileToVFS("Montserrat-Bold.ttf", window.MONTSERRAT_BOLD);
+                doc.addFont("Montserrat-Bold.ttf", "Montserrat", "bold");
+                doc.setFont("Montserrat", "bold");
+            }
+
+            let yPos = 75;
+
+            // --- THEME DEFINITION ---
+            const colors = {
+                navy: [15, 23, 42],      // Slate 900
+                blue: [37, 99, 235],     // Blue 600
+                accent: [241, 245, 249], // Slate 100
+                text: [30, 41, 59],      // Slate 800
+                muted: [100, 116, 139],  // Slate 500
+                white: [255, 255, 255]
+            };
+
+            // Helper for high-reliability image loading
+            const getPlayerDataURL = async (player) => {
+                if (player.foto_blob) return player.foto_blob;
+                if (!player.foto) return null;
+                try {
+                    const generated = await window.generatePdfBlob(player.foto);
+                    if (generated) {
+                        db.update('jugadores', { id: player.id, foto_blob: generated }, true);
+                    }
+                    return generated;
+                } catch (e) {
+                    console.warn("Error generating photo blob:", e);
+                    return null;
+                }
+            };
+
+            // --- PAGE HEADER ---
+            doc.setFillColor(...colors.navy);
+            doc.rect(0, 0, 210, 50, 'F');
+            doc.setFillColor(...colors.blue);
+            doc.roundedRect(15, 10, 8, 8, 2, 2, 'F');
+            doc.setTextColor(...colors.white);
+            doc.setFont("Montserrat", "bold");
+            doc.setFontSize(10);
+            doc.text("DOSSIER INDIVIDUAL DE RENDIMIENTO", 27, 16);
+            const seasonLabel = selectedSeason === 'ALL' ? 'HISTORIAL COMPLETO' : `TEMPORADA ${selectedSeason}`;
+            doc.setFontSize(8);
+            doc.text(seasonLabel, 195, 16, { align: 'right' });
+            doc.setFontSize(26);
+            doc.text((player.nombre || '').toUpperCase(), 15, 35);
+            doc.setFontSize(11);
+            doc.setFont("Montserrat", "bold");
+            const teamLabel = team ? team.nombre.split(' ||| ')[0] : 'JUGADOR SIN EQUIPO';
+            doc.text(teamLabel.toUpperCase() + (player.equipoConvenido ? `  |  ${player.equipoConvenido.toUpperCase()}` : ''), 15, 43);
+
+            let imgData = await getPlayerDataURL(player);
+            if (!imgData) {
+                try {
+                    imgData = await window.generatePdfBlob('Imagenes/Foto Jugador General.png');
+                } catch (e) { console.warn("Fallback photo failed"); }
+            }
+
+            if (imgData) {
+                try {
+                    doc.setFillColor(255, 255, 255);
+                    doc.roundedRect(155, 25, 40, 45, 4, 4, 'F');
+                    doc.addImage(imgData, 'JPEG', 157.5, 27.5, 35, 40);
+                } catch (e) {
+                    doc.setDrawColor(230);
+                    doc.roundedRect(155, 25, 40, 45, 4, 4, 'D');
+                }
+            } else {
+                doc.setDrawColor(200);
+                doc.setLineDash([1, 1]);
+                doc.roundedRect(155, 25, 40, 45, 4, 4, 'D');
+                doc.setLineDash([]);
+                doc.setTextColor(180);
+                doc.setFontSize(8);
+                doc.text("SIN FOTOGRAFÍA", 175, 48, { align: 'center' });
+            }
+
+            // --- EXECUTIVE SUMMARY ---
+            doc.setTextColor(...colors.navy);
+            doc.setFontSize(12);
+            doc.setFont("Montserrat", "bold");
+            doc.text("RESUMEN EJECUTIVO TÉCNICO", 15, yPos);
+            yPos += 3;
+            doc.setFillColor(...colors.blue);
+            doc.rect(15, yPos, 15, 1.5, 'F');
+            yPos += 8;
+
+            const summaryData = [
+                ["FECHA NAC.", "POSICIÓN", "LATERALIDAD", "NIVEL TÉCNICO"],
+                [
+                    player.fechanacimiento || player.anionacimiento || '----',
+                    window.formatPosition(player.posicion).toUpperCase(),
+                    (player.lateralidad || player.pie || 'DIESTRO').toUpperCase(),
+                    `${player.nivel || 3} / 5`
+                ]
             ];
-        });
-
-        if (activityData.length > 0) {
-            doc.setTextColor(...primaryColor);
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.text("HISTORIAL DETALLADO DE ACTIVIDAD", 15, yPos);
-            yPos += 3;
-            doc.line(15, yPos, 85, yPos);
-            yPos += 7;
 
             doc.autoTable({
                 startY: yPos,
-                head: [['FECHA', 'ACTIVIDAD / EVENTO', 'TIPO', 'ESTADO']],
-                body: activityData,
-                headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], halign: 'center' },
-                styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
-                columnStyles: {
-                    1: { halign: 'left', cellWidth: 'auto' },
-                    3: { fontStyle: 'bold' }
-                },
-                margin: { left: 15 }
+                head: [summaryData[0]],
+                body: [summaryData[1]],
+                theme: 'plain',
+                headStyles: { fillColor: colors.accent, textColor: colors.muted, fontSize: 8, fontStyle: 'bold', halign: 'center' },
+                styles: { font: 'Montserrat', halign: 'center', fontSize: 10, fontStyle: 'bold', textColor: colors.navy, cellPadding: 5 },
+                margin: { left: 15, right: 15 }
             });
+
             yPos = doc.lastAutoTable.finalY + 15;
-        }
 
-        // --- SECTION: COMPETITIONS ---
-        if (torneos.length > 0) {
-            if (yPos > 240) { doc.addPage(); yPos = 20; }
-            doc.setTextColor(...primaryColor);
-            doc.setFontSize(11);
-            doc.setFont("helvetica", "bold");
-            doc.text("HISTORIAL DE COMPETICIÓN (TORNEOS)", 15, yPos);
+            // --- PERFORMANCE METRICS ---
+            doc.setTextColor(...colors.navy);
+            doc.setFontSize(12);
+            doc.setFont("Montserrat", "bold");
+            doc.text("MÉTRICAS DE PARTICIPACIÓN", 15, yPos);
             yPos += 3;
-            doc.line(15, yPos, 85, yPos);
-            yPos += 7;
+            doc.setFillColor(...colors.blue);
+            doc.rect(15, yPos, 15, 1.5, 'F');
+            yPos += 8;
 
-            const torneoData = torneos.slice(0, 15).map(t => {
-                const score = (t.rendimiento && t.rendimiento[playerId]) ? t.rendimiento[playerId].score : '--';
-                return [
-                    t.fecha,
-                    t.nombre.split(' ||| ')[0].toUpperCase(),
-                    score
-                ];
-            });
-
+            const assistRate = attendanceSummary.total > 0 ? Math.round((attendanceSummary.asiste / attendanceSummary.total) * 100) : 0;
             doc.autoTable({
                 startY: yPos,
-                head: [['FECHA', 'COMPETICIÓN / TORNEO', 'CALIFICACIÓN']],
-                body: torneoData,
-                headStyles: { fillColor: primaryColor, textColor: [255, 255, 255], halign: 'center' },
-                styles: { fontSize: 8, cellPadding: 3, halign: 'center' },
-                columnStyles: {
-                    1: { halign: 'left' }
-                },
-                margin: { left: 15 }
+                head: [['TOTAL SESIONES', 'ASISTENCIAS', 'AUSENCIAS', 'TORNEOS', 'RATIO ASISTENCIA']],
+                body: [[attendanceSummary.total, attendanceSummary.asiste, attendanceSummary.falta, torneos.length, `${assistRate}%`]],
+                headStyles: { fillColor: colors.navy, textColor: colors.white, fontStyle: 'bold', halign: 'center' },
+                styles: { font: 'Montserrat', halign: 'center', fontSize: 9, cellPadding: 5 },
+                columnStyles: { 4: { fontStyle: 'bold', textColor: assistRate > 80 ? [16, 185, 129] : colors.blue } },
+                margin: { left: 15, right: 15 }
             });
+
+            yPos = doc.lastAutoTable.finalY + 20;
+
+            // --- ACTIVITY LOG ---
+            const activityData = playerAttendance.sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 25).map(a => {
+                const c = allConvocatorias.find(cv => cv.id == a.convocatoriaid);
+                const status = a.players[playerId];
+                const statusValue = (typeof status === 'object' ? status.status : status) || 'ASISTE';
+                let finalStatus = statusValue.toUpperCase();
+                if (finalStatus === 'ASISTE') finalStatus = 'PRESENTE';
+                return [a.fecha, (a.nombre || c?.nombre || 'SESIÓN INDIVIDUAL').split(' ||| ')[0].toUpperCase(), (c?.tipo || 'SESIÓN').toUpperCase(), finalStatus];
+            });
+
+            if (activityData.length > 0) {
+                doc.setTextColor(...colors.navy);
+                doc.setFontSize(12);
+                doc.setFont("Montserrat", "bold");
+                doc.text("REGISTRO DETALLADO DE ACTIVIDAD", 15, yPos);
+                yPos += 3;
+                doc.setFillColor(...colors.blue);
+                doc.rect(15, yPos, 15, 1.5, 'F');
+                yPos += 8;
+                doc.autoTable({
+                    startY: yPos,
+                    head: [['FECHA', 'ACTIVIDAD / EVENTO', 'TIPO', 'ESTADO']],
+                    body: activityData,
+                    headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], halign: 'center', fontSize: 7 },
+                    styles: { font: 'Montserrat', fontSize: 8, cellPadding: 3.5, halign: 'center', textColor: colors.text },
+                    columnStyles: { 1: { halign: 'left', cellWidth: 80 }, 3: { fontStyle: 'bold' } },
+                    margin: { left: 15, right: 15 },
+                    didDrawCell: (data) => {
+                        if (data.section === 'body' && data.column.index === 3) {
+                            const val = data.cell.raw;
+                            if (val === 'PRESENTE') doc.setTextColor(16, 185, 129);
+                            else if (val === 'FALTA') doc.setTextColor(239, 68, 68);
+                            else doc.setTextColor(colors.blue);
+                        }
+                    }
+                });
+                yPos = doc.lastAutoTable.finalY + 15;
+            }
+
+            if (torneos.length > 0) {
+                if (yPos > 240) { doc.addPage(); yPos = 20; }
+                doc.setTextColor(...colors.navy);
+                doc.setFontSize(12);
+                doc.setFont("Montserrat", "bold");
+                doc.text("HISTORIAL DE COMPETICIÓN", 15, yPos);
+                yPos += 8;
+                const torneoData = torneos.slice(0, 10).map(t => [t.fecha, t.nombre.split(' ||| ')[0].toUpperCase(), (t.rendimiento && t.rendimiento[playerId]) ? `${t.rendimiento[playerId].score} / 10` : 'PENDIENTE']);
+                doc.autoTable({
+                    startY: yPos,
+                    head: [['FECHA', 'TORNEO / PARTIDO', 'VALORACIÓN']],
+                    body: torneoData,
+                    headStyles: { fillColor: colors.blue, textColor: colors.white, halign: 'center' },
+                    styles: { font: 'Montserrat', fontSize: 8, cellPadding: 4, halign: 'center' },
+                    columnStyles: { 1: { halign: 'left' } },
+                    margin: { left: 15, right: 15 }
+                });
+            }
+
+            const fileName = `DOSSIER_${player.nombre.toUpperCase().replace(/ /g, '_')}`;
+            if (mode === 'save') {
+                doc.save(`${fileName}.pdf`);
+            } else {
+                const blob = doc.output('blob');
+                const pdfUrl = URL.createObjectURL(blob);
+                window.showPdfPreviewModal(pdfUrl, fileName, playerId);
+            }
+        } catch (err) {
+            console.error("PDF Generation Error:", err);
+            window.customAlert('Error de PDF', `Ocurrió un error al generar el documento: ${err.message}`, 'error');
+            throw err;
         }
-
-        // Footer (Clean)
-        const pageHeight = doc.internal.pageSize.height;
-        doc.setFontSize(8);
-        doc.setTextColor(150);
-        // No footer text as requested
-
-        doc.save(`FICHA_${player.nombre.toUpperCase().replace(/ /g, '_')}.pdf`);
     };
     window.showExportDialog = async (playerId) => {
         const attendance = await db.getAll('asistencia');
@@ -12357,40 +12582,59 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     </div>
                 </div>
 
-                <div class="flex gap-4 mt-12">
-                    <button onclick="window.closeCustomModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
-                    <button id="confirm-pdf-btn" onclick="window.confirmPDFExport('${playerId}')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
-                        <i data-lucide="download" class="w-4 h-4"></i>
-                        Generar PDF
+                <div class="flex flex-col gap-3 mt-10">
+                    <button id="preview-pdf-btn" onclick="window.confirmPDFExport('${playerId}', 'preview')" class="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-slate-900 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        Previsualizar Ficha
                     </button>
+                    <div class="flex gap-3">
+                        <button onclick="window.closeCustomModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
+                        <button id="confirm-pdf-btn" onclick="window.confirmPDFExport('${playerId}', 'save')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            Exportar PDF
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
-        
+
         window.customModal(dialogHtml);
         if (window.lucide) lucide.createIcons();
     };
 
-    window.confirmPDFExport = (playerId) => {
+    window.confirmPDFExport = (playerId, mode = 'save') => {
         const season = document.getElementById('pdf-season-select').value;
-        const btn = document.getElementById('confirm-pdf-btn');
+
+        if (mode === 'preview') {
+            // Close selection dialog immediately to avoid z-index overlay conflicts
+            window.closeCustomModal();
+            // Start generation
+            window.generatePlayerPDF(playerId, season, 'preview');
+            return;
+        }
+
+        const btnId = 'confirm-pdf-btn';
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+
         const originalHtml = btn.innerHTML;
-        btn.innerHTML = 'GENERANDO...';
+        btn.innerHTML = 'PREPARANDO DESCARGA...';
         btn.style.pointerEvents = 'none';
-        
-        window.generatePlayerPDF(playerId, season).then(() => {
+
+        window.generatePlayerPDF(playerId, season, 'save').then(() => {
             window.closeCustomModal();
         }).catch(err => {
             console.error(err);
             btn.innerHTML = originalHtml;
             btn.style.pointerEvents = 'auto';
+            window.customAlert('Error', 'No se pudo generar el PDF. Revisa la consola.', 'error');
         });
     };
 
     window.showBulkPhotoUpload = async () => {
         const players = await db.getAll('jugadores');
         const withoutPhoto = players.filter(p => !p.foto || p.foto.includes('General'));
-        
+
         modalContainer.innerHTML = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
@@ -12416,8 +12660,8 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                             ${withoutPhoto.map(p => `
                                 <label class="flex items-center gap-4 p-4 hover:bg-slate-50 transition-all cursor-pointer group">
                                     <input type="checkbox" name="player-bulk" value="${p.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                    <div class="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden border border-slate-100">
-                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover">
+                                    <div class="w-10 h-10 rounded-lg bg-slate-50 overflow-hidden border border-slate-100 flex items-center justify-center">
+                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : '<i data-lucide="user" class="w-4 h-4 text-slate-300"></i>'}
                                     </div>
                                     <div class="flex-1">
                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${p.nombre}</p>
@@ -12452,14 +12696,14 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
     window.applyBulkPhoto = async () => {
         const fileInput = document.getElementById('bulk-photo-input');
         const selectedIds = Array.from(document.querySelectorAll('input[name="player-bulk"]:checked')).map(c => c.value);
-        
+
         if (selectedIds.length === 0) return window.customAlert('Atención', 'Selecciona al menos un jugador.', 'warning');
         if (!fileInput.files || !fileInput.files[0]) return window.customAlert('Atención', 'Elige una foto para aplicar.', 'warning');
-        
+
         const btn = document.getElementById('apply-bulk-btn');
         btn.disabled = true;
         btn.innerText = 'PROCESANDO...';
-        
+
         try {
             const avatarUrl = await db.uploadImage(fileInput.files[0]);
             for (const id of selectedIds) {
@@ -12485,18 +12729,18 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
     window.resetAllPlayerPhotos = async () => {
         if (!confirm('¿Estás SEGURO de que quieres borrar TODAS las fotos de los jugadores en la base de datos de Supabase y local? Esta acción no se puede deshacer.')) return;
-        
+
         try {
             const players = await db.getAll('jugadores');
             let count = 0;
-            
+
             // 1. Update Cloud in bulk if possible, or one by one to ensure sync logic
             for (const p of players) {
                 p.foto = null;
                 await db.update('jugadores', p);
                 count++;
             }
-            
+
             window.customAlert('¡Éxito!', `Se han borrado las fotos de ${count} jugadores correctamente.`, 'success');
             if (typeof window.renderJugadores === 'function') {
                 window.renderJugadores(document.getElementById('content-container'));
@@ -12508,63 +12752,126 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
     };
 
     window.cleanDuplicatePlayers = async () => {
-        if (!confirm('¿Quieres buscar y eliminar jugadores duplicados por nombre? Se mantendrá la ficha más completa de cada uno.')) return;
-        
+        const normalize = (str) => {
+            return (str || '')
+                .trim()
+                .toUpperCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/\s+/g, ' ');
+        };
+
         try {
-            const players = await db.getAll('jugadores');
+            const database = window.db || (typeof db !== 'undefined' ? db : null);
+            if (!database) throw new Error("Base de datos no inicializada");
+
+            const players = await database.getAll('jugadores');
             const groups = {};
             players.forEach(p => {
-                const name = (p.nombre || '').trim().toUpperCase();
+                const name = normalize(p.nombre);
                 if (!name) return;
                 if (!groups[name]) groups[name] = [];
                 groups[name].push(p);
             });
 
-            const toDelete = [];
-            Object.entries(groups).forEach(([name, list]) => {
-                if (list.length > 1) {
-                    // Sort by completeness (more fields) or ID
-                    list.sort((a, b) => {
-                        const scoreA = Object.values(a).filter(v => v !== null && v !== '').length;
-                        const scoreB = Object.values(b).filter(v => v !== null && v !== '').length;
-                        return scoreB - scoreA || b.id - a.id;
-                    });
-                    const duplicates = list.slice(1);
-                    duplicates.forEach(d => toDelete.push(d.id));
-                }
-            });
+            const duplicates = Object.entries(groups).filter(([name, list]) => list.length > 1);
 
-            if (toDelete.length > 0) {
-                const loadingAlert = document.createElement('div');
-                loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
-                loadingAlert.innerHTML = `
-                    <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
-                        <div class="w-12 h-12 border-4 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
-                        <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Eliminando ${toDelete.length} duplicados...</p>
-                    </div>
-                `;
-                document.body.appendChild(loadingAlert);
-
-                for (const id of toDelete) {
-                    await db.delete('jugadores', id);
-                }
-
-                if (document.body.contains(loadingAlert)) document.body.removeChild(loadingAlert);
-                window.customAlert('Limpieza Completada', `Se han eliminado ${toDelete.length} fichas duplicadas.`, 'success');
-                
-                delete db.cache['jugadores'];
-                delete db.lastSync['jugadores'];
-                await db.getAll('jugadores');
-                window.renderJugadores(document.getElementById('content-container'));
-            } else {
-                window.customAlert('Sin Duplicados', 'No se han encontrado jugadores con nombres repetidos.', 'info');
+            if (duplicates.length === 0) {
+                return window.customAlert('Sin Duplicados', 'No se han encontrado jugadores repetidos.', 'info');
             }
+
+            const modalHtml = `
+                <div class="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                    <div class="flex flex-col gap-4">
+                        ${duplicates.map(([name, list], groupIdx) => `
+                            <div class="bg-slate-50 rounded-[2rem] p-6 border border-slate-100 space-y-4">
+                                <div class="flex items-center justify-between px-2">
+                                    <h4 class="text-[10px] font-black text-blue-600 uppercase tracking-widest">Grupo: ${name}</h4>
+                                    <span class="px-2 py-1 bg-blue-100 text-blue-600 rounded-lg text-[9px] font-black">${list.length} FICHAS</span>
+                                </div>
+                                <div class="grid grid-cols-1 gap-3">
+                                    ${list.map(p => {
+                const completeness = Object.values(p).filter(v => v !== null && v !== '').length;
+                return `
+                                            <div class="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-blue-200 transition-all shadow-sm">
+                                                <div class="flex items-center gap-4">
+                                                    <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center overflow-hidden border border-slate-100">
+                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : `<i data-lucide="user" class="w-5 h-5 text-slate-300"></i>`}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-xs font-bold text-slate-800">${p.nombre}</p>
+                                                        <p class="text-[9px] text-slate-400 font-bold uppercase">${p.equipoConvenido || 'Sin Club'} • ${completeness} datos</p>
+                                                    </div>
+                                                </div>
+                                                <div class="flex gap-2">
+                                                    <button onclick="window.keepOneDeleteOthers('${p.id}', '${groupIdx}')" 
+                                                        class="px-4 py-2 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-md shadow-blue-200/50">
+                                                        MANTENER ESTA
+                                                    </button>
+                                                    <button onclick="window.deleteSingleDuplicate('${p.id}', this)" 
+                                                        class="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
+                                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        `;
+            }).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            window.currentDuplicateGroups = duplicates;
+
+            window.customModal(`
+                <div class="space-y-6">
+                    <div class="text-center space-y-2 mb-8">
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Gestor de Duplicados</h3>
+                        <p class="text-[10px] font-black text-rose-600 uppercase tracking-[0.2em]">Selecciona qué ficha deseas conservar de cada grupo</p>
+                    </div>
+                    ${modalHtml}
+                </div>
+            `);
+            if (window.lucide) lucide.createIcons();
+
         } catch (err) {
-            console.error(err);
-            window.customAlert('Error', 'No se pudo completar la limpieza.', 'error');
+            console.error("Duplicate manager error:", err);
+            window.customAlert('Error', 'No se pudo abrir el gestor de duplicados.', 'error');
         }
     };
 
+    window.keepOneDeleteOthers = async (keepId, groupIdx) => {
+        const group = window.currentDuplicateGroups[groupIdx][1];
+        const toDelete = group.filter(p => String(p.id) !== String(keepId)).map(p => p.id);
+
+        if (!confirm(`¿Seguro que quieres borrar las otras ${toDelete.length} fichas y quedarte solo con esta?`)) return;
+
+        try {
+            const database = window.db || db;
+            for (const id of toDelete) {
+                await database.delete('jugadores', id);
+            }
+            window.customAlert('Hecho', 'Duplicados eliminados correctamente.', 'success');
+            window.closeCustomModal();
+            window.renderJugadores(document.getElementById('content-container'));
+        } catch (err) {
+            window.customAlert('Error', 'No se pudieron borrar los duplicados.', 'error');
+        }
+    };
+
+    window.deleteSingleDuplicate = async (id, btn) => {
+        if (!confirm('¿Borrar esta ficha específica?')) return;
+        try {
+            const database = window.db || db;
+            await database.delete('jugadores', id);
+            btn.closest('.group').remove();
+            window.customAlert('Eliminado', 'Ficha borrada.', 'success');
+        } catch (err) {
+            window.customAlert('Error', 'No se pudo borrar.', 'error');
+        }
+    };
     window.handleConvocatoriaImport = (input) => {
         const file = input.files[0];
         if (!file) return;
@@ -12604,7 +12911,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 const firstLine = lines[0];
                 const delimiter = firstLine.includes(';') ? ';' : ',';
                 const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
-                
+
                 const allPlayers = await db.getAll('jugadores');
                 const teams = window.getSortedTeams(await db.getAll('equipos'));
 
@@ -12615,15 +12922,15 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 const nombre = (dataObj['NOMBRE'] || dataObj['TITLE'] || 'CONVOCATORIA').toUpperCase();
                 const fecha = dataObj['FECHA'] || dataObj['DATE'] || new Date().toISOString().split('T')[0];
                 const lugar = (dataObj['LUGAR'] || dataObj['PLACE'] || 'DESCONOCIDO').toUpperCase();
-                
+
                 const playersInPdf = [];
-                
+
                 for (let i = 1; i < lines.length; i++) {
                     const row = lines[i].split(new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.trim().replace(/^"|"$/g, ''));
                     if (row.length < headers.length) continue;
                     const rowData = {};
                     headers.forEach((h, idx) => rowData[h] = row[idx]);
-                    
+
                     const pName = rowData['JUGADOR'] || rowData['PLAYER'] || rowData['NOMBRE'];
                     if (!pName) continue;
 
@@ -12678,7 +12985,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             }
-            
+
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             let fullText = "";
             for (let i = 1; i <= pdf.numPages; i++) {
@@ -12690,11 +12997,11 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             }
 
             const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
-            
+
             let nombre = "CONVOCATORIA";
             let fecha = new Date().toISOString().split('T')[0];
             let lugar = "DESCONOCIDO";
-            
+
             const dateMatch = fullText.match(/(\d{2})[/-](\d{2})[/-](\d{2,4})/);
             if (dateMatch) {
                 const [_, d, m, y] = dateMatch;
@@ -12707,14 +13014,14 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             const allPlayers = await db.getAll('jugadores');
             const teams = window.getSortedTeams(await db.getAll('equipos'));
             const playersInPdf = [];
-            
+
             const playerLines = lines.filter(l => /^\d+\s+[A-ZÁÉÍÓÚÑ\s]+/.test(l));
-            
+
             playerLines.forEach(line => {
                 const match = line.match(/^\d+\s+([A-ZÁÉÍÓÚÑ\s]{5,})/);
                 if (match) {
                     const extractedName = match[1].trim().replace(/\s+/g, ' ');
-                    
+
                     const dbPlayer = allPlayers.find(p => {
                         const pName = (p.nombre || '').toUpperCase();
                         return pName.includes(extractedName) || extractedName.includes(pName);
@@ -12855,7 +13162,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         document.getElementById('btn-confirm-pdf-import').onclick = async () => {
             const teamChecks = document.querySelectorAll('input[name="import-team-check"]:checked');
             const selectedTeamIds = Array.from(teamChecks).map(c => c.value);
-            
+
             if (selectedTeamIds.length === 0) {
                 window.customAlert('Atención', 'Debes seleccionar al menos un equipo para la convocatoria', 'warning');
                 return;
@@ -12875,7 +13182,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     if (finalFecha2) metadata.s2 = { f: finalFecha2 };
                     if (finalFecha3) metadata.s3 = { f: finalFecha3 };
                 }
-                
+
                 const currentUser = (await supabaseClient.auth.getUser()).data.user;
 
                 // Guardar los IDs de todos los equipos en el metadata extra
@@ -12896,7 +13203,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 await db.add('convocatorias', convData);
                 window.customAlert('Éxito', `Convocatoria creada con ${playerIds.length} jugadores.`, 'success');
                 window.closeCustomModal();
-                
+
                 // Cambiar al tab correspondiente para ver la nueva convocatoria
                 if (typeof currentConvocatoriaTypeTab !== 'undefined') {
                     currentConvocatoriaTypeTab = finalTipo;
