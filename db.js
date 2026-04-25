@@ -162,12 +162,29 @@ class CoachDB {
 
     async add(storeName, data) {
         if (!this.db) await this.init();
+        
+        // Prevent duplicates by name for 'jugadores'
+        if (storeName === 'jugadores' && data.nombre) {
+            const existing = await this.getAll('jugadores');
+            const isDuplicate = existing.some(p => p.nombre.toUpperCase() === data.nombre.toUpperCase());
+            if (isDuplicate) {
+                console.warn(`[DB] Player already exists: ${data.nombre}`);
+                return existing.find(p => p.nombre.toUpperCase() === data.nombre.toUpperCase());
+            }
+        }
+
         if (supabaseClient) {
             try {
-                // Sanitize data for Supabase: convert empty strings to null
+                console.log(`[DB] Adding to ${storeName}:`, data);
                 const toInsert = {};
+                const allowedFields = [
+                    'nombre', 'equipoid', 'posicion', 'anionacimiento', 
+                    'lateralidad', 'nivel', 'sexo', 'notas', 
+                    'equipoConvenido', 'foto', 'club'
+                ];
+
                 Object.keys(data).forEach(key => {
-                    if (key !== 'id') {
+                    if (key !== 'id' && (storeName !== 'jugadores' || allowedFields.includes(key))) {
                         toInsert[key] = data[key] === "" ? null : data[key];
                     }
                 });
@@ -176,13 +193,7 @@ class CoachDB {
                 
                 if (error) {
                     console.error(`Supabase insert error in ${storeName}:`, error);
-                    // Si la tabla no existe, permitimos el guardado local pero avisamos
-                    if (error.code === '42P01' || error.message.includes('cache')) {
-                        console.warn(`Tabla '${storeName}' no encontrada en Supabase. Guardando solo en local.`);
-                    } else {
-                        window.customAlert('Error de Sincronización', `Supabase ha rechazado los datos: ${error.message}. Revisa si el RLS está desactivado.`);
-                        throw error;
-                    }
+                    throw new Error(`Error en Supabase: ${error.message}`);
                 }
 
                 if (remote && remote.length > 0) {
@@ -223,10 +234,17 @@ class CoachDB {
         const id = Number(data.id);
         
         if (supabaseClient && id) {
-            // Sanitize data for Supabase: convert empty strings to null
+            console.log(`[DB] Updating ${storeName} ID ${id}:`, data);
             const toUpdate = {};
+            // Lista de campos conocidos para evitar errores de schema cache
+            const allowedFields = [
+                'nombre', 'equipoid', 'posicion', 'anionacimiento', 
+                'lateralidad', 'nivel', 'sexo', 'notas', 
+                'equipoConvenido', 'foto', 'club'
+            ];
+
             Object.keys(data).forEach(key => {
-                if (key !== 'id') {
+                if (key !== 'id' && allowedFields.includes(key)) {
                     toUpdate[key] = data[key] === "" ? null : data[key];
                 }
             });
@@ -238,9 +256,8 @@ class CoachDB {
 
             if (error) {
                 console.error(`Supabase update error (${storeName}):`, error);
-                if (error.code !== '42P01' && !error.message.includes('cache')) {
-                    throw error;
-                }
+                // Si falla la nube, lanzamos error para que el usuario sepa que NO se guardó realmente
+                throw new Error(`Error en Supabase: ${error.message}`);
             }
         }
         

@@ -48,6 +48,396 @@ window.deleteTorneoDoc = async (id, docIndex) => {
 const CLUBES_CONVENIDOS = ['CD BAZTAN KE', 'BETI GAZTE KJKE', 'GURE TXOKOA KKE', 'CA RIVER EBRO', 'CALAHORRA FB', 'EF ARNEDO', 'EFB ALFARO', 'UD BALSAS PICARRAL'];
 
 window.currentVisibilityMode = 'personal'; 
+window.getSeason = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'N/A';
+    const year = d.getFullYear();
+    const month = d.getMonth(); // 0-11
+    if (month >= 6) return `${year}/${year + 1}`;
+    return `${year - 1}/${year}`;
+};
+window.currentSeason = 'ALL'; // Default to Historial Completo to avoid confusion
+
+window.initSeasons = () => {
+    const selector = document.getElementById('season-selector');
+    if (!selector) return;
+    const currentYear = new Date().getFullYear();
+    let html = '<option value="ALL">HISTORIAL COMPLETO</option>';
+    for (let y = 2023; y <= currentYear + 1; y++) {
+        const season = `${y}/${y+1}`;
+        html += `<option value="${season}" ${season === window.currentSeason ? 'selected' : ''}>TEMP. ${season}</option>`;
+    }
+    selector.innerHTML = html;
+};
+
+window.initSeasons = () => {
+    const selector = document.getElementById('season-selector');
+    if (!selector) return;
+    
+    // Si no hay temporada seleccionada, calculamos la actual
+    if (!window.currentSeason || window.currentSeason === 'ALL') {
+        window.currentSeason = window.getSeason(new Date());
+    }
+
+    const currentYear = new Date().getFullYear();
+    let html = '<option value="ALL">HISTORIAL COMPLETO</option>';
+    for (let y = 2023; y <= currentYear + 1; y++) {
+        const season = `${y}/${y+1}`;
+        html += `<option value="${season}" ${season === window.currentSeason ? 'selected' : ''}>TEMP. ${season}</option>`;
+    }
+    selector.innerHTML = html;
+};
+
+window.renderPerfil = async function(container) {
+    try {
+        const user = await db.getUser();
+        if (!user) {
+            container.innerHTML = `<div class="p-20 text-center italic text-slate-400 uppercase tracking-widest text-[10px]">No se ha podido cargar la sesión del usuario</div>`;
+            return;
+        }
+
+        let profile = null;
+        try {
+            const { data } = await supabaseClient.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            profile = data;
+        } catch (e) {
+            console.warn("Could not fetch profile, might be missing columns:", e);
+        }
+
+        const displayName = profile?.nombre || profile?.full_name || profile?.name || 'Mi Perfil';
+        const userPhoto = profile?.avatar_url || profile?.foto || null;
+        
+        container.innerHTML = `
+            <div class="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div class="bg-white rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+                    <div class="h-32 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
+                    <div class="px-12 pb-12">
+                        <div class="relative -mt-16 mb-8 flex items-end gap-6">
+                            <div class="w-32 h-32 bg-white rounded-[2.5rem] p-2 shadow-2xl relative group cursor-pointer overflow-hidden" onclick="document.getElementById('profile-photo-input').click()">
+                                <div class="w-full h-full bg-slate-50 rounded-[2rem] flex items-center justify-center overflow-hidden border border-slate-100">
+                                    ${userPhoto ? `<img src="${userPhoto}" class="w-full h-full object-cover">` : `<i data-lucide="user" class="w-12 h-12 text-slate-300"></i>`}
+                                </div>
+                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                                    <i data-lucide="camera" class="w-8 h-8 text-white"></i>
+                                </div>
+                                <input type="file" id="profile-photo-input" class="hidden" accept="image/*">
+                            </div>
+                            <div class="pb-2">
+                                <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${displayName}</h3>
+                                <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em]">${profile?.role || 'ENTRENADOR'}</p>
+                            </div>
+                        </div>
+
+                        <form id="profile-form" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo</label>
+                                <input name="nombre" type="text" value="${profile?.nombre || profile?.full_name || profile?.name || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Email (Lectura)</label>
+                                <input type="email" value="${user.email}" disabled class="w-full p-4 bg-slate-100 border border-slate-100 rounded-2xl font-bold text-slate-400 cursor-not-allowed">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Teléfono</label>
+                                <input name="phone" type="tel" value="${profile?.phone || ''}" placeholder="Ej: +34 600 000 000" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club / Entidad</label>
+                                <input name="club" type="text" value="${profile?.club || 'RS CENTRO'}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                            </div>
+                            
+                            <div class="md:col-span-2 pt-8 border-t border-slate-50 flex justify-end">
+                                <button type="submit" id="save-profile-btn" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest text-[10px]">Guardar Cambios</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="bg-amber-50 rounded-[2.5rem] border border-amber-100 p-8 flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-amber-500 shadow-sm">
+                            <i data-lucide="shield-check" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-black text-amber-800 uppercase tracking-widest">Seguridad de la Cuenta</h4>
+                            <p class="text-[10px] font-medium text-amber-600 mt-0.5">Tu cuenta está protegida con autenticación de Supabase.</p>
+                        </div>
+                    </div>
+                    <button onclick="window.customAlert('Proximamente', 'La gestión de contraseñas estará disponible pronto.', 'info')" class="px-6 py-3 bg-white text-amber-600 font-bold rounded-xl text-[10px] uppercase tracking-widest shadow-sm hover:bg-amber-100 transition-all">Cambiar Contraseña</button>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+
+        const photoInput = document.getElementById('profile-photo-input');
+        if (photoInput) {
+            photoInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (re) => {
+                        const imgContainer = document.querySelector('.w-32.h-32 .bg-slate-50');
+                        imgContainer.innerHTML = `<img src="${re.target.result}" class="w-full h-full object-cover">`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+        }
+
+        const form = document.getElementById('profile-form');
+        if (form) {
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                const formData = Object.fromEntries(new FormData(e.target));
+                const btn = document.getElementById('save-profile-btn');
+                const originalText = btn.innerText;
+                btn.disabled = true;
+                btn.innerText = 'GUARDANDO...';
+
+                try {
+                    let avatarUrl = profile?.avatar_url || profile?.foto;
+                    const photoInput = document.getElementById('profile-photo-input');
+                    if (photoInput && photoInput.files && photoInput.files[0]) {
+                        avatarUrl = await db.uploadImage(photoInput.files[0]);
+                    }
+
+                    const profileUpdate = {
+                        id: user.id,
+                        email: user.email,
+                        nombre: formData.nombre,
+                        full_name: formData.nombre,
+                        avatar_url: avatarUrl,
+                        foto: avatarUrl,
+                        phone: formData.phone,
+                        club: formData.club
+                    };
+
+                    const { error } = await supabaseClient.from('profiles').upsert(profileUpdate);
+                    if (error) throw error;
+                    
+                    window.customAlert('¡Éxito!', 'Perfil actualizado correctamente.', 'success');
+                    window.renderPerfil(container);
+                } catch (err) {
+                    console.error("Error saving profile:", err);
+                    window.customAlert('Error', 'No se pudieron guardar los cambios: ' + err.message, 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
+            };
+        }
+    } catch (err) {
+        console.error("Error critico en renderPerfil:", err);
+        container.innerHTML = `<div class="p-20 text-center">
+            <i data-lucide="alert-circle" class="w-12 h-12 text-rose-500 mx-auto mb-4"></i>
+            <p class="text-slate-800 font-black uppercase tracking-tight text-xl">Error al cargar el perfil</p>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-2">${err.message}</p>
+            <button onclick="window.renderPerfil(document.getElementById('view-container'))" class="mt-8 px-8 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest">Reintentar</button>
+        </div>`;
+        if (window.lucide) lucide.createIcons();
+    }
+};
+
+window.renderUsuarios = async function(container) {
+    try {
+        const { data: users, error } = await supabaseClient.from('profiles').select('*');
+        if (error) throw error;
+
+        container.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                ${users && users.length > 0 ? users.map(u => {
+                    const uName = u.nombre || u.full_name || u.name || 'Sin nombre';
+                    const uPhoto = u.avatar_url || u.foto;
+                    return `
+                        <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-8 hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden">
+                            <div class="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-50 transition-colors"></div>
+                            
+                            <div class="relative flex items-start justify-between mb-6">
+                                <div class="w-20 h-20 bg-slate-50 rounded-[1.5rem] p-1.5 shadow-inner border border-slate-100">
+                                    <div class="w-full h-full rounded-[1.2rem] bg-white flex items-center justify-center overflow-hidden shadow-sm">
+                                        ${uPhoto ? `<img src="${uPhoto}" class="w-full h-full object-cover">` : `<span class="text-2xl font-black text-slate-300">${uName.substring(0, 1).toUpperCase()}</span>`}
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <span class="px-3 py-1.5 ${u.role === 'ELITE' ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'} rounded-xl text-[9px] font-black uppercase tracking-widest text-center shadow-sm">
+                                        ${u.role || 'TECNICO'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4 mb-8">
+                                <div>
+                                    <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight leading-tight">${uName}</h4>
+                                    <p class="text-[10px] font-bold text-slate-400 lowercase">${u.email || ''}</p>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex items-center gap-2 text-slate-500">
+                                        <i data-lucide="phone" class="w-3.5 h-3.5"></i>
+                                        <span class="text-[10px] font-bold">${u.phone || 'No disponible'}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-slate-500">
+                                        <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+                                        <span class="text-[10px] font-bold uppercase tracking-widest">${u.club || 'RS CENTRO'}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-2 pt-6 border-t border-slate-50">
+                                <button onclick="window.editUserRole('${u.id}', '${u.role}')" class="flex-1 py-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all flex items-center justify-center gap-2 group/btn">
+                                    <i data-lucide="shield" class="w-4 h-4"></i>
+                                    <span class="text-[9px] font-black uppercase tracking-widest">Rol</span>
+                                </button>
+                                <button onclick="window.deleteUser('${u.id}')" class="flex-1 py-3 bg-slate-50 text-slate-400 hover:bg-rose-500 hover:text-white rounded-xl transition-all flex items-center justify-center gap-2 group/btn">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    <span class="text-[9px] font-black uppercase tracking-widest">Baja</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('') : `
+                    <div class="col-span-full p-20 bg-white rounded-[3rem] border border-dashed border-slate-200 text-center">
+                        <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <i data-lucide="users" class="w-10 h-10 text-slate-300"></i>
+                        </div>
+                        <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No hay miembros del staff registrados</p>
+                    </div>
+                `}
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+    } catch (err) {
+        console.error("Error en renderUsuarios:", err);
+        container.innerHTML = `<div class="p-20 text-center italic text-slate-400 uppercase tracking-widest text-[10px]">Error al cargar el staff: ${err.message}</div>`;
+    }
+};
+
+window.showNewUserModal = () => {
+    const modalContainer = document.getElementById('modal-container');
+    const modalOverlay = document.getElementById('modal-overlay');
+    
+    modalContainer.innerHTML = `
+        <div class="p-10">
+            <div class="flex justify-between items-center mb-8">
+                <div>
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nuevo Miembro</h3>
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Registrar acceso para técnico</p>
+                </div>
+                <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <form id="new-user-form" class="space-y-6">
+                <div class="space-y-2">
+                    <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Email del Técnico</label>
+                    <input name="email" type="email" required placeholder="email@ejemplo.com" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                    <p class="text-[9px] text-amber-600 font-bold uppercase tracking-tight px-1 italic">Nota: El usuario deberá completar su registro con este email.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre Completo</label>
+                        <input name="nombre" type="text" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Rol Inicial</label>
+                        <select name="role" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none appearance-none">
+                            <option value="TECNICO">TECNICO</option>
+                            <option value="ELITE">ADMIN (ELITE)</option>
+                            <option value="TECNICO CLUB CONVENIDO">CONVENIDO</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
+                    <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                    <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Crear Invitación</button>
+                </div>
+            </form>
+        </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    modalOverlay.classList.add('active');
+
+    document.getElementById('new-user-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target));
+        
+        try {
+            const { error } = await supabaseClient.from('profiles').insert([{
+                email: data.email,
+                nombre: data.nombre,
+                role: data.role,
+                id: crypto.randomUUID()
+            }]);
+            
+            if (error) throw error;
+            window.customAlert('¡Éxito!', 'Perfil de staff creado. El técnico puede registrarse con este email.', 'success');
+            closeModal();
+            window.renderUsuarios(document.getElementById('content-container'));
+        } catch (err) {
+            window.customAlert('Error', err.message, 'error');
+        }
+    };
+};
+
+window.editUserRole = async (userId, currentRole) => {
+    const newRole = prompt('Cambiar rol (ELITE, TECNICO, TECNICO CLUB CONVENIDO):', currentRole);
+    if (newRole && newRole !== currentRole) {
+        try {
+            const { error } = await supabaseClient.from('profiles').update({ role: newRole.toUpperCase() }).eq('id', userId);
+            if (error) throw error;
+            window.customAlert('¡Actualizado!', 'Rol de usuario actualizado.', 'success');
+            window.renderUsuarios(document.getElementById('content-container'));
+        } catch (err) {
+            window.customAlert('Error', err.message, 'error');
+        }
+    }
+};
+
+window.deleteUser = async (userId) => {
+    window.customConfirm('¿Eliminar Acceso?', '¿Estás seguro de que quieres eliminar a este miembro del staff? No podrá acceder a la plataforma.', async () => {
+        try {
+            const { error } = await supabaseClient.from('profiles').delete().eq('id', userId);
+            if (error) throw error;
+            window.customAlert('¡Eliminado!', 'Acceso revocado correctamente.', 'success');
+            window.renderUsuarios(document.getElementById('content-container'));
+        } catch (err) {
+            window.customAlert('Error', err.message, 'error');
+        }
+    });
+};
+
+window.setSeason = (season) => {
+    window.currentSeason = season;
+    const activeLink = document.querySelector('.nav-link.active');
+    if (activeLink) window.switchView(activeLink.dataset.view);
+};
+
+window.applyGlobalFilters = (items, dateField = 'fecha') => {
+    if (!items) return [];
+    let filtered = [...items];
+    
+    // Visibility
+    if (window.currentVisibilityMode === 'personal' && window.currentUser) {
+        filtered = filtered.filter(i => 
+            !i.createdBy || // Allow legacy items without owner
+            i.createdBy === window.currentUser.id || 
+            (i.sharedWith && i.sharedWith.includes(window.currentUser.id))
+        );
+    }
+    
+    // Season
+    if (window.currentSeason !== 'ALL' && dateField) {
+        filtered = filtered.filter(i => {
+            const dateVal = i[dateField];
+            if (!dateVal) return false;
+            return window.getSeason(dateVal) === window.currentSeason;
+        });
+    }
+    
+    return filtered;
+};
 
 window.ensureClubesInitialized = async () => {
     try {
@@ -483,6 +873,28 @@ window.customConfirm = (title, message, onConfirm) => {
     };
 };
 
+window.customModal = (html) => {
+    const modal = document.createElement('div');
+    modal.id = 'custom-modal-overlay';
+    modal.className = 'fixed inset-0 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-300';
+    modal.innerHTML = `
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onclick="window.closeCustomModal()"></div>
+        <div class="bg-white rounded-[2.5rem] max-w-lg w-full relative shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform animate-in zoom-in duration-300 overflow-hidden">
+            ${html}
+        </div>
+    `;
+    document.body.appendChild(modal);
+    if (window.lucide) lucide.createIcons();
+};
+
+window.closeCustomModal = () => {
+    const modal = document.getElementById('custom-modal-overlay');
+    if (modal) {
+        modal.classList.add('animate-out', 'fade-out', 'zoom-out');
+        setTimeout(() => modal.remove(), 300);
+    }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Auth Elements
     const authScreen = document.getElementById('auth-screen');
@@ -498,6 +910,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         search: '',
         activeTeamId: 'TODOS'
     };
+
+    window.currentSeason = window.getSeason(new Date());
 
     let campogramaFilters = window.campogramaFilters = {
         sistema: window.formationsState?.campograma || 'F11_433',
@@ -531,6 +945,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (user) {
+                window.currentUser = user;
+                window.initSeasons();
                 await db.syncRole();
                 await window.ensureClubesInitialized();
                 authScreen.classList.add('hidden');
@@ -1276,19 +1692,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const userRes = await supabaseClient.auth.getUser();
             const currentUser = userRes.data?.user;
 
-            const isGlobal = window.currentVisibilityMode === 'global';
-            const filterByVisibility = (items) => {
-                if (isGlobal) return items;
-                return items.filter(i => i.createdBy === currentUser?.id || (i.sharedWith && i.sharedWith.includes(currentUser?.id)));
-            };
-
             const tasks = allTasks; // Tareas are always global (library)
-            const sessions = filterByVisibility(allSessions);
-            const convocatorias = filterByVisibility(allConvocatorias);
-            const torneos = allConvocatorias.filter(c => (c.tipo || '').toUpperCase().trim() === 'TORNEO');
+            const sessions = window.applyGlobalFilters(allSessions);
+            const convocatorias = window.applyGlobalFilters(allConvocatorias);
+            const torneos = convocatorias.filter(c => (c.tipo || '').toUpperCase().trim() === 'TORNEO');
             const todayStr = new Date().toISOString().split('T')[0];
             const torneosJugados = torneos.filter(t => t.fecha < todayStr).length;
             const torneosPendientes = torneos.filter(t => t.fecha >= todayStr).length;
+            const attendanceFiltered = window.applyGlobalFilters(attendance);
             
             // Calculate dynamic attendance for each team
             teams.forEach(t => {
@@ -1426,7 +1837,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <p class="text-2xl font-black text-amber-600 text-center">${torneosPendientes}</p>
                             </div>
                         </div>
-                        <button onclick="window.switchView('convocatorias')" class="mt-auto w-full py-4 bg-amber-500 text-white hover:bg-amber-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-amber-200">Gestionar Torneos</button>
+                        <button onclick="window.switchView('torneos')" class="mt-auto w-full py-4 bg-amber-500 text-white hover:bg-amber-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg shadow-amber-200">Gestionar Torneos</button>
                     </div>
 
                     <!-- Equipos Widget (Estructura) -->
@@ -1549,7 +1960,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 }).join('') || '<p class="text-[10px] text-slate-300 italic text-center col-span-full py-10">Sin torneos registrados</p>';
                             })()}
                         </div>
-                        <button onclick="window.switchView('convocatorias')" class="mt-auto w-full py-5 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-amber-900/10">Gestionar Torneos</button>
+                        <button onclick="window.switchView('torneos')" class="mt-auto w-full py-5 bg-amber-500 text-white hover:bg-amber-600 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-amber-900/10">Gestionar Torneos</button>
                     </div>
                 </div>
                 
@@ -1622,35 +2033,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function renderCalendario(container) {
         try {
-            const currentUserRes = await supabaseClient.auth.getUser();
-            const currentUser = currentUserRes.data.user;
-            if (!currentUser) return;
-
             const allSessions = await db.getAll('sesiones');
             const allEventos = await db.getAll('eventos');
             const allConvocatorias = await db.getAll('convocatorias');
 
-            // Helper to check if an item is shared with the current user
-            const isSharedWithMe = (item) => {
-                if (item.sharedWith) {
-                    const sw = Array.isArray(item.sharedWith) ? item.sharedWith : [item.sharedWith.toString()];
-                    if (sw.includes(currentUser.id)) return true;
-                }
-                const { extra } = window.parseLugarMetadata(item.lugar);
-                if (extra && extra.sw) {
-                    const sw = Array.isArray(extra.sw) ? extra.sw : [extra.sw.toString()];
-                    if (sw.includes(currentUser.id)) return true;
-                }
-                return false;
-            };
-
-            const isConvenido = db.userRole === 'TECNICO CLUB CONVENIDO';
-            const isGlobal = window.currentVisibilityMode === 'global';
-
-            const sessions = isGlobal ? allSessions : allSessions.filter(s => s.createdBy === currentUser.id || isSharedWithMe(s));
-            const eventos = isGlobal ? allEventos : allEventos.filter(e => e.createdBy === currentUser.id || isSharedWithMe(e));
-            const filterConvs = isGlobal ? allConvocatorias : allConvocatorias.filter(c => !isConvenido || c.createdBy === currentUser.id || isSharedWithMe(c));
-            const convocatorias = filterConvs;
+            const sessions = window.applyGlobalFilters(allSessions);
+            const eventos = window.applyGlobalFilters(allEventos);
+            const convocatorias = window.applyGlobalFilters(allConvocatorias);
             
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -1945,6 +2334,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    window.downloadPlayerTemplate = () => {
+        // Headers coincidentes exactamente con las columnas de Supabase
+        const headers = ["nombre", "equipoid", "anionacimiento", "posicion", "lateralidad", "nivel", "sexo", "notas", "equipoConvenido"];
+        const rows = [
+            ["JUAN PEREZ", "", "2010", "PO", "Derecho", "3", "Masculino", "Buenos reflejos", "ANTIGUOKO"],
+            ["MARIA GARCIA", "", "2008", "DCZ", "Zurdo", "4", "Femenino", "Goleadora", "REAL SOCIEDAD"]
+        ];
+        
+        const csvContent = [
+            headers.join(";"),
+            ...rows.map(r => r.join(";"))
+        ].join("\n");
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "PLANTILLA_JUGADORES.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     window.showPlayerImportModal = () => {
         modalContainer.innerHTML = `
             <div class="p-8">
@@ -1972,10 +2385,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
 
                 <div class="flex flex-col gap-3">
-                    <a href="PLANTILLA_IMPORTACION_JUGADORES.csv" download class="w-full py-4 bg-white border-2 border-slate-100 text-slate-600 font-bold rounded-2xl flex items-center justify-center gap-3 hover:border-blue-200 hover:text-blue-600 transition-all uppercase tracking-widest text-[10px]">
+                    <button onclick="window.downloadPlayerTemplate()" class="w-full py-4 bg-white border-2 border-slate-100 text-slate-600 font-bold rounded-2xl flex items-center justify-center gap-3 hover:border-blue-200 hover:text-blue-600 transition-all uppercase tracking-widest text-[10px]">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         Descargar Plantilla CSV
-                    </a>
+                    </button>
                     
                     <button id="trigger-csv-upload" class="w-full py-5 bg-blue-600 text-white font-black rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-3">
                         <i data-lucide="file-up" class="w-5 h-5"></i>
@@ -2021,15 +2434,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const delimiter = firstLine.includes(';') ? ';' : ',';
                         const headers = firstLine.split(delimiter).map(h => h.trim().toUpperCase().replace(/^"|"$/g, ''));
                         
-                        const mapHeader = (possible) => headers.findIndex(h => possible.includes(h));
+                        // Less strict mapping: check if any of the keywords is contained in the header
+                        const mapHeader = (keywords) => headers.findIndex(h => keywords.some(k => h.includes(k)));
 
                         const idxNombre = mapHeader(['NOMBRE', 'JUGADOR', 'PLAYER', 'NAME']);
-                        const idxEquipo = mapHeader(['EQUIPO', 'TEAM', 'CLUB']);
+                        const idxEquipo = mapHeader(['EQUIPOID', 'EQUIPO', 'TEAM']);
+                        const idxClub = mapHeader(['EQUIPOCONVENIDO', 'CLUB']);
                         const idxPosicion = mapHeader(['POSICION', 'POSITION', 'POS']);
-                        const idxAnio = mapHeader(['AÑO', 'YEAR', 'NACIMIENTO']);
+                        const idxAnio = mapHeader(['AÑO', 'YEAR', 'NACIMIENTO', 'ANIONACIMIENTO']);
                         const idxNivel = mapHeader(['NIVEL', 'LEVEL']);
                         const idxSexo = mapHeader(['SEXO', 'GENERO', 'GENDER']);
-                        const idxPie = mapHeader(['PIE', 'FOOT']);
+                        const idxPie = mapHeader(['PIE', 'FOOT', 'LATERALIDAD']);
                         const idxNotas = mapHeader(['NOTAS', 'NOTES']);
 
                         if (idxNombre === -1) throw new Error("Columna NOMBRE no encontrada");
@@ -2037,7 +2452,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const teams = window.getSortedTeams(await db.getAll('equipos'));
                         const existingPlayers = await db.getAll('jugadores');
                         const playersToInsert = [];
-                        let updatedCount = 0;
+                        const playersToUpdate = [];
+                        const duplicateNames = [];
 
                         const regex = new RegExp(`\\${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
 
@@ -2046,27 +2462,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                             if (!row[idxNombre]) continue;
 
                             const rawNombre = row[idxNombre].toUpperCase().trim();
-                            const teamName = idxEquipo !== -1 ? row[idxEquipo] : '';
-                            const team = teams.find(t => t.nombre.split(' ||| ')[0].toLowerCase() === (teamName || '').toLowerCase());
+                            
+                            // 1. Manejo de Equipo Interno (equipoid)
+                            const teamVal = idxEquipo !== -1 ? row[idxEquipo] : '';
+                            const team = teams.find(t => t.nombre.split(' ||| ')[0].toLowerCase() === (teamVal || '').toLowerCase());
+                            
+                            // 2. Manejo de Club Externo (equipoConvenido)
+                            let clubVal = idxClub !== -1 ? row[idxClub] : '';
+                            // Si no hay club externo explícito pero el "equipo" no es interno, lo tomamos como club
+                            if (!clubVal && teamVal && !team) clubVal = teamVal;
+
+                            // Normalize Foot (Pie/Lateralidad)
+                            let rawPie = idxPie !== -1 ? row[idxPie].toUpperCase() : '';
+                            let lateralidad = 'Derecho';
+                            if (rawPie.includes('ZUR') || rawPie.includes('IZQ') || rawPie.includes('LEFT')) lateralidad = 'Zurdo';
+                            else if (rawPie.includes('AMB') || rawPie.includes('DOS') || rawPie.includes('BOTH')) lateralidad = 'Ambidiestro';
+                            else if (rawPie.includes('DER') || rawPie.includes('RIGHT') || rawPie.includes('DIES')) lateralidad = 'Derecho';
 
                             const csvPlayer = {
                                 nombre: rawNombre,
                                 nivel: idxNivel !== -1 ? (parseInt(row[idxNivel]) || 3) : 3,
                                 equipoid: team ? team.id : null,
+                                equipoConvenido: clubVal || null,
                                 posicion: idxPosicion !== -1 ? window.parsePosition(row[idxPosicion]) : ['PO'],
-                                anionacimiento: idxAnio !== -1 ? (parseInt(row[idxAnio]) || null) : null,
+                                anionacimiento: idxAnio !== -1 ? (parseInt(row[idxAnio].replace(/\D/g, '')) || null) : null,
                                 sexo: idxSexo !== -1 ? (row[idxSexo] || 'Masculino') : 'Masculino',
-                                pie: idxPie !== -1 ? (row[idxPie] || 'DIESTRO') : 'DIESTRO',
+                                lateralidad: lateralidad,
                                 notas: idxNotas !== -1 ? row[idxNotas] : ''
                             };
 
                             const existing = existingPlayers.find(p => p.nombre.toUpperCase() === rawNombre);
                             if (existing) {
-                                Object.assign(existing, csvPlayer);
-                                await db.update('jugadores', existing);
-                                updatedCount++;
+                                playersToUpdate.push({ ...existing, ...csvPlayer });
+                                duplicateNames.push(rawNombre);
                             } else {
                                 playersToInsert.push(csvPlayer);
+                            }
+                        }
+
+                        let shouldUpdate = false;
+                        if (playersToUpdate.length > 0) {
+                            loadingAlert.remove(); // Remove loading to show confirm
+                            const confirmUpdate = confirm(`Se han encontrado ${playersToUpdate.length} jugadores que ya existen en el sistema:\n\n${duplicateNames.slice(0, 10).join(', ')}${duplicateNames.length > 10 ? '...' : ''}\n\n¿Deseas ACTUALIZAR sus datos con la información del CSV? (Cancelar solo importará los nuevos)`);
+                            shouldUpdate = confirmUpdate;
+                            document.body.appendChild(loadingAlert); // Restore loading
+                        }
+
+                        let updatedCount = 0;
+                        if (shouldUpdate && playersToUpdate.length > 0) {
+                            for (const p of playersToUpdate) {
+                                await db.update('jugadores', p);
+                                updatedCount++;
                             }
                         }
 
@@ -2075,8 +2521,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             if (error) throw error;
                         }
 
-                        await db.getAll('jugadores'); // Refresh cache
-                        window.customAlert('Éxito', `Importados: ${playersToInsert.length}, Actualizados: ${updatedCount}`, 'success');
+                        // Forzar refresco total de la caché local
+                        delete db.cache['jugadores'];
+                        delete db.lastSync['jugadores'];
+                        await db.getAll('jugadores'); 
+
+                        window.customAlert('Éxito', `Nuevos: ${playersToInsert.length}, Actualizados: ${updatedCount}`, 'success');
                         window.switchView('jugadores');
                     } catch (err) {
                         window.customAlert('Error', err.message, 'error');
@@ -2091,19 +2541,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.renderEventos = async function(container, onlyTable = false) {
-        const currentUser = (await supabaseClient.auth.getUser()).data.user;
         const allEvents = await db.getAll('eventos');
-        const isGlobal = window.currentVisibilityMode === 'global';
-
-        const tasks = allEvents.filter(e => {
-            if (isGlobal) return true;
-            if (e.createdBy === currentUser.id) return true;
-            if (e.sharedWith) {
-                const sw = Array.isArray(e.sharedWith) ? e.sharedWith : [e.sharedWith.toString()];
-                if (sw.includes(currentUser.id)) return true;
-            }
-            return false;
-        });
+        const tasks = window.applyGlobalFilters(allEvents);
         
         if (!window.eventFilters) window.eventFilters = { search: '', category: 'TODOS' };
 
@@ -2127,8 +2566,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="relative flex-1 w-full">
                             <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
                             <input type="text" id="event-search-input" value="${window.eventFilters.search}" placeholder="Buscar en la agenda (nombre, lugar...)" 
-                                class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
+                                class="w-full pl-12 pr-12 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
                                 oninput="window.eventFilters.search = this.value; window.renderEventos(document.getElementById('content-container'), true)">
+                            ${window.eventFilters.search ? `
+                                <button onclick="window.eventFilters.search = ''; window.renderEventos(document.getElementById('content-container'), true)" 
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Borrar búsqueda">
+                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
 
@@ -2600,7 +3045,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div class="relative flex-1 w-full">
                         <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
                         <input type="text" id="task-search-input" value="${window.taskFilters.search}" placeholder="Filtrar biblioteca de ejercicios..." 
-                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
+                            class="w-full pl-12 pr-12 py-4 bg-white border border-slate-100 rounded-[2rem] text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm">
+                        ${window.taskFilters.search ? `
+                            <button onclick="window.taskFilters.search = ''; window.renderTareas(document.getElementById('content-container'))" 
+                                class="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Borrar búsqueda">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        ` : ''}
                     </div>
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full lg:w-auto">
                         <select id="task-type-filter" class="px-4 py-4 bg-white border border-slate-100 rounded-2xl text-[10px] font-black text-slate-600 outline-none hover:border-blue-200 transition-all shadow-sm uppercase tracking-widest">
@@ -3284,7 +3735,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.renderSesiones = async function(container, onlyTable = false) {
-        const sessions = await db.getAll('sesiones');
+        const allSessions = await db.getAll('sesiones');
+        const sessions = window.applyGlobalFilters(allSessions);
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
         const sortedTeams = window.getSortedTeams(teams);
@@ -4096,6 +4548,23 @@ await db.update('sesiones', { ...data, id: session.id });
         `;
         modalOverlay.classList.add('active');
         if (window.lucide) lucide.createIcons();
+
+        // Auto-copy start date to end date for Tournaments
+        if (activeTab === 'Torneo') {
+            const startInput = document.querySelector('input[name="fecha"]');
+            const endInput = document.querySelector('input[name="fecha_fin"]');
+            if (startInput && endInput) {
+                startInput.addEventListener('input', () => {
+                    if (!endInput.value || endInput.dataset.synced === 'true' || endInput.value === '') {
+                        endInput.value = startInput.value;
+                        endInput.dataset.synced = 'true';
+                    }
+                });
+                endInput.addEventListener('input', () => {
+                    endInput.dataset.synced = 'false';
+                });
+            }
+        }
 
         const searchInput = document.getElementById('unified-conv-player-search');
         const playerList = document.getElementById('unified-filtered-players-list');
@@ -6582,7 +7051,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.renderConvocatorias = async function(container) {
         const allConvs = await db.getAll('convocatorias');
-        const convs = allConvs.filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
+        const convs = window.applyGlobalFilters(allConvs).filter(c => !['Torneo', 'TORNEO'].includes(c.tipo))
             .sort((a,b) => {
                 if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
                 return (b.hora || '').localeCompare(a.hora || '');
@@ -6746,7 +7215,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 placeholder="BUSCAR POR NOMBRE O LUGAR..." 
                                 value="${convocatoriaSearchTerm}"
                                 oninput="window.updateConvocatoriaSearch(this.value)"
-                                class="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                                class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                            ${convocatoriaSearchTerm ? `
+                                <button onclick="window.updateConvocatoriaSearch(''); window.renderConvocatorias(document.getElementById('content-container'))" 
+                                    class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all" title="Borrar búsqueda">
+                                    <i data-lucide="x" class="w-3 h-3"></i>
+                                </button>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -6794,7 +7269,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.renderTorneos = async function(container) {
         const allConvs = await db.getAll('convocatorias');
-        const convs = allConvs.filter(c => ['Torneo', 'TORNEO'].includes(c.tipo))
+        const convs = window.applyGlobalFilters(allConvs).filter(c => ['Torneo', 'TORNEO'].includes(c.tipo))
             .sort((a,b) => {
                 if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
                 return (b.hora || '').localeCompare(a.hora || '');
@@ -6802,10 +7277,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
-
-        const userRes = await supabaseClient.auth.getUser();
-        const currentUser = userRes.data?.user;
-        const isGlobal = window.currentVisibilityMode === 'global';
 
         const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
 
@@ -6967,7 +7438,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             placeholder="BUSCAR TORNEO O LUGAR..." 
                             value="${torneoSearchTerm}"
                             oninput="window.updateTorneoSearch(this.value)"
-                            class="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                            class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
+                        ${torneoSearchTerm ? `
+                            <button onclick="window.updateTorneoSearch(''); window.renderTorneos(document.getElementById('content-container'))" 
+                                class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all" title="Borrar búsqueda">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -8237,9 +8714,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         btn.style.pointerEvents = 'none';
 
         try {
-            const players = await db.getAll('jugadores');
+            // Use current filtered players or fallback to all
+            const players = window.currentFilteredPlayers || await db.getAll('jugadores');
             const total = players.length;
             let updatedCount = 0;
+
+            if (total === 0) {
+                window.customAlert('Aviso', 'No hay jugadores para actualizar', 'info');
+                return;
+            }
 
             for (let i = 0; i < total; i++) {
                 const p = players[i];
@@ -8293,7 +8776,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a,b) => a.localeCompare(b));
 
         const filtered = players.filter(p => {
-            const matchesTeam = currentTeamId === 'all' || p.equipoid?.toString() === currentTeamId.toString();
+            const matchesTeam = currentTeamId === 'all' || 
+                                p.equipoid?.toString() === currentTeamId.toString() ||
+                                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(currentTeamId.toString()));
+            
             const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesAno = currentAno === 'all' || p.anionacimiento?.toString() === currentAno.toString();
             const matchesSexo = currentSexo === 'all' || 
@@ -8304,12 +8790,20 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub;
         }).sort((a,b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
+        window.currentFilteredPlayers = filtered;
+
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
                 <!-- Main Header & Search -->
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div>
-                        <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Directorio de Jugadores</h2>
+                        <div class="flex items-center gap-4">
+                            <h2 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Directorio de Jugadores</h2>
+                            <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                Limpiar Duplicados
+                            </button>
+                        </div>
                         <p class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mt-1">Gestión centralizada de talento y rendimiento</p>
                     </div>
                     <div class="relative w-full md:w-96 group">
@@ -8319,7 +8813,13 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             placeholder="Buscar jugador por nombre..." 
                             value="${searchTerm}"
                             oninput="window.updateJugadoresSearch(this.value)"
-                            class="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                            class="w-full pl-12 pr-12 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
+                        ${searchTerm ? `
+                            <button onclick="window.updateJugadoresSearch(''); window.renderJugadores(document.getElementById('content-container'))" 
+                                class="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Borrar búsqueda">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -8405,7 +8905,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                     </div>
                                                     <div>
                                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
-                                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                                        <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                            <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
+                                                            ${p.equipoid ? `<span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${teams.find(t => t.id?.toString() === p.equipoid?.toString())?.nombre.split(' ||| ')[0] || ''}</span>` : ''}
+                                                            ${(p.equipo_ids || []).map(tid => {
+                                                                const t = teams.find(tm => tm.id?.toString() === tid.toString());
+                                                                if (!t) return '';
+                                                                return `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${t.nombre.split(' ||| ')[0]}</span>`;
+                                                            }).join('')}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -8574,14 +9082,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
-                                <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                    <option value="">Ninguno</option>
-                                    ${clubs.map(c => `<option value="${c.nombre}">${c.nombre}</option>`).join('')}
-                                </select>
+                                <input name="equipoConvenido" list="clubs-list-new" placeholder="Escribe o selecciona club..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                <datalist id="clubs-list-new">
+                                    ${clubs.map(c => `<option value="${c.nombre}">`).join('')}
+                                </datalist>
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Inicial</label>
                                 <div id="star-rating-new"></div>
+                            </div>
+
+                            <!-- Otros Equipos (Solo Femenino) -->
+                            <div id="extra-teams-container" class="space-y-2 md:col-span-2 hidden">
+                                <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
+                                    ${teams.map(t => `
+                                        <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all">
+                                            <input type="checkbox" name="equipo_ids" value="${t.id}" class="w-4 h-4 rounded text-blue-600">
+                                            <span class="text-[9px] font-bold text-slate-600 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                                <p class="text-[8px] font-medium text-blue-400 italic px-1">Solo disponible para jugadoras que participan en varias categorías.</p>
                             </div>
                         </div>
                     </div>
@@ -8602,6 +9124,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const photoPreview = document.getElementById('player-photo-preview');
         const placeholder = document.getElementById('photo-placeholder');
 
+        const sexoSelect = document.querySelector('select[name="sexo"]');
+        const extraTeams = document.getElementById('extra-teams-container');
+        if (sexoSelect && extraTeams) {
+            sexoSelect.addEventListener('change', () => {
+                if (sexoSelect.value === 'Femenino') extraTeams.classList.remove('hidden');
+                else extraTeams.classList.add('hidden');
+            });
+        }
+
         photoInput.onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -8620,10 +9151,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.posicion = formData.getAll('posicion'); // Save as array
+            data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
             
             // Cast numeric fields
             if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
             if (data.nivel) data.nivel = parseInt(data.nivel);
+            
+            // Handle equipoid (should be number or null)
+            if (data.equipoid === "") data.equipoid = null;
+            else if (data.equipoid) data.equipoid = parseInt(data.equipoid);
+
+            // Handle multi-team (should be array of numbers)
+            if (data.equipo_ids && Array.isArray(data.equipo_ids)) {
+                data.equipo_ids = data.equipo_ids.map(id => parseInt(id));
+            }
+
+            // Forzar el campo exacto para Supabase
+            data.equipoConvenido = formData.get('equipoConvenido') || null;
             
             try {
                 if (photoInput.files[0]) {
@@ -8635,12 +9179,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 window.renderJugadores(document.getElementById('content-container'));
             } catch (err) {
                 console.error(err);
-                window.customAlert('Error', 'No se pudo crear el jugador.', 'error');
+                window.customAlert('Error', `No se pudo crear el jugador: ${err.message}`, 'error');
             }
         };
     };
 
-    window.viewPlayerProfile = async (playerId) => {
+    window.viewPlayerProfile = async (playerId, selectedSeason = window.currentSeason) => {
         const player = await db.get('jugadores', playerId);
         if (!player) return;
 
@@ -8648,20 +9192,28 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const attendance = await db.getAll('asistencia');
         const convocatorias = await db.getAll('convocatorias');
         
+        // --- SEASON TABS CALCULATION ---
+        const allDates = [...attendance.map(a => a.fecha), ...convocatorias.map(c => c.fecha)].filter(Boolean);
+        const availableSeasons = [...new Set(allDates.map(d => window.getSeason(d)))].sort().reverse();
+        
         // Cache for inner scopes
-        const playerConvs = convocatorias.filter(c => {
+        const rawPlayerConvs = convocatorias.filter(c => {
             const pids = c.playerids || [];
             return pids.map(String).includes(String(playerId));
         });
 
-        window.allAttendanceData = attendance; 
-        window.allConvocatoriasData = convocatorias;
-        window.currentPlayerConvs = playerConvs;
+        // Filter by season
+        const filterBySeason = (items, dateField = 'fecha') => {
+            if (selectedSeason === 'ALL') return items;
+            return items.filter(i => window.getSeason(i[dateField]) === selectedSeason);
+        };
+
+        const playerConvs = filterBySeason(rawPlayerConvs);
+        const playerAttendance = filterBySeason(attendance.filter(a => a.players && a.players[playerId]));
         
         const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
 
         // --- PRE-CALCULATE CATEGORIZED DATA ---
-        const playerAttendance = attendance.filter(a => a.players && a.players[playerId]);
         const categorized = { ciclos: [], sesiones: [], torneos: [] };
         
         // Detailed Attendance Counts
@@ -8707,8 +9259,6 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     if (!categorized.sesiones.some(s => s.fecha === c.fecha)) categorized.sesiones.push(item);
                 }
             } else if (score) {
-                // If it HAS attendance, but also has a score in the convocatoria, 
-                // make sure that score is reflected in the already added categorized item
                 const target = [...categorized.ciclos, ...categorized.sesiones, ...categorized.torneos]
                     .find(item => item.convocatoriaid == c.id);
                 if (target) target.rating = score;
@@ -8763,15 +9313,29 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     </div>
                                 </div>
                                 <div class="flex gap-2">
-                                    <button onclick="window.generatePlayerPDF('${playerId}')" class="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 flex items-center gap-2">
-                                        <i data-lucide="download" class="w-4 h-4"></i>
-                                        Exportar PDF
-                                    </button>
+                                    <div class="relative group">
+                                        <button onclick="window.showExportDialog('${playerId}')" class="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 flex items-center gap-2">
+                                            <i data-lucide="download" class="w-4 h-4"></i>
+                                            Exportar PDF
+                                        </button>
+                                    </div>
                                     <button onclick="window.editPlayer('${playerId}')" class="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
                                         <i data-lucide="edit-3" class="w-4 h-4"></i>
                                         Editar Perfil
                                     </button>
                                 </div>
+                            </div>
+                            
+                            <!-- Season Tabs -->
+                            <div class="mt-8 flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                <button onclick="window.viewPlayerProfile('${playerId}', 'ALL')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${selectedSeason === 'ALL' ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}">
+                                    Historial Completo
+                                </button>
+                                ${availableSeasons.map(s => `
+                                    <button onclick="window.viewPlayerProfile('${playerId}', '${s}')" class="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${selectedSeason === s ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}">
+                                        Temporada ${s}
+                                    </button>
+                                `).join('')}
                             </div>
                         </div>
                     </div>
@@ -9144,16 +9708,33 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                     <option value="Ambidiestro" ${player.lateralidad === 'Ambidiestro' ? 'selected' : ''}>Ambidiestro</option>
                                 </select>
                             </div>
-                            <div class="space-y-2">
+                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
-                                <select name="equipoConvenido" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                    <option value="">Ninguno</option>
-                                    ${clubs.map(c => `<option value="${c.nombre}" ${player.equipoConvenido === c.nombre ? 'selected' : ''}>${c.nombre}</option>`).join('')}
-                                </select>
+                                <input name="equipoConvenido" list="clubs-list" value="${player.equipoConvenido || ''}" placeholder="Escribe o selecciona club..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
+                                <datalist id="clubs-list">
+                                    ${clubs.map(c => `<option value="${c.nombre}">`).join('')}
+                                </datalist>
                             </div>
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nivel Actual</label>
                                 <div id="star-rating-edit"></div>
+                            </div>
+
+                            <!-- Otros Equipos (Solo Femenino) -->
+                            <div id="extra-teams-container-edit" class="space-y-2 md:col-span-2 ${player.sexo === 'Femenino' ? '' : 'hidden'}">
+                                <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
+                                    ${teams.map(t => {
+                                        const isMain = player.equipoid?.toString() === t.id.toString();
+                                        const isSecondary = (player.equipo_ids || []).map(String).includes(t.id.toString());
+                                        return `
+                                            <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all ${isMain ? 'opacity-50 pointer-events-none bg-slate-50' : ''}">
+                                                <input type="checkbox" name="equipo_ids" value="${t.id}" ${isSecondary ? 'checked' : ''} ${isMain ? 'disabled' : ''} class="w-4 h-4 rounded text-blue-600">
+                                                <span class="text-[9px] font-bold text-slate-600 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
+                                            </label>
+                                        `;
+                                    }).join('')}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -9176,6 +9757,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
         const photoInput = document.getElementById('player-photo-input');
         const photoPreview = document.getElementById('player-photo-preview');
 
+        const sexoSelectEdit = document.querySelector('#edit-player-form select[name="sexo"]');
+        const extraTeamsEdit = document.getElementById('extra-teams-container-edit');
+        if (sexoSelectEdit && extraTeamsEdit) {
+            sexoSelectEdit.addEventListener('change', () => {
+                if (sexoSelectEdit.value === 'Femenino') extraTeamsEdit.classList.remove('hidden');
+                else extraTeamsEdit.classList.add('hidden');
+            });
+        }
+
         photoInput.onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -9191,10 +9781,23 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const data = Object.fromEntries(formData.entries());
             data.id = playerId;
             data.posicion = formData.getAll('posicion'); // Save as array
+            data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
 
             // Cast numeric fields
             if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
             if (data.nivel) data.nivel = parseInt(data.nivel);
+
+            // Handle equipoid (should be number or null)
+            if (data.equipoid === "") data.equipoid = null;
+            else if (data.equipoid) data.equipoid = parseInt(data.equipoid);
+
+            // Handle multi-team (should be array of numbers)
+            if (data.equipo_ids && Array.isArray(data.equipo_ids)) {
+                data.equipo_ids = data.equipo_ids.map(id => parseInt(id));
+            }
+
+            // Forzar el campo exacto para Supabase
+            data.equipoConvenido = formData.get('equipoConvenido') || null;
 
             try {
                 if (photoInput.files[0]) {
@@ -9206,7 +9809,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 window.renderJugadores(document.getElementById('content-container'));
             } catch (err) {
                 console.error(err);
-                window.customAlert('Error', 'No se pudieron guardar los cambios.', 'error');
+                window.customAlert('Error', `No se pudieron guardar los cambios: ${err.message}`, 'error');
             }
         };
     };
@@ -9306,22 +9909,64 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
                 <form id="new-team-form" class="space-y-6">
-                    <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Equipo</label>
-                        <input name="nombre" type="text" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
-                        <input name="categoria" type="text" placeholder="Ej: ALEVÍN A" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="flex flex-col items-center gap-4">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Escudo / Logo</label>
+                            <div class="relative group">
+                                <div id="team-logo-preview" class="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-300">
+                                    <i data-lucide="shield" class="w-8 h-8 text-slate-300"></i>
+                                </div>
+                                <input type="file" id="team-logo-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="window.handleTeamLogoPreview(this)">
+                                <input type="hidden" name="escudo" id="team-logo-url">
+                            </div>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Click para subir foto</p>
+                        </div>
+                        <div class="flex-1 space-y-6">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Equipo</label>
+                                <input name="nombre" type="text" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
+                                <input name="categoria" type="text" placeholder="Ej: ALEVÍN A" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
+                        </div>
                     </div>
                     <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
                         <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
-                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Crear Equipo</button>
+                        <button type="submit" id="btn-save-team" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]">Crear Equipo</button>
                     </div>
                 </form>
             </div>
         `;
         modalOverlay.classList.add('active');
+        if (window.lucide) lucide.createIcons();
+
+        window.handleTeamLogoPreview = async (input) => {
+            if (input.files && input.files[0]) {
+                const preview = document.getElementById('team-logo-preview');
+                const btn = document.getElementById('btn-save-team');
+                const originalText = btn.innerText;
+                
+                btn.disabled = true;
+                btn.innerText = 'SUBIENDO...';
+                preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
+
+                try {
+                    const publicUrl = await db.uploadImage(input.files[0]);
+                    if (publicUrl) {
+                        preview.innerHTML = `<img src="${publicUrl}" class="w-full h-full object-contain">`;
+                        document.getElementById('team-logo-url').value = publicUrl;
+                    }
+                } catch (err) {
+                    window.customAlert('Error', 'No se pudo subir la imagen', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
+            }
+        };
+
         document.getElementById('new-team-form').onsubmit = async (e) => {
             e.preventDefault();
             const data = Object.fromEntries(new FormData(e.target));
@@ -9345,22 +9990,64 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
                 <form id="edit-team-form" class="space-y-6">
-                    <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre</label>
-                        <input name="nombre" type="text" value="${team.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
-                        <input name="categoria" type="text" value="${team.categoria || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <div class="flex flex-col items-center gap-4">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Escudo / Logo</label>
+                            <div class="relative group">
+                                <div id="team-logo-preview" class="w-32 h-32 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-300">
+                                    ${team.escudo ? `<img src="${team.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="shield" class="w-8 h-8 text-slate-300"></i>`}
+                                </div>
+                                <input type="file" id="team-logo-input" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer" onchange="window.handleTeamLogoPreview(this)">
+                                <input type="hidden" name="escudo" id="team-logo-url" value="${team.escudo || ''}">
+                            </div>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Click para cambiar foto</p>
+                        </div>
+                        <div class="flex-1 space-y-6">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre</label>
+                                <input name="nombre" type="text" value="${team.nombre}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Categoría</label>
+                                <input name="categoria" type="text" value="${team.categoria || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                            </div>
+                        </div>
                     </div>
                     <div class="pt-6 border-t border-slate-100 flex justify-end gap-3">
                         <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]">Cancelar</button>
-                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase text-[10px]">Guardar Cambios</button>
+                        <button type="submit" id="btn-save-team" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl uppercase text-[10px]">Guardar Cambios</button>
                     </div>
                 </form>
             </div>
         `;
         modalOverlay.classList.add('active');
+        if (window.lucide) lucide.createIcons();
+
+        window.handleTeamLogoPreview = async (input) => {
+            if (input.files && input.files[0]) {
+                const preview = document.getElementById('team-logo-preview');
+                const btn = document.getElementById('btn-save-team');
+                const originalText = btn.innerText;
+                
+                btn.disabled = true;
+                btn.innerText = 'SUBIENDO...';
+                preview.innerHTML = '<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>';
+
+                try {
+                    const publicUrl = await db.uploadImage(input.files[0]);
+                    if (publicUrl) {
+                        preview.innerHTML = `<img src="${publicUrl}" class="w-full h-full object-contain">`;
+                        document.getElementById('team-logo-url').value = publicUrl;
+                    }
+                } catch (err) {
+                    window.customAlert('Error', 'No se pudo subir la imagen', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
+            }
+        };
+
         document.getElementById('edit-team-form').onsubmit = async (e) => {
             e.preventDefault();
             const data = Object.fromEntries(new FormData(e.target));
@@ -9872,7 +10559,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.renderAsistencia = async function(container) {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const attendance = await db.getAll('asistencia');
+        const allAttendance = await db.getAll('asistencia');
+        const attendance = window.applyGlobalFilters(allAttendance);
         const sortedTeams = window.getSortedTeams(teams);
         
         // Inicializar filtros si no existen
@@ -11335,7 +12023,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         window.renderAsistencia(document.getElementById('content-container'));
     };
 
-    window.generatePlayerPDF = async (playerId) => {
+    window.generatePlayerPDF = async (playerId, selectedSeason = 'ALL') => {
         const player = await db.get('jugadores', playerId);
         if (!player) return;
 
@@ -11346,8 +12034,20 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         const teams = await db.getAll('equipos');
         const team = teams.find(t => String(t.id) === String(player.equipoid));
         
-        const attendance = await db.getAll('asistencia');
-        const playerAttendance = attendance.filter(a => a.players && a.players[playerId]);
+        const allAttendance = await db.getAll('asistencia');
+        const allConvocatorias = await db.getAll('convocatorias');
+
+        const filterBySeason = (items, dateField = 'fecha') => {
+            if (selectedSeason === 'ALL') return items;
+            return items.filter(i => window.getSeason(i[dateField]) === selectedSeason);
+        };
+
+        const playerAttendance = filterBySeason(allAttendance.filter(a => a.players && a.players[playerId]));
+        const torneos = filterBySeason(allConvocatorias.filter(c => {
+            const pids = c.playerids || [];
+            return pids.map(String).includes(String(playerId)) && (['Torneo', 'Partido'].includes(c.tipo));
+        }));
+
         const attendanceSummary = { asiste: 0, falta: 0, lesion: 0, enfermo: 0, total: playerAttendance.length };
         playerAttendance.forEach(a => {
             const s = a.players[playerId];
@@ -11415,6 +12115,12 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             doc.text(`CLUB ASOCIADO: ${player.equipoConvenido.toUpperCase()}`, 65, 44);
         }
 
+        // Season Label
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        const seasonLabel = selectedSeason === 'ALL' ? 'HISTORIAL COMPLETO' : `TEMPORADA: ${selectedSeason}`;
+        doc.text(seasonLabel, 195, 20, { align: 'right' });
+
         // Info Sections
         let yPos = 75;
 
@@ -11480,10 +12186,6 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         yPos = doc.lastAutoTable.finalY + 20;
 
         // --- SECTION: COMPETITIONS ---
-        const convocatorias = await db.getAll('convocatorias');
-        const playerConvs = convocatorias.filter(c => (c.playerids || []).map(String).includes(String(playerId)));
-        const torneos = playerConvs.filter(c => (c.tipo || '').toUpperCase() === 'TORNEO' || (c.tipo || '').toUpperCase() === 'PARTIDO');
-
         if (torneos.length > 0) {
             doc.setTextColor(...primaryColor);
             doc.setFontSize(11);
@@ -11524,5 +12226,121 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
 
         doc.save(`FICHA_${player.nombre.toUpperCase().replace(/ /g, '_')}.pdf`);
     };
+    window.showExportDialog = async (playerId) => {
+        const attendance = await db.getAll('asistencia');
+        const convocatorias = await db.getAll('convocatorias');
+        const allDates = [...attendance.map(a => a.fecha), ...convocatorias.map(c => c.fecha)].filter(Boolean);
+        const availableSeasons = [...new Set(allDates.map(d => window.getSeason(d)))].sort().reverse();
+
+        const dialogHtml = `
+            <div class="p-10">
+                <div class="flex items-center gap-4 mb-8">
+                    <div class="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm">
+                        <i data-lucide="file-text" class="w-7 h-7"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Exportar Ficha</h3>
+                        <p class="text-sm text-slate-400 font-bold uppercase tracking-widest">Selecciona el periodo del informe</p>
+                    </div>
+                </div>
+                
+                <div class="space-y-6">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Periodo / Temporada</label>
+                        <select id="pdf-season-select" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none text-sm font-black text-slate-700 uppercase tracking-tight focus:ring-4 focus:ring-blue-50 transition-all appearance-none cursor-pointer">
+                            <option value="ALL">HISTORIAL COMPLETO</option>
+                            ${availableSeasons.map(s => `<option value="${s}" ${s === window.currentSeason ? 'selected' : ''}>TEMPORADA ${s}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 mt-12">
+                    <button onclick="window.closeCustomModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
+                    <button id="confirm-pdf-btn" onclick="window.confirmPDFExport('${playerId}')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        Generar PDF
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        window.customModal(dialogHtml);
+        if (window.lucide) lucide.createIcons();
+    };
+
+    window.confirmPDFExport = (playerId) => {
+        const season = document.getElementById('pdf-season-select').value;
+        const btn = document.getElementById('confirm-pdf-btn');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = 'GENERANDO...';
+        btn.style.pointerEvents = 'none';
+        
+        window.generatePlayerPDF(playerId, season).then(() => {
+            window.closeCustomModal();
+        }).catch(err => {
+            console.error(err);
+            btn.innerHTML = originalHtml;
+            btn.style.pointerEvents = 'auto';
+        });
+    };
+
+    window.cleanDuplicatePlayers = async () => {
+        if (!confirm('¿Quieres buscar y eliminar jugadores duplicados por nombre? Se mantendrá la ficha más completa de cada uno.')) return;
+        
+        try {
+            const players = await db.getAll('jugadores');
+            const groups = {};
+            players.forEach(p => {
+                const name = (p.nombre || '').trim().toUpperCase();
+                if (!name) return;
+                if (!groups[name]) groups[name] = [];
+                groups[name].push(p);
+            });
+
+            const toDelete = [];
+            Object.entries(groups).forEach(([name, list]) => {
+                if (list.length > 1) {
+                    // Sort by completeness (more fields) or ID
+                    list.sort((a, b) => {
+                        const scoreA = Object.values(a).filter(v => v !== null && v !== '').length;
+                        const scoreB = Object.values(b).filter(v => v !== null && v !== '').length;
+                        return scoreB - scoreA || b.id - a.id;
+                    });
+                    const duplicates = list.slice(1);
+                    duplicates.forEach(d => toDelete.push(d.id));
+                }
+            });
+
+            if (toDelete.length > 0) {
+                const loadingAlert = document.createElement('div');
+                loadingAlert.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center';
+                loadingAlert.innerHTML = `
+                    <div class="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-4 animate-in zoom-in duration-300">
+                        <div class="w-12 h-12 border-4 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p class="font-bold text-slate-800 uppercase tracking-widest text-xs">Eliminando ${toDelete.length} duplicados...</p>
+                    </div>
+                `;
+                document.body.appendChild(loadingAlert);
+
+                for (const id of toDelete) {
+                    await db.delete('jugadores', id);
+                }
+
+                if (document.body.contains(loadingAlert)) document.body.removeChild(loadingAlert);
+                window.customAlert('Limpieza Completada', `Se han eliminado ${toDelete.length} fichas duplicadas.`, 'success');
+                
+                delete db.cache['jugadores'];
+                delete db.lastSync['jugadores'];
+                await db.getAll('jugadores');
+                window.renderJugadores(document.getElementById('content-container'));
+            } else {
+                window.customAlert('Sin Duplicados', 'No se han encontrado jugadores con nombres repetidos.', 'info');
+            }
+        } catch (err) {
+            console.error(err);
+            window.customAlert('Error', 'No se pudo completar la limpieza.', 'error');
+        }
+    };
+
     initNotifications();
 });
