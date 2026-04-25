@@ -12669,11 +12669,17 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     </div>
 
                     <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Asignar a Equipo</label>
-                        <select id="import-pdf-team" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
-                            <option value="">SELECCIONA EQUIPO...</option>
-                            ${data.teams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
-                        </select>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Asignar a Equipos / Plantillas</label>
+                        <div class="p-4 bg-slate-50 border border-slate-100 rounded-3xl max-h-[180px] overflow-y-auto custom-scrollbar">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                ${data.teams.map(t => `
+                                    <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="import-team-check" value="${t.id}" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                        <span class="text-[10px] font-black text-slate-700 uppercase">${t.nombre.split(' ||| ')[0]}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
                     </div>
 
                     <div class="bg-slate-50 rounded-3xl p-6 border border-slate-100">
@@ -12710,9 +12716,11 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         if (window.lucide) lucide.createIcons();
 
         document.getElementById('btn-confirm-pdf-import').onclick = async () => {
-            const teamId = document.getElementById('import-pdf-team').value;
-            if (!teamId) {
-                window.customAlert('Atención', 'Debes seleccionar un equipo para la convocatoria', 'warning');
+            const teamChecks = document.querySelectorAll('input[name="import-team-check"]:checked');
+            const selectedTeamIds = Array.from(teamChecks).map(c => c.value);
+            
+            if (selectedTeamIds.length === 0) {
+                window.customAlert('Atención', 'Debes seleccionar al menos un equipo para la convocatoria', 'warning');
                 return;
             }
 
@@ -12731,16 +12739,18 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     if (finalFecha3) metadata.s3 = { f: finalFecha3 };
                 }
                 
-                const serializedLugar = window.serializeLugarMetadata(finalLugar, metadata);
-
                 const currentUser = (await supabaseClient.auth.getUser()).data.user;
+
+                // Guardar los IDs de todos los equipos en el metadata extra
+                metadata.eids = selectedTeamIds.map(Number);
+                const serializedLugar = window.serializeLugarMetadata(finalLugar, metadata);
 
                 const convData = {
                     nombre: (finalNombre || `CONVOCATORIA ${finalLugar}`).toUpperCase(),
                     fecha: finalFecha,
                     lugar: serializedLugar,
                     tipo: finalTipo,
-                    equipoid: teamId ? Number(teamId) : null,
+                    equipoid: selectedTeamIds[0] ? Number(selectedTeamIds[0]) : null,
                     playerids: playerIds,
                     createdBy: currentUser?.id,
                     sharedWith: []
