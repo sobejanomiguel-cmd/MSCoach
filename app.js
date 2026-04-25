@@ -414,16 +414,15 @@ window.setSeason = (season) => {
     if (activeLink) window.switchView(activeLink.dataset.view);
 };
 
-window.applyGlobalFilters = (items, dateField = 'fecha') => {
+window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
     if (!items) return [];
     let filtered = [...items];
     
     // Visibility
-    if (window.currentVisibilityMode === 'personal' && window.currentUser) {
+    if (window.currentVisibilityMode === 'personal' && window.currentUser && !options.skipVisibility) {
         filtered = filtered.filter(i => 
             !i.createdBy || // Allow legacy items without owner
-            i.createdBy === window.currentUser.id || 
-            (i.sharedWith && i.sharedWith.includes(window.currentUser.id))
+            i.createdBy === window.currentUser.id
         );
     }
     
@@ -471,7 +470,7 @@ window.ensureClubesInitialized = async () => {
                 let updatedCount = 0;
                 for (const p of players) {
                     if (!p.foto || p.foto.includes('placeholder')) {
-                        p.foto = 'Foto Jugador General.png';
+                        p.foto = 'Imagenes/Foto Jugador General.png';
                         await db.update('jugadores', p);
                         updatedCount++;
                     }
@@ -607,6 +606,26 @@ window.formatAttendanceName = (dateStr, teamName, type, eventName) => {
         const newLugar = window.serializeLugarMetadata(base, extra);
         
         await db.update('convocatorias', { id: Number(id), lugar: newLugar });
+    };
+
+    window.getComunidadByLugar = (lugarStr, nombreStr = '') => {
+        if (!lugarStr && !nombreStr) return 'OTRO';
+        
+        // Normalizamos el texto (quitamos acentos y pasamos a mayúsculas)
+        const normalize = (str) => (str || '').toUpperCase()
+            .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            .trim();
+
+        const cleanLugar = window.cleanLugar(lugarStr);
+        const combined = normalize(cleanLugar + ' ' + nombreStr);
+        
+        const navarraKeywords = ['TUDELA', 'PAMPLONA', 'LODOSA', 'CORELLA', 'MILAGRO', 'NAVARRA', 'OLITE', 'TAFALLA', 'ESTELLA', 'VALTIERRA', 'MURCHANTE', 'CASCANTE', 'CINTRUENIGO', 'FITERO', 'MARCILLA', 'PERALTA', 'CAPARROSO', 'VILLAFRANCA', 'AZAGRA', 'SAN ADRIAN', 'CADREITA', 'RIBAFORADA', 'FUSTINANA', 'CABANILLAS', 'CORTES', 'BUNUEL', 'ABLITAS', 'MONTEAGUDO', 'BARILLAS', 'TULEBRAS', 'MURCHANTE', 'LESCUN', 'IRUNA', 'BAZTAN', 'ALSASUA', 'VIANA', 'ELIZONDO', 'BERA', 'BERA DE BIDASOA', 'DONEZTEBE', 'SANTESTEBAN', 'LEITZA', 'PUENTE LA REINA', 'SANGUESA'];
+        const riojaKeywords = ['ARNEDO', 'CALAHORRA', 'LOGRONO', 'ALFARO', 'RIOJA', 'NAJERA', 'HARO', 'SANTO DOMINGO', 'QUEL', 'AUTOL', 'ALDEANUEVA', 'RINCON DE SOTO', 'PRADEJON', 'CERVERA', 'AGUILAR', 'IREGUA', 'ALBERITE', 'LARDERO', 'VILLAMEDIANA', 'FUENMAYOR', 'NAVARRETE', 'ENTRENA'];
+        
+        if (navarraKeywords.some(kw => combined.includes(kw))) return 'NAVARRA';
+        if (riojaKeywords.some(kw => combined.includes(kw))) return 'LA RIOJA';
+        
+        return 'OTRO';
     };
 
     window.cleanLugar = (l) => {
@@ -2389,7 +2408,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 nivel: idxNivel !== -1 ? (parseInt(row[idxNivel]) || 3) : 3,
                                 equipoid: team ? team.id : null,
                                 equipoConvenido: clubVal || null,
-                                posicion: idxPosicion !== -1 ? window.parsePosition(row[idxPosicion]) : ['PO'],
+                                posicion: idxPosicion !== -1 ? window.parsePosition(row[idxPosicion]).join(', ') : 'PO',
                                 anionacimiento: idxAnio !== -1 ? (parseInt(row[idxAnio].replace(/\D/g, '')) || null) : null,
                                 sexo: idxSexo !== -1 ? (row[idxSexo] || 'Masculino') : 'Masculino',
                                 lateralidad: lateralidad,
@@ -3626,7 +3645,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
     };
 
-    let sessionFilters = { team: 'TODOS', coach: 'TODOS', search: '', lugar: 'TODOS' };
+    let sessionFilters = { team: 'TODOS', coach: 'TODOS', search: '', lugar: 'TODOS', comunidad: 'TODOS' };
 
     window.filterSessions = (type, value) => {
         sessionFilters[type] = value;
@@ -3641,7 +3660,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.renderSesiones = async function(container, onlyTable = false) {
         const allSessions = await db.getAll('sesiones');
-        const sessions = window.applyGlobalFilters(allSessions);
+        // Si hay un técnico seleccionado, pedimos a applyGlobalFilters que no filtre por visibilidad personal
+        const sessions = window.applyGlobalFilters(allSessions, 'fecha', { skipVisibility: sessionFilters.coach !== 'TODOS' });
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
         const sortedTeams = window.getSortedTeams(teams);
@@ -3652,9 +3672,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
         
         const isGlobal = window.currentVisibilityMode === 'global';
-        const mySessions = isGlobal ? sessions : sessions.filter(s => {
+        // En "Mi Espacio" (TODOS + Personal), solo mostramos las creadas por el usuario actual
+        const mySessions = (isGlobal || sessionFilters.coach !== 'TODOS') ? sessions : sessions.filter(s => {
             if (!currentUser) return false;
-            return s.createdBy === currentUser.id || (s.sharedWith && s.sharedWith.includes(currentUser.id));
+            return s.createdBy === currentUser.id;
         });
 
         const uniqueLugares = [...new Set(mySessions.map(s => window.cleanLugar(s.lugar)).filter(Boolean))].sort();
@@ -3670,15 +3691,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const sessionLugar = window.cleanLugar(s.lugar) || 'SIN ASIGNAR';
             const matchesLugar = sessionFilters.lugar === 'TODOS' || sessionLugar.toUpperCase() === sessionFilters.lugar.toUpperCase();
 
+            const sessionComunidad = window.getComunidadByLugar(s.lugar, s.titulo);
+            const matchesComunidad = sessionFilters.comunidad === 'TODOS' || sessionComunidad === sessionFilters.comunidad;
+
             const searchTerm = (sessionFilters.search || '').toLowerCase();
+            const teamName = (teamsMap[s.equipoid] || '').toLowerCase();
             const matchesSearch = !searchTerm || 
                                 (s.titulo || '').toLowerCase().includes(searchTerm) || 
-                                (s.equiponombre || '').toLowerCase().includes(searchTerm) ||
+                                teamName.includes(searchTerm) ||
                                 (s.lugar || '').toLowerCase().includes(searchTerm);
-            return matchesTeam && matchesCoach && matchesLugar && matchesSearch;
+
+            return matchesTeam && matchesCoach && matchesLugar && matchesSearch && matchesComunidad;
         }).sort((a,b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
 
-        const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE') : [];
+        const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
         if (!onlyTable) {
             container.innerHTML = `
@@ -3691,38 +3717,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 class="w-full pl-11 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-sm focus:ring-4 ring-blue-50 outline-none transition-all shadow-sm"
                                 oninput="window.filterSessions('search', this.value)">
                         </div>
+
+                        <div class="flex flex-col lg:flex-row gap-4">
+                            <!-- Comunidad Tabs -->
+                            <div class="flex items-center p-1 bg-slate-100 rounded-2xl shadow-inner w-fit">
+                                <button onclick="window.filterSessions('comunidad', 'TODOS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'TODOS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Todas</button>
+                                <button onclick="window.filterSessions('comunidad', 'NAVARRA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Navarra</button>
+                                <button onclick="window.filterSessions('comunidad', 'LA RIOJA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">La Rioja</button>
+                            </div>
+
+                            <!-- Coach Tabs -->
+                            <div class="flex items-center p-1 bg-slate-100 rounded-2xl shadow-inner w-fit max-w-[500px] overflow-x-auto no-scrollbar">
+                                <button onclick="window.filterSessions('coach', 'TODOS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.coach === 'TODOS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'} whitespace-nowrap">Todos los Técnicos</button>
+                                ${coaches.map(c => `
+                                    <button onclick="window.filterSessions('coach', '${c.id}')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.coach == c.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'} whitespace-nowrap">
+                                        ${(c.name || c.nombre || 'Técnico').toUpperCase()}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Filters Toolbar -->
                     <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
-                        <div class="grid grid-cols-1 md:grid-cols-3 lg:flex items-center gap-3">
-                            <!-- Team Filter -->
-                            <div class="relative flex-1 lg:min-w-[220px]">
-                                <select onchange="window.filterSessions('team', this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
-                                    <option value="TODOS" ${sessionFilters.team === 'TODOS' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
-                                    ${sortedTeams.map(t => `<option value="${t.id}" ${sessionFilters.team == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
-                                </select>
-                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
-                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:flex items-center gap-3">
+                                <!-- Team Filter -->
+                                <div class="relative flex-1 lg:min-w-[220px]">
+                                    <select onchange="window.filterSessions('team', this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
+                                        <option value="TODOS" ${sessionFilters.team === 'TODOS' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
+                                        ${sortedTeams.map(t => `<option value="${t.id}" ${sessionFilters.team == t.id ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                                    </select>
+                                    <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
+                                </div>
 
-                            <!-- Place Filter -->
-                            <div class="relative flex-1 lg:min-w-[200px]">
-                                <select onchange="window.filterSessions('lugar', this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
-                                    <option value="TODOS" ${sessionFilters.lugar === 'TODOS' ? 'selected' : ''}>TODOS LOS LUGARES</option>
-                                    ${uniqueLugares.map(l => `<option value="${l}" ${sessionFilters.lugar === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
-                                </select>
-                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                                <!-- Place Filter -->
+                                <div class="relative flex-1 lg:min-w-[200px]">
+                                    <select onchange="window.filterSessions('lugar', this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
+                                        <option value="TODOS" ${sessionFilters.lugar === 'TODOS' ? 'selected' : ''}>TODOS LOS LUGARES</option>
+                                        ${uniqueLugares.map(l => `<option value="${l}" ${sessionFilters.lugar === l ? 'selected' : ''}>${l.toUpperCase()}</option>`).join('')}
+                                    </select>
+                                    <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                                </div>
                             </div>
-
-                            <!-- Coach Filter -->
-                            <div class="relative flex-1 lg:min-w-[200px]">
-                                <select onchange="window.filterSessions('coach', this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
-                                    <option value="TODOS" ${sessionFilters.coach === 'TODOS' ? 'selected' : ''}>TODOS LOS TÉCNICOS</option>
-                                    ${coaches.map(c => `<option value="${c.id}" ${sessionFilters.coach === c.id ? 'selected' : ''}>${(c.name || c.nombre || 'ENTRENADOR').toUpperCase()}</option>`).join('')}
-                                </select>
-                                <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
-                            </div>
-                        </div>
                     </div>
 
                     <div id="sessions-list-container">
@@ -3758,7 +3794,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 return `
                                     <tr onclick="window.viewSessionFicha('${s.id}')" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
-                                            <p class="text-sm font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
+                                            <div class="flex items-center gap-2">
+                                                <p class="text-sm font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
+                                                <span class="text-[7px] font-black px-1.5 py-0.5 rounded ${window.getComunidadByLugar(s.lugar, s.titulo) === 'NAVARRA' ? 'bg-red-100 text-red-600' : (window.getComunidadByLugar(s.lugar, s.titulo) === 'LA RIOJA' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400')} uppercase whitespace-nowrap">${window.getComunidadByLugar(s.lugar, s.titulo)}</span>
+                                            </div>
                                         </td>
                                         <td class="px-6 py-5">
                                             <div class="flex items-center gap-4">
@@ -3874,8 +3913,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data: convs } = await supabaseClient.from('convocatorias').select('*').order('fecha', { ascending: false }).order('hora', { ascending: false });
         const currentUser = (await supabaseClient.auth.getUser()).data.user;
         
-        const isEdit = sessionData !== null;
-        const session = sessionData || {
+        const isEdit = sessionData !== null && sessionData.id !== undefined && sessionData.id !== null;
+        const session = {
             id: null,
             titulo: '',
             equipoid: '',
@@ -3886,10 +3925,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             taskids: [],
             playerids: [],
             sharedWith: [],
-            createdBy: currentUser.id
+            createdBy: currentUser.id,
+            ...sessionData
         };
 
-        const sessionCreator = users ? users.find(u => u.id === session.createdBy) : null;
+        const coaches = users ? users.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
+        const sessionCreator = coaches.find(u => u.id === session.createdBy);
 
         modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -3951,6 +3992,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                              <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Lugar / Campo</label>
                              <input name="lugar" value="${window.cleanLugar(session.lugar) || ''}" placeholder="Ej: Campo 1, Zubieta..." class="w-full p-3 border rounded-xl outline-none focus:ring-2 ring-blue-100">
                         </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2 px-1">Técnico Responsable</label>
+                            <select name="createdBy" class="w-full p-3 border rounded-xl bg-white focus:ring-2 ring-blue-100 outline-none text-xs font-bold uppercase shadow-sm">
+                                ${coaches.map(c => `<option value="${c.id}" ${session.createdBy == c.id ? 'selected' : ''}>${(c.name || c.nombre || 'Técnico').toUpperCase()}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-2 px-1">Técnicos Acompañantes</label>
+                            <div class="p-2 bg-slate-50 border rounded-xl max-h-[120px] overflow-y-auto custom-scrollbar space-y-1">
+                                ${coaches.map(u => `
+                                    <label class="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                        <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-100">
+                                        <span class="text-[9px] font-bold text-slate-600 uppercase truncate">${(u.name || u.nombre || 'Sin nombre').split(' ')[0]}</span>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="space-y-6">
@@ -3972,7 +4030,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 <i data-lucide="eye" class="w-3.5 h-3.5"></i>
                                             </button>
                                         </div>
-                                        <select id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
+                                        <select name="task-select-${num}" id="task-select-${num}" class="w-full p-3 text-xs font-bold border-none bg-white rounded-xl shadow-sm outline-none appearance-none cursor-pointer">
                                             <option value="">Seleccionar ejercicio...</option>
                                             ${tasks.map(t => `<option value="${t.id}" data-type="${t.type}" ${session.taskids && session.taskids[num-1] == t.id.toString() ? 'selected' : ''}>${t.name}</option>`).join('')}
                                         </select>
@@ -4010,21 +4068,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
-                    ${(users && db.userRole !== 'TECNICO CLUB CONVENIDO') ? `
-                        <div class="space-y-3">
-                            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">Compartir con el Staff</label>
-                            <div id="staff-share-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 custom-scrollbar">
-                                ${users.filter(u => u.id !== currentUser.id).map(u => `
-                                    <label class="flex items-center gap-3 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                        <input type="checkbox" name="sharedWith" value="${u.id}" ${session.sharedWith && session.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
-                                        <div class="flex-1">
-                                            <p class="text-[10px] font-bold text-slate-700">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
-                                        </div>
-                                    </label>
-                                `).join('') || '<p class="text-[10px] text-slate-400 italic">No hay otros usuarios registrados.</p>'}
-                            </div>
-                        </div>
-                    ` : ''}
 
                     <div class="flex gap-4 mt-8">
                         <button type="button" onclick="closeModal()" class="flex-1 py-4 bg-slate-100 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 transition-all">Cancelar</button>
@@ -4152,33 +4195,42 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('session-modal-form').onsubmit = async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
-            
-            const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
-            data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (session.equipoid || null);
-            
-            // Reconstruct data structure
-            const extra = {
-                eids: checkedTeamIds,
-                sw: formData.getAll('sharedWith'),
-            };
-            
-            data.taskids = [1,2,3,4,5,6].map(num => formData.get(`task-select-${num}`)).filter(x => x);
-            data.playerids = formData.getAll('playerids');
-            data.lugar = window.serializeLugarMetadata(data.lugar, extra);
-            delete data.equipoids;
-            delete data.sharedWith;
+            try {
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                const checkedTeamIds = Array.from(teamChecks).filter(c => c.checked).map(c => c.value);
+                data.equipoid = checkedTeamIds.length > 0 ? checkedTeamIds[0] : (session.equipoid || null);
+                
+                // Reconstruct data structure
+                const extra = {
+                    eids: checkedTeamIds,
+                    sw: formData.getAll('sharedWith'),
+                };
+                
+                data.taskids = [1,2,3,4,5,6].map(num => formData.get(`task-select-${num}`)).filter(x => x);
+                data.playerids = formData.getAll('playerids');
+                data.lugar = window.serializeLugarMetadata(data.lugar, extra);
+                
+                // Cleanup: Remove fields that don't belong to the DB schema
+                delete data.equipoids;
+                delete data.sharedWith;
+                [1,2,3,4,5,6].forEach(num => delete data[`task-select-${num}`]);
+                if (data.id) delete data.id; 
 
-            if (isEdit) {
-await db.update('sesiones', { ...data, id: session.id });
-            } else {
-                await db.add('sesiones', { ...data, createdBy: currentUser.id });
+                if (isEdit) {
+                    await db.update('sesiones', { ...data, id: session.id });
+                } else {
+                    await db.add('sesiones', data);
+                }
+                
+                window.customAlert('¡Éxito!', 'Sesión guardada correctamente.', 'success');
+                closeModal();
+                window.switchView('sesiones');
+            } catch (err) {
+                console.error("Error saving session:", err);
+                window.customAlert('Error', 'No se pudo guardar la sesión: ' + err.message, 'error');
             }
-            
-            window.customAlert('¡Éxito!', 'Sesión guardada correctamente.', 'success');
-            closeModal();
-            window.switchView('sesiones');
         };
     };
 
@@ -4189,11 +4241,13 @@ await db.update('sesiones', { ...data, id: session.id });
 
     window.duplicateSession = async (id) => {
         const session = await db.get('sesiones', id);
+        const currentUser = (await supabaseClient.auth.getUser()).data.user;
         if (session) {
             const copy = { ...session };
             delete copy.id;
             copy.titulo = (copy.titulo || '') + " (COPIA)";
             copy.fecha = new Date().toISOString().split('T')[0];
+            copy.createdBy = currentUser.id; // La copia pertenece a quien la duplica
             await window.renderSessionModal(copy);
         }
     };
@@ -4256,8 +4310,12 @@ await db.update('sesiones', { ...data, id: session.id });
             hora: '19:00',
             lugar: ' ||| {}',
             playerids: [],
-            equipoid: null
+            equipoid: null,
+            createdBy: userRes.data.user?.id
         };
+
+        const { data: profiles } = await supabaseClient.from('profiles').select('*');
+        const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
         const { base: baseLugar, extra: meta } = window.parseLugarMetadata(conv.lugar);
 
@@ -4279,6 +4337,26 @@ await db.update('sesiones', { ...data, id: session.id });
                         <div class="col-span-2">
                              <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Nombre del Ciclo / Evento</label>
                              <input name="nombre" value="${conv.nombre || ''}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-lg font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase" placeholder="Ej: Ciclo Tecnificación Mayo" required>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">Técnico Responsable</label>
+                            <select name="createdBy" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none text-xs uppercase shadow-sm">
+                                ${coaches.map(c => `<option value="${c.id}" ${conv.createdBy == c.id ? 'selected' : ''}>${(c.name || c.nombre || 'Técnico').toUpperCase()}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase mb-2 px-1">Técnicos Acompañantes</label>
+                            <div class="p-2 bg-slate-50 border border-slate-100 rounded-2xl max-h-[100px] overflow-y-auto custom-scrollbar">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-1">
+                                    ${coaches.map(u => `
+                                        <label class="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
+                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${meta.sw && meta.sw.includes(u.id) ? 'checked' : ''} class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-100">
+                                            <span class="text-[8px] font-black text-slate-600 uppercase truncate">${(u.name || u.nombre || 'Técnico').split(' ')[0]}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
                         </div>
                         
                         ${activeTab === 'Ciclo' ? `
@@ -4588,7 +4666,8 @@ await db.update('sesiones', { ...data, id: session.id });
                     hl: data.hl, 
                     hi: data.hi, 
                     hs: data.hs,
-                    fecha_fin: data.fecha_fin || null
+                    fecha_fin: data.fecha_fin || null,
+                    sw: formData.getAll('sharedWith')
                 };
 
                 if (activeTab === 'Ciclo') {
@@ -5175,10 +5254,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const selectedTeams = teams.filter(t => selectedTeamIds.includes(t.id.toString()));
             const pids = Array.isArray(conv.playerids) ? conv.playerids.map(String) : [];
             
-            // Map convocados with potential custom positions
+            // Map convocados with potential custom positions (store original for the select)
             const convocados = players.filter(p => pids.includes(p.id.toString())).map(p => {
                 const customPos = extra.pos && extra.pos[p.id];
-                return { ...p, posicion: customPos || p.posicion };
+                return { 
+                    ...p, 
+                    originalPos: p.posicion, 
+                    posicion: customPos || p.posicion, 
+                    customPos: customPos || null 
+                };
             });
             
             // If no teams selected, show all players initially in mgmt list
@@ -5613,8 +5697,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                                         <span class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</span>
                                                     </div>
                                                     <select onchange="window.updateConvPlayerPosition(${id}, '${p.id}', this.value)" class="bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border border-blue-100 outline-none hover:bg-blue-100 transition-all cursor-pointer">
-                                                        <option value="">${window.parsePosition(p.posicion)[0] || '--'}</option>
-                                                        ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${window.parsePosition(p.posicion).includes(pos) ? 'selected' : ''}>${pos}</option>`).join('')}
+                                                        <option value="" ${!p.customPos ? 'selected' : ''}>Original (${window.parsePosition(p.originalPos)[0] || '--'})</option>
+                                                        ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${p.customPos === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                                                     </select>
                                                 </div>
                                             </div>
@@ -5870,27 +5954,25 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
     window.updateConvPlayerPosition = async (convId, playerId, newPos) => {
         try {
-            // Obtener datos actuales de la convocatoria
             const { data: conv, error } = await supabaseClient.from("convocatorias").select("*").eq("id", convId).single();
             if (error) throw error;
 
-            let extra = {};
-            if (conv.lugar && conv.lugar.includes(" ||| ")) {
-                try { extra = JSON.parse(conv.lugar.split(" ||| ")[1]); } catch (e) {}
+            const { base: mainLugar, extra } = window.parseLugarMetadata(conv.lugar);
+            
+            if (!extra.pos) extra.pos = {};
+            if (newPos === "") {
+                delete extra.pos[playerId];
+            } else {
+                extra.pos[playerId] = newPos;
             }
 
-            if (!extra.pos) extra.pos = {};
-            extra.pos[playerId] = newPos;
-
-            const mainLugar = (conv.lugar || "").split(" ||| ")[0];
-            const updatedLugar = `${mainLugar} ||| ${JSON.stringify(extra)}`;
+            const updatedLugar = window.serializeLugarMetadata(mainLugar, extra);
 
             await db.update('convocatorias', { 
                 id: Number(convId),
                 lugar: updatedLugar
             });
 
-            // Refrescar la vista para actualizar el campograma
             window.viewConvocatoria(convId, 'pizarra');
         } catch (err) {
             console.error("Error updating player position:", err);
@@ -6656,8 +6738,8 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     };
 
                     (filteredPlayers || []).forEach(player => {
-                        const rawPos = player.posicion || '--';
-                        const choices = rawPos.split(',').map(c => c.trim());
+                        const choices = window.parsePosition(player.posicion);
+                        if (choices.length === 0) return;
                         
                         let validSlots = [];
                         activeFormation.positions.forEach((s, idx) => {
@@ -6933,6 +7015,12 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
     let currentConvocatoriaTeamId = 'all';
     let currentConvocatoriaLugar = 'all';
     let currentConvocatoriaTypeTab = 'Ciclo';
+    let currentConvocatoriaComunidad = 'all';
+
+    window.switchConvocatoriaComunidad = (com) => {
+        currentConvocatoriaComunidad = com;
+        window.renderView('convocatorias');
+    };
 
     window.updateConvocatoriaSearch = (val) => {
         convocatoriaSearchTerm = val;
@@ -6981,11 +7069,15 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
             const matchesLugar = currentConvocatoriaLugar === 'all' || sessionLugar.toUpperCase() === currentConvocatoriaLugar.toUpperCase();
 
+            // Filter by COMUNIDAD
+            const comunidad = window.getComunidadByLugar(c.lugar, c.nombre);
+            const matchesComunidad = currentConvocatoriaComunidad === 'all' || comunidad === currentConvocatoriaComunidad;
+
             const matchesSearch = !convocatoriaSearchTerm || 
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
             
-            return matchesType && matchesTeam && matchesLugar && matchesSearch;
+            return matchesType && matchesTeam && matchesLugar && matchesSearch && matchesComunidad;
         });
 
         const renderConvCard = (c) => {
@@ -6997,7 +7089,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
                             <div>
-                                <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                <div class="flex items-center gap-2">
+                                    <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                    <span class="text-[7px] font-black px-1.5 py-0.5 rounded ${window.getComunidadByLugar(c.lugar, c.nombre) === 'NAVARRA' ? 'bg-red-100 text-red-600' : (window.getComunidadByLugar(c.lugar, c.nombre) === 'LA RIOJA' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400')} uppercase whitespace-nowrap">${window.getComunidadByLugar(c.lugar, c.nombre)}</span>
+                                </div>
                                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
                             </div>
                         </div>
@@ -7029,7 +7124,10 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                         <div class="flex items-center gap-3">
                             <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg">${(c.nombre || 'C').substring(0,1).toUpperCase()}</div>
                             <div>
-                                <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                                    <span class="text-[7px] font-black px-1.5 py-0.5 rounded ${window.getComunidadByLugar(c.lugar, c.nombre) === 'NAVARRA' ? 'bg-red-50 text-red-600 border border-red-100' : (window.getComunidadByLugar(c.lugar, c.nombre) === 'LA RIOJA' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-400')} uppercase whitespace-nowrap">${window.getComunidadByLugar(c.lugar, c.nombre)}</span>
+                                </div>
                                 <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${c.tipo}</span>
                             </div>
                         </div>
@@ -7078,17 +7176,32 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
 
         container.innerHTML = `
             <div class="space-y-6 mb-8">
-                <!-- Type Tabs -->
-                <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
-                    <button onclick="window.switchConvocatoriaTypeTab('Ciclo')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Ciclo' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                        Ciclos
-                    </button>
-                    <button onclick="window.switchConvocatoriaTypeTab('Sesión')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Sesión' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                        Sesiones
-                    </button>
-                    <button onclick="window.switchConvocatoriaTypeTab('Zubieta')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Zubieta' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                        Zubieta
-                    </button>
+                <div class="flex flex-col md:flex-row gap-4">
+                    <!-- Type Tabs -->
+                    <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
+                        <button onclick="window.switchConvocatoriaTypeTab('Ciclo')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Ciclo' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Ciclos
+                        </button>
+                        <button onclick="window.switchConvocatoriaTypeTab('Sesión')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Sesión' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Sesiones
+                        </button>
+                        <button onclick="window.switchConvocatoriaTypeTab('Zubieta')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Zubieta' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Zubieta
+                        </button>
+                    </div>
+
+                    <!-- Comunidad Tabs -->
+                    <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
+                        <button onclick="window.switchConvocatoriaComunidad('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Todas
+                        </button>
+                        <button onclick="window.switchConvocatoriaComunidad('NAVARRA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            Navarra
+                        </button>
+                        <button onclick="window.switchConvocatoriaComunidad('LA RIOJA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
+                            La Rioja
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filters & Search Toolbar -->
@@ -8806,7 +8919,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                             <td class="px-8 py-4">
                                                 <div class="flex items-center gap-4">
                                                     <div class="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer" onclick="window.editPlayer('${p.id}')">
-                                                        <img src="${p.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                                        <img src="${p.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                                                     </div>
                                                     <div>
                                                         <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
@@ -9055,7 +9168,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-            data.posicion = formData.getAll('posicion'); // Save as array
+            data.posicion = formData.getAll('posicion').join(', '); // Save as clean string
             data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
             
             // Cast numeric fields
@@ -9197,7 +9310,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                 <div class="px-8 pb-8 -mt-12 relative z-10">
                     <div class="flex flex-col md:flex-row gap-8 items-start">
                         <div class="w-32 h-32 rounded-[2.5rem] bg-white p-1.5 shadow-2xl">
-                            <img src="${player.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='https://via.placeholder.com/150'">
+                            <img src="${player.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover rounded-[2rem]" onerror="this.src='https://via.placeholder.com/150'">
                         </div>
                         <div class="flex-1 pt-14">
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -9554,7 +9667,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                     <div class="flex flex-col md:flex-row gap-8">
                         <div class="w-full md:w-48 flex flex-col items-center gap-4">
                             <div class="w-40 h-40 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] flex items-center justify-center relative overflow-hidden group cursor-pointer">
-                                <img id="player-photo-preview" src="${player.foto || 'Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                <img id="player-photo-preview" src="${player.foto || 'Imagenes/Foto Jugador General.png'}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                                 <div class="absolute inset-0 bg-black/40 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <i data-lucide="camera" class="w-6 h-6 mb-1"></i>
                                     <span class="text-[8px] font-black uppercase">Cambiar</span>
@@ -9685,7 +9798,7 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.id = playerId;
-            data.posicion = formData.getAll('posicion'); // Save as array
+            data.posicion = formData.getAll('posicion').join(', '); // Save as clean string
             data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
 
             // Cast numeric fields
@@ -11267,10 +11380,18 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
             const teamsMap = Object.fromEntries(teams.map(t => [t.id, (t.nombre || 'EQUIPO').split(' ||| ')[0]]));
 
             let currentType = 'Sesión';
+            let currentPdfComunidad = 'all';
+
+            window.renderConvocatoriasPDFWithType = (type, com = currentPdfComunidad) => {
+                currentType = type;
+                currentPdfComunidad = com;
+                renderForm(type);
+            };
 
             const renderForm = (type) => {
                 const sortedConvs = [...convocatorias]
                     .filter(c => c.tipo === type)
+                    .filter(c => currentPdfComunidad === 'all' || window.getComunidadByLugar(c.lugar, c.nombre) === currentPdfComunidad)
                     .sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
 
                 container.innerHTML = `
@@ -11287,12 +11408,26 @@ window.updateModalPitch = async (formationId, id, type = 'Convocatoria') => {
                                 <button onclick="window.switchView('dashboard')" class="p-4 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 hover:text-slate-600 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                             </div>
 
-                            <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] mb-10 w-fit">
-                                ${['Ciclo', 'Sesión', 'Torneo'].map(t => `
-                                    <button onclick="window.renderConvocatoriasPDFWithType('${t}')" class="px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentType === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                                        ${t}S
+                            <div class="flex flex-col md:flex-row gap-4 mb-10">
+                                <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] w-fit">
+                                    ${['Ciclo', 'Sesión', 'Torneo'].map(t => `
+                                        <button onclick="window.renderConvocatoriasPDFWithType('${t}', '${currentPdfComunidad}')" class="px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentType === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                                            ${t}S
+                                        </button>
+                                    `).join('')}
+                                </div>
+
+                                <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] w-fit">
+                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'all')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                                        TODAS
                                     </button>
-                                `).join('')}
+                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'NAVARRA')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                                        NAVARRA
+                                    </button>
+                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'LA RIOJA')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
+                                        LA RIOJA
+                                    </button>
+                                </div>
                             </div>
 
                             <form id="convocatoria-pdf-form" class="space-y-10">
@@ -12424,25 +12559,66 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         const found = data.playersInPdf.filter(p => p.found);
         const missing = data.playersInPdf.filter(p => !p.found);
 
+        window.toggleImportExtraDates = (val) => {
+            const el = document.getElementById('import-extra-dates');
+            const f1 = document.getElementById('import-pdf-fecha').value;
+            const f2 = document.getElementById('import-pdf-fecha2');
+            const f3 = document.getElementById('import-pdf-fecha3');
+
+            if (val === 'Ciclo') {
+                el.classList.remove('hidden');
+                if (f1) {
+                    if (!f2.value) f2.value = f1;
+                    if (!f3.value) f3.value = f1;
+                }
+            } else {
+                el.classList.add('hidden');
+            }
+        };
+
         const dialogHtml = `
             <div class="p-8">
                 <div class="flex justify-between items-center mb-8">
                     <div>
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Revisar Importación</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Detectado desde PDF</p>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Detectado desde PDF/CSV</p>
                     </div>
                     <button onclick="window.closeCustomModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
 
-                <div class="space-y-6">
-                    <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                    <div class="space-y-4">
                         <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Detectada</label>
-                            <input type="date" id="import-pdf-fecha" value="${data.fecha}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título de la Convocatoria</label>
+                            <input type="text" id="import-pdf-nombre" value="CONVOCATORIA ${data.lugar.toUpperCase()}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 uppercase">
                         </div>
                         <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar / Título</label>
-                            <input type="text" id="import-pdf-lugar" value="${data.lugar}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo de Convocatoria</label>
+                            <select id="import-pdf-tipo" onchange="window.toggleImportExtraDates(this.value)" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                                <option value="Sesión">SESIÓN</option>
+                                <option value="Ciclo">CICLO</option>
+                                <option value="Zubieta">ZUBIETA</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Principal</label>
+                                <input type="date" id="import-pdf-fecha" value="${data.fecha}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Lugar / Título</label>
+                                <input type="text" id="import-pdf-lugar" value="${data.lugar}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
+                        </div>
+                        <div id="import-extra-dates" class="hidden grid grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Sesión 2</label>
+                                <input type="date" id="import-pdf-fecha2" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha Sesión 3</label>
+                                <input type="date" id="import-pdf-fecha3" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50">
+                            </div>
                         </div>
                     </div>
 
@@ -12474,7 +12650,6 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                 </div>
                             `).join('')}
                         </div>
-                        ${missing.length > 0 ? `<p class="mt-4 text-[9px] text-red-500 font-bold uppercase text-center">* Los jugadores en rojo no se añadirán a la convocatoria.</p>` : ''}
                     </div>
                 </div>
 
@@ -12495,23 +12670,40 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 return;
             }
 
+            const finalNombre = document.getElementById('import-pdf-nombre').value;
             const finalFecha = document.getElementById('import-pdf-fecha').value;
             const finalLugar = document.getElementById('import-pdf-lugar').value;
+            const finalTipo = document.getElementById('import-pdf-tipo').value;
+            const finalFecha2 = document.getElementById('import-pdf-fecha2').value;
+            const finalFecha3 = document.getElementById('import-pdf-fecha3').value;
             const playerIds = found.map(p => p.id.toString());
 
             try {
+                let metadata = {};
+                if (finalTipo === 'Ciclo') {
+                    if (finalFecha2) metadata.s2 = { f: finalFecha2 };
+                    if (finalFecha3) metadata.s3 = { f: finalFecha3 };
+                }
+                
+                const serializedLugar = window.serializeLugarMetadata(finalLugar, metadata);
+
                 const convData = {
-                    nombre: `CONVOCATORIA ${finalLugar}`,
+                    nombre: (finalNombre || `CONVOCATORIA ${finalLugar}`).toUpperCase(),
                     fecha: finalFecha,
-                    lugar: finalLugar,
-                    tipo: 'Sesión',
-                    equipoid: teamId,
+                    lugar: serializedLugar,
+                    tipo: finalTipo,
+                    equipoid: teamId ? Number(teamId) : null,
                     playerids: playerIds
                 };
 
                 await db.add('convocatorias', convData);
                 window.customAlert('Éxito', `Convocatoria creada con ${playerIds.length} jugadores.`, 'success');
                 window.closeCustomModal();
+                
+                // Cambiar al tab correspondiente para ver la nueva convocatoria
+                if (typeof currentConvocatoriaTypeTab !== 'undefined') {
+                    currentConvocatoriaTypeTab = finalTipo;
+                }
                 window.renderConvocatorias(document.getElementById('content-container'));
             } catch (err) {
                 window.customAlert('Error', err.message, 'error');
