@@ -180,7 +180,7 @@ class CoachDB {
                 const allowedFields = [
                     'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                     'lateralidad', 'nivel', 'sexo', 'notas', 
-                    'equipoConvenido', 'foto', 'club'
+                    'equipoConvenido', 'foto', 'club', 'escudo', 'categoria'
                 ];
 
                 Object.keys(data).forEach(key => {
@@ -240,11 +240,11 @@ class CoachDB {
             const allowedFields = [
                 'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                 'lateralidad', 'nivel', 'sexo', 'notas', 
-                'equipoConvenido', 'foto', 'club'
+                'equipoConvenido', 'foto', 'club', 'escudo', 'categoria'
             ];
 
             Object.keys(data).forEach(key => {
-                if (key !== 'id' && allowedFields.includes(key)) {
+                if (key !== 'id' && (storeName !== 'jugadores' || allowedFields.includes(key))) {
                     toUpdate[key] = data[key] === "" ? null : data[key];
                 }
             });
