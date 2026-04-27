@@ -2157,16 +2157,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let currentCalendarDate = new Date();
     let selectedCalendarDate = new Date();
+    window.currentCalendarView = window.currentCalendarView || 'mensual';
 
-    async function renderCalendario(container) {
+    window.renderCalendario = async function(container) {
         try {
             const allSessions = await db.getAll('sesiones');
             const allEventos = await db.getAll('eventos');
             const allConvocatorias = await db.getAll('convocatorias');
 
             const sessions = window.applyGlobalFilters(allSessions);
-            const eventos = window.applyGlobalFilters(allEventos);
-            const convocatorias = window.applyGlobalFilters(allConvocatorias);
+            const events = window.applyGlobalFilters(allEventos);
+            const convs = window.applyGlobalFilters(allConvocatorias);
 
             const year = currentCalendarDate.getFullYear();
             const month = currentCalendarDate.getMonth();
@@ -2178,9 +2179,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             let startingDay = firstDay === 0 ? 6 : firstDay - 1;
 
             const selDateStr = `${selectedCalendarDate.getFullYear()}-${String(selectedCalendarDate.getMonth() + 1).padStart(2, '0')}-${String(selectedCalendarDate.getDate()).padStart(2, '0')}`;
+            const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+            
             const selectedDaySessions = sessions.filter(s => s.fecha === selDateStr);
-            const selectedDayEvents = eventos.filter(e => e.fecha === selDateStr);
-            const selectedDayConvocatorias = convocatorias.filter(c => {
+            const selectedDayEvents = events.filter(e => e.fecha === selDateStr);
+            const selectedDayConvocatorias = convs.filter(c => {
                 const isMainDate = c.fecha === selDateStr;
                 let isExtraDate = false;
                 if (c.lugar && c.lugar.includes(' ||| ')) {
@@ -2203,72 +2206,204 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderCalendario(container);
             };
 
-            const selDateFullStr = selectedCalendarDate.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            window.goToToday = () => {
+                currentCalendarDate = new Date();
+                selectedCalendarDate = new Date();
+                const container = document.getElementById('content-container');
+                if (container) window.renderCalendario(container);
+            };
+
+            window.getCalendarItemColor = (item) => {
+                if (item.completada) return 'bg-slate-300';
+                if (item.type === 'sesion') return 'bg-red-500';
+                if (item.type === 'evento') return 'bg-emerald-500';
+                return (item.tipo || '').toUpperCase() === 'TORNEO' ? 'bg-slate-900' : 'bg-amber-400';
+            };
 
             container.innerHTML = `
             <div class="flex flex-col md:flex-row gap-6">
                 <!-- Left Column: Calendar Grid (80%) -->
                 <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col min-h-[600px]">
-                        <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md md:sticky top-[64px] z-20">
-                            <div class="flex items-center gap-3">
-                                <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-                                    <i data-lucide="calendar" class="w-6 h-6 text-white"></i>
+                        <!-- Cabecera Consolidada (Sticky) -->
+                        <div class="md:sticky top-[64px] z-30 bg-white rounded-t-3xl border-b overflow-hidden shadow-sm">
+                            <div class="p-6 flex justify-between items-center bg-white/50 backdrop-blur-md">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+                                        <i data-lucide="calendar" class="w-6 h-6 text-white"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none">${monthName} <span class="text-blue-600">${year}</span></h3>
+                                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Planificación de Sesiones</p>
+                                    </div>
                                 </div>
-                                <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${monthName} <span class="text-blue-600">${year}</span></h3>
+                                <div class="flex items-center gap-2">
+                                    <!-- Botón Hoy -->
+                                    <button onclick="window.goToToday()" class="mr-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-100 rounded-xl text-[10px] font-black uppercase outline-none hover:bg-blue-600 hover:text-white transition-all shadow-sm">Hoy</button>
+                                    
+                                    <!-- Vista Selector -->
+                                    <select onchange="window.currentCalendarView = this.value; window.renderCalendario(document.getElementById('content-container'))" class="p-2.5 bg-slate-100 border-none rounded-xl text-[10px] font-black uppercase outline-none focus:ring-2 ring-blue-100 cursor-pointer shadow-sm">
+                                        <option value="mensual" ${window.currentCalendarView === 'mensual' ? 'selected' : ''}>Mensual</option>
+                                        <option value="semanal" ${window.currentCalendarView === 'semanal' ? 'selected' : ''}>Semanal</option>
+                                        <option value="diaria" ${window.currentCalendarView === 'diaria' ? 'selected' : ''}>Diaria</option>
+                                    </select>
+                                    <div class="flex gap-2 ml-2">
+                                        <button id="prev-month" class="p-3 hover:bg-slate-50 rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-left" class="w-6 h-6 text-slate-600"></i></button>
+                                        <button id="next-month" class="p-3 hover:bg-slate-50 rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-right" class="w-6 h-6 text-slate-600"></i></button>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="flex gap-3 bg-slate-100/80 p-1.5 rounded-2xl">
-                                <button id="prev-month" class="p-3 hover:bg-white rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-left" class="w-6 h-6 text-slate-600"></i></button>
-                                <button id="next-month" class="p-3 hover:bg-white rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-right" class="w-6 h-6 text-slate-600"></i></button>
-                            </div>
+                            
+                            ${window.currentCalendarView === 'mensual' ? `
+                                <div class="grid grid-cols-7 border-t bg-white text-center">
+                                    ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="py-5 text-[11px] font-black text-slate-800 uppercase tracking-widest border-r border-slate-50 last:border-r-0">${d}</div>`).join('')}
+                                </div>
+                            ` : ''}
                         </div>
-                        <div class="mt-2 grid grid-cols-7 border-b bg-slate-50/50 text-center md:sticky top-[152px] z-10 backdrop-blur-sm">
-                            ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">${d}</div>`).join('')}
-                        </div>
-                        <div class="grid grid-cols-7 md:flex-1 auto-rows-fr min-h-[450px] md:min-h-0">
-                            ${Array(startingDay).fill('').map(() => `<div class="border-r border-b border-slate-50/50 bg-slate-50/10"></div>`).join('')}
-                            ${Array(daysInMonth).fill('').map((_, i) => {
-                const day = i + 1;
-                const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-                const daySessions = sessions.filter(s => s.fecha === dStr);
-                const dayEvents = eventos.filter(e => e.fecha === dStr);
-                const dayConcs = convocatorias.filter(c => {
-                    if (c.fecha === dStr) return true;
-                    if (c.lugar && c.lugar.includes(' ||| ')) {
-                        try {
-                            const extra = JSON.parse(c.lugar.split(' ||| ')[1]);
-                            return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
-                        } catch (e) { }
-                    }
-                    return false;
-                });
-
-                const combined = [
-                    ...daySessions.map(s => ({ ...s, color: 'bg-red-500' })),
-                    ...dayEvents.map(e => ({ ...e, color: 'bg-emerald-500' })),
-                    ...dayConcs.map(c => ({ ...c, color: (c.tipo || '').toUpperCase() === 'TORNEO' ? 'bg-slate-900' : 'bg-amber-400' }))
-                ];
-
-                const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
-                const todayDate = new Date();
-                todayDate.setHours(0, 0, 0, 0);
-                const cellDate = new Date(year, month, day);
-                const isPast = cellDate < todayDate;
-
-                return `
-                                    <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-4 min-h-0 cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-2 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''} ${isPast ? 'bg-slate-50/30' : ''}">
-                                        <div class="flex justify-between items-center w-full">
-                                            <span class="text-sm font-black transition-all ${isToday ? 'w-8 h-8 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-300 group-hover:text-blue-600')} ${isPast ? 'text-slate-300' : ''}">${day}</span>
+                        <div class="grid grid-cols-1 md:flex-1 p-1 pt-12">
+                            ${(window.currentCalendarView === 'mensual' || !window.currentCalendarView) ? `
+                                <div class="grid grid-cols-7 auto-rows-fr min-h-[500px] md:min-h-0 border-t border-slate-100 mt-6">
+                                    ${Array(startingDay).fill('').map(() => `<div class="border-r border-b border-slate-50/50 bg-slate-50/10"></div>`).join('')}
+                                    ${Array(daysInMonth).fill('').map((_, i) => {
+                                        const day = i + 1;
+                                        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                        const isToday = dStr === todayStr;
+                                        const isPast = new Date(dStr) < new Date(todayStr);
+                                        const sessionsOnDay = sessions.filter(s => s.fecha === dStr);
+                                        const eventsOnDay = events.filter(e => e.fecha === dStr);
+                                        const convsOnDay = convs.filter(c => {
+                                            if (c.fecha === dStr) return true;
+                                            if (c.lugar && c.lugar.includes(' ||| ')) {
+                                                try {
+                                                    const { extra } = window.parseLugarMetadata(c.lugar);
+                                                    return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
+                                                } catch (e) { }
+                                            }
+                                            return false;
+                                        });
+                                        const combined = [
+                                            ...sessionsOnDay.map(s => ({...s, type: 'sesion'})), 
+                                            ...eventsOnDay.map(e => ({...e, type: 'evento'})), 
+                                            ...convsOnDay.map(c => ({...c, type: 'convocatoria'}))
+                                        ].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+                                        
+                                        return `
+                                            <div onclick="window.updateSelectedCalendarDay('${dStr}')" class="border-r border-b border-slate-100/30 p-5 min-h-[130px] cursor-pointer hover:bg-blue-50/50 transition-all flex flex-col items-start gap-3 relative group ${isToday ? 'bg-blue-50/20' : ''} ${dStr === selDateStr ? 'bg-blue-50/50 ring-2 ring-blue-100 ring-inset' : ''} ${isPast ? 'bg-slate-50/30' : ''}">
+                                                <div class="flex justify-between items-center w-full mb-1">
+                                                    <span class="text-base font-black transition-all ${isToday ? 'w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center -ml-1 shadow-lg' : (dStr === selDateStr ? 'text-blue-600' : 'text-slate-900 group-hover:text-blue-600')} ${isPast ? 'opacity-40' : ''}">${day}</span>
+                                                </div>
+                                                <div class="w-full flex-1 overflow-hidden flex flex-wrap gap-1 mt-1 ${isPast ? 'opacity-40 grayscale' : ''}">
+                                                    ${combined.slice(0, 8).map(item => `
+                                                        <div class="w-2 h-2 rounded-full ${window.getCalendarItemColor(item)}" title="${item.titulo || item.nombre || 'Sin título'}"></div>
+                                                    `).join('')}
+                                                    ${combined.length > 8 ? `<span class="text-[7px] font-black text-slate-400">+${combined.length - 8}</span>` : ''}
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            ` : (window.currentCalendarView === 'semanal' ? (() => {
+                                // Lógica de Vista Semanal
+                                const startOfWeek = new Date(currentCalendarDate);
+                                const dayOfWeek = startOfWeek.getDay();
+                                const diff = startOfWeek.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+                                startOfWeek.setDate(diff);
+                                
+                                return `
+                                    <div class="flex-1 flex flex-col min-h-[600px] bg-slate-50/50">
+                                        <div class="grid grid-cols-7 border-b bg-white">
+                                            ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d, i) => {
+                                                const date = new Date(startOfWeek);
+                                                date.setDate(startOfWeek.getDate() + i);
+                                                const dStr = date.toISOString().split('T')[0];
+                                                const isToday = dStr === todayStr;
+                                                return `
+                                                    <div class="py-4 border-r border-slate-100 last:border-r-0 flex flex-col items-center gap-1 ${isToday ? 'bg-blue-50/30' : ''}">
+                                                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${d}</span>
+                                                        <span class="text-lg font-black ${isToday ? 'text-blue-600' : 'text-slate-800'}">${date.getDate()}</span>
+                                                    </div>
+                                                `;
+                                            }).join('')}
                                         </div>
-                                        <div class="w-full flex-1 overflow-hidden flex flex-wrap gap-1 mt-1 ${isPast ? 'opacity-40 grayscale' : ''}">
-                                            ${combined.slice(0, 8).map(item => `
-                                                <div class="w-2 h-2 rounded-full ${item.completada ? 'bg-slate-300' : item.color} shadow-sm"></div>
-                                            `).join('')}
-                                            ${combined.length > 8 ? `<div class="text-[7px] font-black text-slate-400 mt-0.5">+${combined.length - 8}</div>` : ''}
+                                        <div class="grid grid-cols-7 flex-1 divide-x divide-slate-100">
+                                            ${Array(7).fill('').map((_, i) => {
+                                                const date = new Date(startOfWeek);
+                                                date.setDate(startOfWeek.getDate() + i);
+                                                const dStr = date.toISOString().split('T')[0];
+                                                const daySessions = sessions.filter(s => s.fecha === dStr);
+                                                const dayEvents = events.filter(e => e.fecha === dStr);
+                                                const dayConvs = convs.filter(c => {
+                                                    if (c.fecha === dStr) return true;
+                                                    if (c.lugar && c.lugar.includes(' ||| ')) {
+                                                        try {
+                                                            const { extra } = window.parseLugarMetadata(c.lugar);
+                                                            return (extra.s2?.f === dStr) || (extra.s3?.f === dStr);
+                                                        } catch (e) { }
+                                                    }
+                                                    return false;
+                                                });
+                                                
+                                                const dayItems = [
+                                                    ...daySessions.map(s => ({...s, type: 'sesion'})), 
+                                                    ...dayEvents.map(e => ({...e, type: 'evento'})), 
+                                                    ...dayConvs.map(c => ({...c, type: 'convocatoria'}))
+                                                ].sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+                                                
+                                                return `
+                                                    <div class="p-2 space-y-2 bg-white/30 overflow-y-auto custom-scrollbar">
+                                                        ${dayItems.length > 0 ? dayItems.map(item => `
+                                                            <div onclick="${item.type === 'sesion' ? `window.viewSessionFicha('${item.id}')` : (item.type === 'evento' ? `window.viewEventoFicha('${item.id}')` : `window.viewConvocatoria('${item.id}')`)}" class="p-2 rounded-xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all cursor-pointer group">
+                                                                <div class="flex items-center gap-2 mb-1">
+                                                                    <div class="w-1.5 h-1.5 rounded-full ${window.getCalendarItemColor(item)}"></div>
+                                                                    <span class="text-[8px] font-black text-slate-400 uppercase tracking-tighter">${item.hora || '--:--'}</span>
+                                                                </div>
+                                                                <p class="text-[9px] font-black text-slate-700 uppercase leading-tight line-clamp-2">${item.titulo || item.nombre || 'Sin título'}</p>
+                                                            </div>
+                                                        `).join('') : `
+                                                            <div class="h-full flex items-center justify-center opacity-10">
+                                                                <i data-lucide="minus" class="w-4 h-4 text-slate-400"></i>
+                                                            </div>
+                                                        `}
+                                                    </div>
+                                                `;
+                                            }).join('')}
                                         </div>
                                     </div>
                                 `;
-            }).join('')}
+                            })() : (window.currentCalendarView === 'diaria' ? `
+                                <div class="p-10 flex flex-col items-center justify-center text-center bg-white rounded-3xl border border-slate-100 shadow-sm mx-4 my-8">
+                                    <div class="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center mb-6 shadow-inner">
+                                        <i data-lucide="calendar-check" class="w-10 h-10 text-blue-600"></i>
+                                    </div>
+                                    <h4 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Vista Diaria</h4>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2 mb-8">Agenda Detallada del Día</p>
+                                    
+                                    <div class="w-full max-w-md space-y-3">
+                                        ${combinedItems.length > 0 ? combinedItems.map(item => `
+                                            <div onclick="${item.type === 'sesion' ? `window.viewSessionFicha('${item.id}')` : (item.type === 'evento' ? `window.viewEventoFicha('${item.id}')` : `window.viewConvocatoria('${item.id}')`)}" class="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-white hover:shadow-xl transition-all cursor-pointer group">
+                                                <div class="w-12 h-12 rounded-xl bg-white flex flex-col items-center justify-center shadow-sm border border-slate-100 group-hover:bg-blue-600 transition-colors">
+                                                    <span class="text-[9px] font-black text-slate-400 uppercase group-hover:text-blue-100">${item.hora ? item.hora.split(':')[0] : '--'}</span>
+                                                    <span class="text-[9px] font-black text-slate-800 group-hover:text-white leading-none">${item.hora ? item.hora.split(':')[1] : '--'}</span>
+                                                </div>
+                                                <div class="flex-1 text-left">
+                                                    <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${item.titulo || item.nombre || 'Sin título'}</p>
+                                                    <div class="flex items-center gap-2 mt-1">
+                                                        <div class="w-2 h-2 rounded-full ${window.getCalendarItemColor(item)}"></div>
+                                                        <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">${item.type}</span>
+                                                    </div>
+                                                </div>
+                                                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-300 group-hover:text-blue-600"></i>
+                                            </div>
+                                        `).join('') : `
+                                            <div class="py-12 opacity-40">
+                                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">No hay tareas programadas</p>
+                                            </div>
+                                        `}
+                                    </div>
+                                </div>
+                            ` : ''))}
                         </div>
                     </div>
 
@@ -2426,11 +2561,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             container.querySelector('#prev-month').onclick = () => {
                 currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
-                renderCalendario(container);
+                window.renderCalendario(container);
             };
             container.querySelector('#next-month').onclick = () => {
                 currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
-                renderCalendario(container);
+                window.renderCalendario(container);
             };
 
             if (window.lucide) lucide.createIcons();
