@@ -2209,7 +2209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="flex flex-col md:flex-row gap-6">
                 <!-- Left Column: Calendar Grid (80%) -->
                 <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col min-h-[600px]">
-                        <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
+                        <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md md:sticky top-0 z-20">
                             <div class="flex items-center gap-3">
                                 <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
                                     <i data-lucide="calendar" class="w-6 h-6 text-white"></i>
@@ -2221,10 +2221,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <button id="next-month" class="p-3 hover:bg-white rounded-xl transition-all shadow-sm hover:scale-105"><i data-lucide="chevron-right" class="w-6 h-6 text-slate-600"></i></button>
                             </div>
                         </div>
-                        <div class="mt-2 grid grid-cols-7 border-b bg-slate-50/50 text-center sticky top-[108px] z-10 backdrop-blur-sm">
+                        <div class="mt-2 grid grid-cols-7 border-b bg-slate-50/50 text-center md:sticky top-[108px] z-10 backdrop-blur-sm">
                             ${['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(d => `<div class="py-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">${d}</div>`).join('')}
                         </div>
-                        <div class="grid grid-cols-7 flex-1 auto-rows-fr">
+                        <div class="grid grid-cols-7 md:flex-1 auto-rows-fr min-h-[450px] md:min-h-0">
                             ${Array(startingDay).fill('').map(() => `<div class="border-r border-b border-slate-50/50 bg-slate-50/10"></div>`).join('')}
                             ${Array(daysInMonth).fill('').map((_, i) => {
                 const day = i + 1;
@@ -2278,7 +2278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Agenda del Día</h4>
                             <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10 min-h-[200px]">
+                        <div class="md:flex-1 md:overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/10">
                             ${combinedItems.length > 0 ? (() => {
                     const todayDate = new Date();
                     todayDate.setHours(0, 0, 0, 0);
