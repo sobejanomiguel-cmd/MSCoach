@@ -555,9 +555,27 @@ window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
 
     // Visibility
     if (window.currentVisibilityMode === 'personal' && window.currentUser && !options.skipVisibility) {
-        filtered = filtered.filter(i =>
-            !i.createdBy || i.createdBy === window.currentUser.id
-        );
+        filtered = filtered.filter(i => {
+            // Case 1: Created by current user
+            if (!i.createdBy || i.createdBy === window.currentUser.id) return true;
+            
+            // Case 2: Shared with current user (metadata in 'lugar' field)
+            if (i.lugar && i.lugar.includes(' ||| ')) {
+                try {
+                    const { extra } = window.parseLugarMetadata(i.lugar);
+                    if (extra && extra.sw && Array.isArray(extra.sw) && extra.sw.includes(window.currentUser.id)) {
+                        return true;
+                    }
+                } catch (e) {}
+            }
+            
+            // Case 3: Shared with current user (direct property)
+            if (i.sharedWith && Array.isArray(i.sharedWith) && i.sharedWith.includes(window.currentUser.id)) {
+                return true;
+            }
+
+            return false;
+        });
     }
 
     // Season
@@ -2190,7 +2208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.innerHTML = `
             <div class="flex flex-col md:flex-row gap-6">
                 <!-- Left Column: Calendar Grid (80%) -->
-                <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col">
+                <div class="flex-[8] min-w-0 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col min-h-[600px]">
                         <div class="p-4 border-b flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-20">
                             <div class="flex items-center gap-3">
                                 <div class="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/30">
@@ -2255,7 +2273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
 
                     <!-- Right Column: Day Details (Agenda) -->
-                    <div class="flex-[3] w-full md:w-80 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 overflow-hidden flex flex-col md:h-[700px] min-h-[400px]">
+                    <div class="flex-[3] w-full md:w-80 bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/50 flex flex-col md:min-h-[700px] min-h-[400px]">
                         <div class="p-6 border-b bg-slate-50/30">
                             <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Agenda del Día</h4>
                             <p class="text-lg font-black text-slate-800 uppercase tracking-tight">${selDateFullStr}</p>
@@ -3857,10 +3875,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
 
         const isGlobal = window.currentVisibilityMode === 'global';
-        // En "Mi Espacio" (TODOS + Personal), solo mostramos las creadas por el usuario actual
+        // En "Mi Espacio" (TODOS + Personal), solo mostramos las creadas por el usuario actual o compartidas con él
         const mySessions = (isGlobal || sessionFilters.coach !== 'TODOS') ? sessions : sessions.filter(s => {
             if (!currentUser) return false;
-            return s.createdBy === currentUser.id;
+            if (s.createdBy === currentUser.id) return true;
+            const { extra } = window.parseLugarMetadata(s.lugar);
+            return extra.sw && Array.isArray(extra.sw) && extra.sw.includes(currentUser.id);
         });
 
         const uniqueLugares = [...new Set(mySessions.map(s => window.cleanLugar(s.lugar)).filter(Boolean))].sort();
@@ -3871,7 +3891,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (ex.eids) sessionTeamIds = [...new Set([...sessionTeamIds, ...ex.eids.map(String)])];
 
             const matchesTeam = sessionFilters.team === 'TODOS' || sessionTeamIds.includes(String(sessionFilters.team));
-            const matchesCoach = sessionFilters.coach === 'TODOS' || s.createdBy == sessionFilters.coach;
+            const matchesCoach = sessionFilters.coach === 'TODOS' || 
+                                (s.createdBy == sessionFilters.coach) || 
+                                (ex.sw && Array.isArray(ex.sw) && ex.sw.includes(sessionFilters.coach));
 
             const sessionLugar = window.cleanLugar(s.lugar) || 'SIN ASIGNAR';
             const matchesLugar = sessionFilters.lugar === 'TODOS' || sessionLugar.toUpperCase() === sessionFilters.lugar.toUpperCase();
@@ -7282,10 +7304,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return (b.hora || '').localeCompare(a.hora || '');
             });
 
-        // En "Mi Espacio" (Personal + Todas), solo lo que yo he creado
+        // En "Mi Espacio" (Personal + Todas), solo lo que yo he creado o compartido conmigo
         const myConvs = (isGlobal || currentCoachId !== 'all') ? convs : convs.filter(c => {
             if (!currentUser) return false;
-            return c.createdBy === currentUser.id;
+            if (c.createdBy === currentUser.id) return true;
+            const { extra } = window.parseLugarMetadata(c.lugar);
+            return extra.sw && Array.isArray(extra.sw) && extra.sw.includes(currentUser.id);
         });
 
         const teams = window.getSortedTeams(await db.getAll('equipos'));
@@ -7299,8 +7323,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Filter by TYPE tab
             const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
 
-            // Filter by COACH (Direct column use)
-            const matchesCoach = currentCoachId === 'all' || (c.createdBy && c.createdBy.toString() === currentCoachId.toString());
+            // Filter by COACH (Direct column use + Shared with)
+            const matchesCoach = currentCoachId === 'all' || 
+                                (c.createdBy && c.createdBy.toString() === currentCoachId.toString()) ||
+                                (extra.sw && Array.isArray(extra.sw) && extra.sw.map(String).includes(currentCoachId.toString()));
 
             // Filter by Team tab
             const matchesTeam = currentConvocatoriaTeamId === 'all' ||

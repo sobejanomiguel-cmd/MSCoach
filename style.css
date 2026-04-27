@@ -337,12 +337,14 @@ body.role-tecnico .nav-link[data-view="jugadores"] {
 
     /* Fix scrolling in content container */
     #content-container {
-        display: block !important;
+        display: flex !important; /* Changed from block to flex to maintain flex-1 behavior */
+        flex-direction: column;
         overflow-y: auto !important;
         overflow-x: hidden !important;
         -webkit-overflow-scrolling: touch;
-        height: auto !important;
-        min-height: calc(100dvh - 120px);
+        flex: 1 !important; /* Ensure it takes available space */
+        height: auto !important; /* Keep auto for natural flow if needed, but flex-1 should rule */
+        min-height: 0; /* Allow shrinking */
     }
 }
 
