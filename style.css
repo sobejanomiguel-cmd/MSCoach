@@ -33,7 +33,7 @@ body {
 
 @media (min-width: 768px) {
     body {
-        overflow: hidden;
+        overflow: auto; /* Changed from hidden to allow scroll at high zoom */
     }
 }
 
