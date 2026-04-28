@@ -186,15 +186,22 @@ class CoachDB {
         if (supabaseClient) {
             try {
                 console.log(`[DB] Adding to ${storeName}:`, data);
-                const toInsert = {};
-                const allowedFields = [
+                const playerFields = [
                     'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                     'lateralidad', 'nivel', 'sexo', 'notas', 
-                    'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria'
+                    'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia'
+                ];
+                
+                const asistenciaFields = [
+                    'fecha', 'equipoid', 'nombre', 'tipo', 'lugar', 'players', 'sessions', 'convocatoriaid', 'observaciones'
                 ];
 
                 Object.keys(data).forEach(key => {
-                    if (key !== 'id' && (storeName !== 'jugadores' || allowedFields.includes(key))) {
+                    const isAllowed = (storeName === 'jugadores' && playerFields.includes(key)) ||
+                                      (storeName === 'asistencia' && asistenciaFields.includes(key)) ||
+                                      (storeName !== 'jugadores' && storeName !== 'asistencia');
+                    
+                    if (key !== 'id' && isAllowed) {
                         toInsert[key] = data[key] === "" ? null : data[key];
                     }
                 });
@@ -244,17 +251,23 @@ class CoachDB {
         const id = Number(data.id);
         
         if (supabaseClient && id && !localOnly) {
-            console.log(`[DB] Updating ${storeName} ID ${id}:`, data);
             const toUpdate = {};
-            // Lista de campos conocidos para evitar errores de schema cache
-            const allowedFields = [
+            const playerFields = [
                 'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                 'lateralidad', 'nivel', 'sexo', 'notas', 
-                'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria'
+                'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia'
+            ];
+            
+            const asistenciaFields = [
+                'fecha', 'equipoid', 'nombre', 'tipo', 'lugar', 'players', 'sessions', 'convocatoriaid', 'observaciones'
             ];
 
             Object.keys(data).forEach(key => {
-                if (key !== 'id' && (storeName !== 'jugadores' || allowedFields.includes(key))) {
+                const isAllowed = (storeName === 'jugadores' && playerFields.includes(key)) ||
+                                  (storeName === 'asistencia' && asistenciaFields.includes(key)) ||
+                                  (storeName !== 'jugadores' && storeName !== 'asistencia'); // Others remain open for now
+                                  
+                if (key !== 'id' && isAllowed) {
                     toUpdate[key] = data[key] === "" ? null : data[key];
                 }
             });

@@ -11056,9 +11056,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tbody class="divide-y divide-slate-50">
                                 ${filteredAttendance.length > 0 ? filteredAttendance.map(a => {
                 const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
-                const pls = a.players || a.data || {};
-                const total = Object.keys(pls).length;
-                const present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                let total = 0;
+                let present = 0;
+
+                if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+                    a.sessions.forEach(s => {
+                        const sPls = s.players || {};
+                        total += Object.keys(sPls).length;
+                        present += Object.values(sPls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                    });
+                } else {
+                    const pls = a.players || a.data || {};
+                    total = Object.keys(pls).length;
+                    present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                }
                 const percent = total > 0 ? Math.round((present / total) * 100) : 0;
 
                 return `
@@ -11070,7 +11081,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     </div>
                                                     <div>
                                                         <p class="text-xs font-black text-slate-800 uppercase">${new Date(a.fecha).toLocaleDateString('es', { month: 'short', year: 'numeric' })}</p>
-                                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">${a.fecha}</p>
+                                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-2">
+                                                            ${a.fecha}
+                                                            <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-md font-black text-[7px] border border-blue-100/50">
+                                                                ${a.tipo === 'Ciclo' ? Math.round(total/3) : total} CONV.
+                                                            </span>
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </td>
@@ -11089,7 +11105,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
                                                         <div class="h-full ${percent > 80 ? 'bg-emerald-500' : (percent > 50 ? 'bg-amber-500' : 'bg-rose-500')}" style="width: ${percent}%"></div>
                                                     </div>
-                                                    <span class="text-[8px] font-bold text-slate-400">${present}/${total}</span>
+                                                    <div class="flex flex-col items-center">
+                                                        <span class="text-[8px] font-black text-slate-500 uppercase tracking-tight">
+                                                            ${a.tipo === 'Ciclo' ? `${Math.round(total/3)} Convocados` : `${total} Convocados`}
+                                                        </span>
+                                                        <span class="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">Asistentes: ${present}</span>
+                                                    </div>
                                                 </div>
                                             </td>
                                             <td class="px-8 py-5 text-right">
@@ -11190,10 +11211,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 ${sortedTeams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
                             </select>
                         </div>
+                        ${type === 'Ciclo' ? `
+                        <div class="space-y-4 col-span-1 md:col-span-2 bg-blue-50/50 p-6 rounded-[2rem] border border-blue-100">
+                            <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">Fechas del Ciclo (3 Sesiones)</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="space-y-2">
+                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 1</label>
+                                    <input name="fecha_1" type="date" required value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 2</label>
+                                    <input name="fecha_2" type="date" required value="${new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 3</label>
+                                    <input name="fecha_3" type="date" required value="${new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
+                                </div>
+                            </div>
+                        </div>
+                        ` : `
                         <div class="space-y-2">
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
                             <input name="fecha" type="date" required value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
                         </div>
+                        `}
                     </div>
                     <div class="space-y-2">
                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre / Título (Opcional)</label>
@@ -11236,42 +11277,84 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.showAsistenciaRosterModal = async (preData) => {
+        const isCiclo = preData.tipo === 'Ciclo';
         const players = await db.getAll('jugadores');
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
 
-        // Find players called via Convocatorias
-        const matchingConvs = allConvs.filter(c =>
-            String(c.equipoid) === String(preData.equipoid) &&
-            c.fecha === preData.fecha
-        );
+        // State for cycle sessions if applicable
+        let currentSessionIdx = 1;
+        const sessionDates = isCiclo ? [preData.fecha_1, preData.fecha_2, preData.fecha_3] : [preData.fecha];
+        const sessionData = isCiclo ? [{}, {}, {}] : [{}]; // Will store { pid: status } for each session
 
-        // Find players called via Sesiones
-        const matchingSesiones = allSesiones.filter(s =>
-            String(s.equipoid) === String(preData.equipoid) &&
-            s.fecha === preData.fecha
-        );
-
-        // Collect all expected player IDs
-        const expectedPlayerIds = new Set();
-        matchingConvs.forEach(c => (c.playerids || []).forEach(id => expectedPlayerIds.add(String(id))));
-        matchingSesiones.forEach(s => (s.playerids || []).forEach(id => expectedPlayerIds.add(String(id))));
-
-        let teamPlayers = players.filter(p => p.equipoid?.toString() === preData.equipoid.toString());
-        let filteredPlayers = expectedPlayerIds.size > 0
-            ? teamPlayers.filter(p => expectedPlayerIds.has(String(p.id)))
-            : teamPlayers;
+        // Find players for the team
+        let teamPlayers = players.filter(p => p.equipoid?.toString() === preData.equipoid.toString()).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
         if (teamPlayers.length === 0) {
             window.customAlert('Atención', 'No hay jugadores vinculados a este equipo.', 'warning');
             return;
         }
 
-        const renderTable = (list) => {
+        // For Cycles, we use a single "expected" set for all sessions based on the cycle's start date
+        const cycleExpected = new Set();
+        if (isCiclo) {
+            allConvs.filter(c => String(c.equipoid) === String(preData.equipoid) && c.tipo === 'Ciclo').forEach(c => {
+                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
+                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
+                if (dates.includes(preData.fecha_1)) {
+                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
+                }
+            });
+        }
+
+        const getExpectedPlayersForDate = (date) => {
+            if (isCiclo) return cycleExpected;
+            const expected = new Set();
+            allConvs.filter(c => String(c.equipoid) === String(preData.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
+                if (c.fecha === date) {
+                    (c.playerids || []).forEach(id => expected.add(String(id)));
+                }
+            });
+            allSesiones.filter(s => String(s.equipoid) === String(preData.equipoid) && s.fecha === date)
+                .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
+            return expected;
+        };
+
+        // Initialize sessionData with 'asiste' for all expected players if it's a Cycle
+        if (isCiclo) {
+            sessionDates.forEach((date, idx) => {
+                const expected = getExpectedPlayersForDate(date);
+                expected.forEach(pid => {
+                    sessionData[idx][pid] = 'asiste';
+                });
+            });
+        }
+
+        let currentExpected = getExpectedPlayersForDate(sessionDates[0]);
+        let showingFull = false;
+
+        const renderTable = () => {
             const tbody = document.getElementById('asistencia-roster-tbody');
             if (!tbody) return;
 
-            tbody.innerHTML = list.map(p => `
+            const date = sessionDates[currentSessionIdx - 1];
+            const expected = getExpectedPlayersForDate(date);
+            const currentStatus = sessionData[currentSessionIdx - 1];
+
+            // If it's a Cycle, we strictly show only invited players (unless showingFull is true)
+            // If it's NOT a Cycle, we show everyone or filtered depending on context
+            let list;
+            if (isCiclo) {
+                list = showingFull ? teamPlayers : teamPlayers.filter(p => expected.has(String(p.id)));
+                // Fallback: if no convocados found and not showing full, show empty list as requested
+            } else {
+                list = showingFull ? teamPlayers : (expected.size > 0 ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers);
+            }
+
+            tbody.innerHTML = list.map(p => {
+                const statusRaw = currentStatus[p.id] || 'asiste';
+                const status = (typeof statusRaw === 'object' ? (statusRaw.status || 'asiste') : statusRaw);
+                return `
                 <tr class="group hover:bg-slate-50 transition-all">
                     <td class="py-4 px-2">
                         <div class="flex items-center gap-3">
@@ -11280,38 +11363,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div>
                                 <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
-                                ${expectedPlayerIds.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
+                                ${expected.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
                             </div>
                         </div>
                     </td>
                     <td class="py-4">
                         <div class="flex flex-col gap-2">
-                            <!-- Selector Principal -->
                             <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
                                 <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" value="asiste" checked 
-                                           onclick="window.setAttendance('${p.id}', 'asiste')" class="hidden">
-                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all">Asiste</div>
+                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} 
+                                           onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'asiste')" class="hidden">
+                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
                                 </label>
                                 <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" 
-                                           onclick="window.setAttendance('${p.id}', 'falta')" class="hidden">
-                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50">Ausente</div>
+                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' ? 'checked' : ''} 
+                                           onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'falta')" class="hidden">
+                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
                                 </label>
                             </div>
-                            <!-- Sub-opciones de Ausente -->
-                                <div id="abs-opts-${p.id}" class="hidden grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
+                            <div id="abs-opts-${p.id}" class="${status === 'asiste' || status === 'presente' ? 'hidden' : ''} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
                                 ${[
-                    { v: 'falta', l: 'Sin Mot.' },
-                    { v: 'zubieta', l: 'Zub' },
-                    { v: 'estudios', l: 'Est' },
-                    { v: 'lesion', l: 'Les' },
-                    { v: 'enfermo', l: 'Enf' },
-                    { v: 'seleccion', l: 'Sel' }
-                ].map(opt => `
+                        { v: 'falta', l: 'Sin Mot.' },
+                        { v: 'zubieta', l: 'Zub' },
+                        { v: 'estudios', l: 'Est' },
+                        { v: 'lesion', l: 'Les' },
+                        { v: 'enfermo', l: 'Enf' },
+                        { v: 'seleccion', l: 'Sel' }
+                    ].map(opt => `
                                     <label class="flex-1">
-                                        <input type="radio" name="p_${p.id}" value="${opt.v}" 
-                                               onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
+                                        <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
+                                               onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', '${opt.v}')" class="hidden peer">
                                         <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
                                     </label>
                                 `).join('')}
@@ -11319,7 +11400,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
+
+            const statusText = document.getElementById('roster-status-text');
+            if (statusText) {
+                statusText.textContent = `Sesión ${currentSessionIdx} de 3 - ${sessionDates[currentSessionIdx-1]} (${list.length} Convocados)`;
+            }
+        };
+
+        window.updateCycleStatus = (sessionIdx, pid, status) => {
+            sessionData[sessionIdx][pid] = status;
+            // Update UI feedback immediately without full re-render if possible, but for simplicity we can just update the button classes
+            const asBtn = document.getElementById(`as-btn-${pid}`);
+            const ausBtn = document.getElementById(`aus-btn-${pid}`);
+            const opts = document.getElementById(`abs-opts-${pid}`);
+            
+            if (status === 'asiste') {
+                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
+                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+                if (opts) opts.classList.add('hidden');
+            } else {
+                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
+                if (opts) opts.classList.remove('hidden');
+            }
+        };
+
+        window.switchCycleTab = (idx) => {
+            currentSessionIdx = idx;
+            document.querySelectorAll('.cycle-tab-btn').forEach((btn, i) => {
+                if (i + 1 === idx) {
+                    btn.className = 'cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
+                } else {
+                    btn.className = 'cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
+                }
+            });
+            document.getElementById('current-session-date-display').textContent = sessionDates[idx - 1];
+            renderTable();
         };
 
         modalContainer.innerHTML = `
@@ -11327,28 +11444,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="flex justify-between items-center mb-6 shrink-0">
                     <div>
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Pasar Lista</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${preData.nombre || 'Control Diario'} - ${preData.fecha}</p>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${preData.nombre || 'Control Diario'} - ${preData.tipo}</p>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
                 </div>
 
+                ${isCiclo ? `
+                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100">
+                    <button onclick="window.switchCycleTab(1)" class="cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
+                    <button onclick="window.switchCycleTab(2)" class="cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
+                    <button onclick="window.switchCycleTab(3)" class="cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
+                </div>
+                ` : ''}
+
                 <div class="mb-6 flex items-center justify-between gap-4 p-4 bg-slate-50 rounded-[2rem] border border-slate-100 animate-in slide-in-from-top duration-300">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 shadow-sm">
-                            <i data-lucide="users" class="w-5 h-5"></i>
-                        </div>
-                        <div>
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mostrando</p>
-                            <p id="roster-status-text" class="text-xs font-black text-slate-800 uppercase italic">
-                                ${expectedPlayerIds.size > 0 ? `Solo convocados (${filteredPlayers.length})` : `Toda la plantilla (${teamPlayers.length})`}
-                            </p>
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i>
+                            <p id="current-session-date-display" class="text-xs font-black text-slate-800 uppercase italic">${sessionDates[0]}</p>
                         </div>
                     </div>
-                    ${expectedPlayerIds.size > 0 ? `
-                        <button id="toggle-full-roster" class="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest shadow-sm">
-                            Ver Plantilla Completa
-                        </button>
-                    ` : ''}
+                    <button id="toggle-full-roster" class="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest shadow-sm">
+                        Ver Plantilla Completa
+                    </button>
                 </div>
 
                 <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -11372,51 +11490,64 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
 
-        renderTable(filteredPlayers);
+        renderTable();
         if (window.lucide) lucide.createIcons();
 
-        const toggleBtn = document.getElementById('toggle-full-roster');
-        if (toggleBtn) {
-            let showingFull = false;
-            toggleBtn.onclick = () => {
-                showingFull = !showingFull;
-                if (showingFull) {
-                    renderTable(teamPlayers);
-                    toggleBtn.textContent = 'Ver Solo Convocados';
-                    document.getElementById('roster-status-text').textContent = `Toda la plantilla (${teamPlayers.length})`;
-                } else {
-                    renderTable(filteredPlayers);
-                    toggleBtn.textContent = 'Ver Plantilla Completa';
-                    document.getElementById('roster-status-text').textContent = `Solo convocados (${filteredPlayers.length})`;
-                }
-            };
-        }
+        document.getElementById('toggle-full-roster').onclick = () => {
+            showingFull = !showingFull;
+            document.getElementById('toggle-full-roster').textContent = showingFull ? 'Ver Solo Convocados' : 'Ver Plantilla Completa';
+            renderTable();
+        };
 
         document.getElementById('save-asistencia-btn').onclick = async () => {
-            const playersStatus = {};
-            const tbody = document.getElementById('asistencia-roster-tbody');
-            const checkedRadios = tbody.querySelectorAll('input[type="radio"]:checked');
-
-            checkedRadios.forEach(radio => {
-                const pid = radio.name.replace('p_', '');
-                playersStatus[pid] = radio.value;
+            // Before saving, ensure only expected players are saved for Cycles if desired
+            // Or at least initialize correctly
+            sessionData.forEach((data, idx) => {
+                const date = sessionDates[idx];
+                const expected = getExpectedPlayersForDate(date);
+                
+                // For Cycles, we ONLY want to save expected players if any are defined
+                // If no one is invited for that date, we save no one for that session
+                const list = isCiclo ? teamPlayers.filter(p => expected.has(String(p.id))) : (expected.size > 0 ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers);
+                
+                // Clear out data for players not in the list to be strict
+                const filteredData = {};
+                list.forEach(p => {
+                    filteredData[p.id] = data[p.id] || 'asiste';
+                });
+                sessionData[idx] = filteredData;
             });
-
-            if (Object.keys(playersStatus).length === 0) {
-                window.customAlert('Error', 'No hay jugadores en la lista.', 'error');
-                return;
-            }
 
             const payload = {
                 ...preData,
-                players: playersStatus
+                fecha: sessionDates[0],
+                players: sessionData[0],
+                sessions: isCiclo ? sessionData.map((data, i) => ({ fecha: sessionDates[i], players: data })) : null
             };
 
             try {
-                await db.add('asistencia', payload);
+                const saved = await db.add('asistencia', payload);
+                
+                // Sync to players record (Optimized Parallel)
+                try {
+                    const players = await db.getAll('jugadores');
+                    const aid = String(saved.id);
+                    const syncPromises = Object.entries(payload.players || {}).map(async ([pid, status]) => {
+                        const p = players.find(pl => String(pl.id) === String(pid));
+                        if (p) {
+                            const currentAsis = p.asistencia || {};
+                            currentAsis[aid] = status;
+                            return db.update('jugadores', { id: p.id, asistencia: currentAsis });
+                        }
+                    });
+                    await Promise.all(syncPromises);
+                } catch (syncErr) {
+                    console.warn("Error syncing attendance to player records:", syncErr);
+                }
+
                 window.customAlert('¡Éxito!', 'Control de asistencia guardado.', 'success');
                 closeModal();
-                if (currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
+                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
             } catch (err) {
                 window.customAlert('Error', 'No se pudo guardar la asistencia.', 'error');
             }
@@ -11430,8 +11561,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const pls = a.players || a.data || {};
-        const pids = Object.keys(pls);
+        const isCiclo = a.tipo === 'Ciclo' && Array.isArray(a.sessions);
+        let currentSessionIdx = 1;
 
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
@@ -11440,45 +11571,117 @@ document.addEventListener('DOMContentLoaded', async () => {
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
 
-        const matchingConvs = allConvs.filter(c =>
-            String(c.equipoid) === String(a.equipoid) &&
-            c.fecha === a.fecha
-        );
-        const matchingSesiones = allSesiones.filter(s =>
-            String(s.equipoid) === String(a.equipoid) &&
-            s.fecha === a.fecha
-        );
+        const cycleExpected = new Set();
+        if (isCiclo) {
+            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo === 'Ciclo').forEach(c => {
+                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
+                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
+                if (dates.includes(a.fecha)) {
+                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
+                }
+            });
+        }
 
-        const expectedPlayerIds = new Set();
-        matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
-        matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        const getExpectedPlayersForDate = (date) => {
+            if (isCiclo) return cycleExpected;
+            const expected = new Set();
+            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
+                if (c.fecha === date) (c.playerids || []).forEach(id => expected.add(String(id)));
+            });
+            allSesiones.filter(s => String(s.equipoid) === String(a.equipoid) && s.fecha === date)
+                .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
+            return expected;
+        };
 
-        const teamPlayers = players.filter(p => {
-            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
-            const isConvocado = expectedPlayerIds.has(String(p.id));
+        const renderSessionContent = () => {
+            const session = isCiclo ? a.sessions[currentSessionIdx - 1] : a;
+            // Fallback for dates if they are missing in the session object
+            let date = session.fecha;
+            if (!date && isCiclo) {
+                const baseDate = new Date(a.fecha);
+                date = new Date(baseDate.getTime() + (currentSessionIdx - 1) * 7 * 86400000).toISOString().split('T')[0];
+            } else if (!date) {
+                date = a.fecha;
+            }
 
-            // Si hay registros de asistencia específicos, solo mostramos esos
-            if (pids.length > 0) return isRecorded;
+            const expected = getExpectedPlayersForDate(date);
+            const pls = session.players || session.data || {};
+            const pids = Object.keys(pls);
 
-            // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
-            if (expectedPlayerIds.size > 0) return isConvocado;
+            const teamPlayers = players.filter(p => {
+                const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
+                if (isCiclo) return expected.has(String(p.id));
+                return isRecorded;
+            }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
-            // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
-            return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            const statsHtml = ['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion', 'viaje', 'vacaciones'].map(status => {
+                const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
+                const labelMap = { 'asiste': 'PRESENTES', 'falta': 'SIN MOTIVO', 'zubieta': 'ZUBIETA', 'estudios': 'ESTUDIOS', 'lesion': 'LESION.', 'enfermo': 'ENFERMOS', 'seleccion': 'SELECCIÓN', 'viaje': 'VIAJE COL.', 'vacaciones': 'VACACIONES' };
+                const colorMap = { 'asiste': 'emerald', 'falta': 'rose', 'zubieta': 'indigo', 'estudios': 'blue', 'lesion': 'amber', 'enfermo': 'orange', 'seleccion': 'sky', 'viaje': 'cyan', 'vacaciones': 'purple' };
+                return `
+                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
+                        <p class="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-1">${labelMap[status]}</p>
+                        <p class="text-lg font-black text-${colorMap[status]}-600">${count}</p>
+                    </div>
+                `;
+            }).join('');
 
-        const mContainer = document.getElementById('modal-container');
-        const mOverlay = document.getElementById('modal-overlay');
+            const tableHtml = teamPlayers.map(p => {
+                const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
+                const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' : (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
+                let statusLabel = 'Presente';
+                let colorClass = 'bg-emerald-100 text-emerald-700';
+                if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
+                else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
+                else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
+                else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
+                else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
+                else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
+                else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
+                else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
+                else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
 
-        if (!mContainer || !mOverlay) return;
+                return `
+                    <tr class="group hover:bg-slate-50 transition-all">
+                        <td class="py-3">
+                            <p class="font-bold text-slate-700 uppercase transition-all">${p.nombre} ${p.apellidos || ''}</p>
+                            <p class="text-[8px] font-bold text-blue-500 uppercase tracking-tight">${p.equipoConvenido || 'Sin Club'}</p>
+                        </td>
+                        <td class="py-3 text-right">
+                            <span class="px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${colorClass}">${statusLabel}</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
 
-        mContainer.innerHTML = `
+            return { statsHtml, tableHtml, date: session.fecha };
+        };
+
+        window.switchViewSessionTab = (idx) => {
+            currentSessionIdx = idx;
+            const content = renderSessionContent();
+            document.getElementById('session-stats-container').innerHTML = content.statsHtml;
+            document.getElementById('session-table-body').innerHTML = content.tableHtml;
+            document.getElementById('view-session-date-display').textContent = content.date;
+            
+            document.querySelectorAll('.view-session-tab-btn').forEach((btn, i) => {
+                if (i + 1 === idx) {
+                    btn.className = 'view-session-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
+                } else {
+                    btn.className = 'view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
+                }
+            });
+        };
+
+        const initialContent = renderSessionContent();
+
+        modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] flex flex-col">
                 <div class="flex justify-between items-start mb-8 shrink-0">
                     <div>
                         <div class="flex items-center gap-3 mb-1">
                             <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'General'}</span>
-                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${a.fecha}</span>
+                            <span id="view-session-date-display" class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${initialContent.date}</span>
                         </div>
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre?.split(' ||| ')[0] || 'Control de Asistencia'}</h3>
                         ${a.lugar ? `<p class="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-1 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${window.parseLugarMetadata(a.lugar).base}</p>` : ''}
@@ -11491,39 +11694,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
-                    ${['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion', 'viaje', 'vacaciones'].map(status => {
-            const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
-            const labelMap = {
-                'asiste': 'PRESENTES',
-                'falta': 'SIN MOTIVO',
-                'zubieta': 'ZUBIETA',
-                'estudios': 'ESTUDIOS',
-                'lesion': 'LESION.',
-                'enfermo': 'ENFERMOS',
-                'seleccion': 'SELECCIÓN',
-                'viaje': 'VIAJE COL.',
-                'vacaciones': 'VACACIONES'
-            };
-            const colorMap = {
-                'asiste': 'emerald',
-                'falta': 'rose',
-                'zubieta': 'indigo',
-                'estudios': 'blue',
-                'lesion': 'amber',
-                'enfermo': 'orange',
-                'seleccion': 'sky',
-                'viaje': 'cyan',
-                'vacaciones': 'purple'
-            };
+                ${isCiclo ? `
+                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100 shrink-0">
+                    <button onclick="window.switchViewSessionTab(1)" class="view-session-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
+                    <button onclick="window.switchViewSessionTab(2)" class="view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
+                    <button onclick="window.switchViewSessionTab(3)" class="view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
+                </div>
+                ` : ''}
 
-            return `
-                            <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
-                                <p class="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-1">${labelMap[status]}</p>
-                                <p class="text-lg font-black text-${colorMap[status]}-600">${count}</p>
-                            </div>
-                        `;
-        }).join('')}
+                <div id="session-stats-container" class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
+                    ${initialContent.statsHtml}
                 </div>
 
                 <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -11534,37 +11714,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <th class="text-right py-3 font-black text-slate-400 uppercase tracking-widest">Estado</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${teamPlayers.map(p => {
-            const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
-            const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' :
-                (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
-
-            let statusLabel = 'Presente';
-            let colorClass = 'bg-emerald-100 text-emerald-700';
-
-            if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
-            else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
-            else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
-            else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
-            else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
-            else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
-            else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
-            else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
-            else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
-
-            return `
-                                    <tr class="group hover:bg-slate-50 transition-all">
-                                        <td class="py-3">
-                                            <p class="font-bold text-slate-700 uppercase transition-all">${p.nombre} ${p.apellidos || ''}</p>
-                                            <p class="text-[8px] font-bold text-blue-500 uppercase tracking-tight">${p.equipoConvenido || 'Sin Club'}</p>
-                                        </td>
-                                        <td class="py-3 text-right">
-                                            <span class="px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${colorClass}">${statusLabel}</span>
-                                        </td>
-                                    </tr>
-                                `;
-        }).join('')}
+                        <tbody id="session-table-body" class="divide-y divide-slate-50">
+                            ${initialContent.tableHtml}
                         </tbody>
                     </table>
                 </div>
@@ -11572,60 +11723,227 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         if (window.lucide) lucide.createIcons();
-        mOverlay.classList.add('active');
+        modalOverlay.classList.add('active');
     };
 
     window.editAsistencia = async (id) => {
         const a = await db.get('asistencia', Number(id) || id);
         if (!a) return;
 
-        const pls = a.players || a.data || {};
-        const pids = Object.keys(pls);
+        const isCiclo = a.tipo === 'Ciclo';
+        let currentSessionIdx = 1;
+        const sessionDates = isCiclo && Array.isArray(a.sessions) ? a.sessions.map(s => s.fecha) : [a.fecha];
+        const sessionData = isCiclo && Array.isArray(a.sessions) ? a.sessions.map(s => ({ ...s.players })) : [{ ...a.players }];
+
+        // Improved session dates initialization for cycles
+        if (isCiclo) {
+            // If sessions array exists, try to get dates from there
+            if (Array.isArray(a.sessions) && a.sessions.length > 0) {
+                for (let i = 0; i < 3; i++) {
+                    if (a.sessions[i] && a.sessions[i].fecha) {
+                        sessionDates[i] = a.sessions[i].fecha;
+                    } else {
+                        // Estimate date based on previous session or base date
+                        const prevDate = i > 0 ? new Date(sessionDates[i-1]) : new Date(a.fecha);
+                        sessionDates[i] = new Date(prevDate.getTime() + (i > 0 ? 7 : 0) * 86400000).toISOString().split('T')[0];
+                    }
+                }
+            } else {
+                // No sessions array, generate from base date
+                const baseDate = new Date(a.fecha);
+                for (let i = 0; i < 3; i++) {
+                    sessionDates[i] = new Date(baseDate.getTime() + i * 7 * 86400000).toISOString().split('T')[0];
+                }
+            }
+
+            // Also check if they are all identical (fix for previous bug)
+            if (sessionDates[0] === sessionDates[1] && sessionDates[1] === sessionDates[2]) {
+                const baseDate = new Date(sessionDates[0]);
+                sessionDates[1] = new Date(baseDate.getTime() + 7 * 86400000).toISOString().split('T')[0];
+                sessionDates[2] = new Date(baseDate.getTime() + 14 * 86400000).toISOString().split('T')[0];
+            }
+        }
+
+        if (isCiclo) {
+            while (sessionData.length < 3) sessionData.push({});
+        }
+
         const players = await db.getAll('jugadores');
+        const pids = new Set();
+        sessionData.forEach(data => Object.keys(data).forEach(id => pids.add(String(id))));
+
+        let teamPlayers = players.filter(p => pids.has(String(p.id)) || (a.equipoid && String(p.equipoid) === String(a.equipoid))).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
         const allConvs = await db.getAll('convocatorias');
         const allSesiones = await db.getAll('sesiones');
 
-        const matchingConvs = allConvs.filter(c =>
-            String(c.equipoid) === String(a.equipoid) &&
-            c.fecha === a.fecha
-        );
-        const matchingSesiones = allSesiones.filter(s =>
-            String(s.equipoid) === String(a.equipoid) &&
-            s.fecha === a.fecha
-        );
+        const cycleExpected = new Set();
+        if (isCiclo) {
+            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo === 'Ciclo').forEach(c => {
+                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
+                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
+                if (dates.includes(a.fecha)) {
+                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
+                }
+            });
+        }
 
-        const expectedPlayerIds = new Set();
-        matchingConvs.forEach(c => (c.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
-        matchingSesiones.forEach(s => (s.playerids || []).forEach(pid => expectedPlayerIds.add(String(pid))));
+        const getExpectedPlayersForDate = (date) => {
+            if (isCiclo) return cycleExpected;
+            const expected = new Set();
+            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
+                if (c.fecha === date) (c.playerids || []).forEach(id => expected.add(String(id)));
+            });
+            if (!isCiclo) {
+                allSesiones.filter(s => String(s.equipoid) === String(a.equipoid) && s.fecha === date)
+                    .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
+            }
+            return expected;
+        };
 
-        const teamPlayers = players.filter(p => {
-            const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
-            const isConvocado = expectedPlayerIds.has(String(p.id));
+        // If it's a Cycle and we don't have full session data yet, pre-fill with 'asiste' for convocados
+        if (isCiclo) {
+            sessionDates.forEach((date, idx) => {
+                const expected = getExpectedPlayersForDate(date);
+                expected.forEach(pid => {
+                    if (!sessionData[idx][pid]) sessionData[idx][pid] = 'asiste';
+                });
+            });
+        }
 
-            // Si hay registros de asistencia específicos, solo mostramos esos
-            if (pids.length > 0) return isRecorded;
+        const renderTable = () => {
+            const tbody = document.getElementById('edit-asistencia-tbody');
+            if (!tbody) return;
 
-            // Si no hay registros aún pero hay una convocatoria vinculada, mostramos los convocados
-            if (expectedPlayerIds.size > 0) return isConvocado;
+            const date = sessionDates[currentSessionIdx - 1];
+            const expected = getExpectedPlayersForDate(date);
+            const currentStatus = sessionData[currentSessionIdx - 1];
 
-            // Fallback: si no hay nada de lo anterior (error o registro huérfano), mostramos los del equipo
-            return a.equipoid && p.equipoid?.toString() === a.equipoid?.toString();
-        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            // Filter team players to only show those in expected for Cycles
+            const list = isCiclo ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers;
 
-        const mContainer = document.getElementById('modal-container');
-        const mOverlay = document.getElementById('modal-overlay');
+            tbody.innerHTML = list.map(p => {
+                const statusRaw = currentStatus[p.id] || 'asiste';
+                const status = (typeof statusRaw === 'object' ? (statusRaw.status || 'asiste') : statusRaw);
+                return `
+                <tr class="group hover:bg-slate-50 transition-all">
+                    <td class="py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
+                                ${window.parsePosition(p.posicion)[0] || 'PJ'}
+                            </div>
+                            <div>
+                                <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
+                                ${expected.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-4">
+                        <div class="flex flex-col gap-2">
+                            <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                                <label class="flex-1">
+                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} 
+                                           onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'asiste')" class="hidden">
+                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
+                                </label>
+                                <label class="flex-1">
+                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' ? 'checked' : ''} 
+                                           onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'falta')" class="hidden">
+                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
+                                </label>
+                            </div>
+                            <div id="abs-opts-${p.id}" class="${status === 'asiste' || status === 'presente' ? 'hidden' : ''} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
+                                ${[
+                        { v: 'falta', l: 'S.M' },
+                        { v: 'zubieta', l: 'Zub' },
+                        { v: 'estudios', l: 'Est' },
+                        { v: 'lesion', l: 'Les' },
+                        { v: 'enfermo', l: 'Enf' },
+                        { v: 'viaje', l: 'Viaj' },
+                        { v: 'vacaciones', l: 'Vac' }
+                    ].map(opt => `
+                                    <label class="flex-1">
+                                        <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
+                                               onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', '${opt.v}')" class="hidden peer">
+                                        <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
 
-        if (!mContainer || !mOverlay) return;
+            // Update count badges
+            const countBadge = document.getElementById('edit-asistencia-count-badge');
+            if (countBadge) countBadge.textContent = `${list.length} CONV.`;
 
-        mContainer.innerHTML = `
+            const editStatusText = document.getElementById('edit-roster-status-text');
+            if (editStatusText) {
+                if (isCiclo) {
+                    editStatusText.textContent = `Sesión ${currentSessionIdx} de 3 - ${sessionDates[currentSessionIdx-1]} (${list.length} Convocados)`;
+                } else {
+                    editStatusText.textContent = `${list.length} Convocados`;
+                }
+            }
+        };
+
+        window.updateEditCycleStatus = (sessionIdx, pid, status) => {
+            sessionData[sessionIdx][pid] = status;
+            const asBtn = document.getElementById(`as-btn-${pid}`);
+            const ausBtn = document.getElementById(`aus-btn-${pid}`);
+            const opts = document.getElementById(`abs-opts-${pid}`);
+            if (status === 'asiste') {
+                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
+                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+                if (opts) opts.classList.add('hidden');
+            } else {
+                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
+                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
+                if (opts) opts.classList.remove('hidden');
+            }
+        };
+
+        window.switchEditCycleTab = (idx) => {
+            currentSessionIdx = idx;
+            document.querySelectorAll('.edit-cycle-tab-btn').forEach((btn, i) => {
+                if (i + 1 === idx) {
+                    btn.className = 'edit-cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
+                } else {
+                    btn.className = 'edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
+                }
+            });
+            const dateInput = document.getElementById('edit-session-date-input');
+            if (dateInput) dateInput.value = sessionDates[idx - 1];
+            renderTable();
+        };
+
+        modalContainer.innerHTML = `
             <div class="p-8 max-h-[90vh] flex flex-col">
                 <div class="flex justify-between items-center mb-8 shrink-0">
                     <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre?.split(' ||| ')[0] || 'Sesión'} - ${a.fecha}</p>
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
+                            <span id="edit-asistencia-count-badge" class="px-3 py-1 bg-blue-50 text-blue-600 rounded-xl font-black text-[10px] border border-blue-100 shadow-sm shadow-blue-50">-- CONV.</span>
+                        </div>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre?.split(' ||| ')[0] || 'Sesión'} - ${a.tipo}</p>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                ${isCiclo ? `
+                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100 shrink-0">
+                    <button onclick="window.switchEditCycleTab(1)" class="edit-cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
+                    <button onclick="window.switchEditCycleTab(2)" class="edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
+                    <button onclick="window.switchEditCycleTab(3)" class="edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
+                </div>
+                ` : ''}
+
+                <div class="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 shrink-0">
+                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Fecha de Sesión</label>
+                    <input id="edit-session-date-input" type="date" value="${sessionDates[0]}" 
+                           onchange="sessionDates[currentSessionIdx-1] = this.value; renderTable()"
+                           class="w-full md:w-64 p-3 bg-white border border-slate-100 rounded-xl font-bold outline-none text-xs">
                 </div>
 
                 <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
@@ -11636,52 +11954,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-50">
-                            ${teamPlayers.map(p => {
-            const status = pls[p.id]?.status || pls[p.id] || 'asiste';
-            return `
-                                    <tr>
-                                        <td class="py-4">
-                                            <div class="flex items-center gap-3">
-                                                <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                                    ${window.parsePosition(p.posicion)[0] || 'PJ'}
-                                                </div>
-                                                <span class="text-xs font-black text-slate-700 uppercase">${p.nombre} ${p.apellidos || ''}</span>
-                                            </div>
-                                        </td>
-                                        <td class="py-4">
-                                            <div class="flex flex-col gap-2">
-                                                <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                                                    <label class="flex-1">
-                                                        <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'asiste')" class="hidden">
-                                                        <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
-                                                    </label>
-                                                    <label class="flex-1">
-                                                        <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden">
-                                                        <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
-                                                    </label>
-                                                </div>
-                                                <div id="abs-opts-${p.id}" class="${status !== 'asiste' && status !== 'presente' && status !== 'N/A' ? '' : 'hidden'} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
-                                                    ${[
-                    { v: 'falta', l: 'S.M' },
-                    { v: 'zubieta', l: 'Zub' },
-                    { v: 'estudios', l: 'Est' },
-                    { v: 'lesion', l: 'Les' },
-                    { v: 'enfermo', l: 'Enf' },
-                    { v: 'viaje', l: 'Viaj' },
-                    { v: 'vacaciones', l: 'Vac' }
-                ].map(opt => `
-                                                        <label class="flex-1">
-                                                            <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} onclick="window.setAttendance('${p.id}', 'falta')" class="hidden peer">
-                                                            <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
-                                                        </label>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `;
-        }).join('')}
+                        <tbody id="edit-asistencia-tbody" class="divide-y divide-slate-50">
+                            <!-- Content rendered here -->
                         </tbody>
                     </table>
                 </div>
@@ -11693,26 +11967,48 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
 
+        renderTable();
         if (window.lucide) lucide.createIcons();
 
         document.getElementById('update-asistencia-btn').onclick = async () => {
-            const playersStatus = {};
-            teamPlayers.forEach(p => {
-                const checked = mContainer.querySelector(`input[name="p_${p.id}"]:checked`);
-                playersStatus[p.id] = checked ? checked.value : 'asiste';
-            });
+            const updatePayload = {
+                ...a,
+                id: Number(a.id),
+                fecha: sessionDates[0],
+                players: sessionData[0],
+                sessions: isCiclo ? sessionData.map((data, i) => ({ fecha: sessionDates[i], players: data })) : null
+            };
 
             try {
-                await db.update('asistencia', { ...a, players: playersStatus });
-                window.customAlert('¡Actualizado!', 'Registro de asistencia actualizado.', 'success');
-                window.viewAsistenciaDetail(id);
-                window.renderAsistencia(document.getElementById('content-container'));
+                await db.update('asistencia', updatePayload);
+                
+                // Sync to players record (Optimized Parallel)
+                try {
+                    const players = await db.getAll('jugadores');
+                    const aid = String(a.id);
+                    const syncPromises = Object.entries(updatePayload.players || {}).map(async ([pid, status]) => {
+                        const p = players.find(pl => String(pl.id) === String(pid));
+                        if (p) {
+                            const currentAsis = p.asistencia || {};
+                            currentAsis[aid] = status;
+                            return db.update('jugadores', { id: p.id, asistencia: currentAsis });
+                        }
+                    });
+                    await Promise.all(syncPromises);
+                } catch (syncErr) {
+                    console.warn("Error syncing attendance update to player records:", syncErr);
+                }
+
+                window.customAlert('¡Éxito!', 'Registro actualizado.', 'success');
+                window.viewAsistenciaDetail(a.id);
+                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
             } catch (err) {
-                window.customAlert('Error', 'No se pudo actualizar la asistencia.', 'error');
+                console.error("Update error detailed:", err);
+                window.customAlert('Error', 'No se pudo actualizar el registro.', 'error');
             }
         };
 
-        mOverlay.classList.add('active');
+        modalOverlay.classList.add('active');
     };
 
     window.deleteAsistencia = async (id) => {
