@@ -9653,7 +9653,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         const playerConvs = filterBySeason(rawPlayerConvs);
-        const playerAttendance = filterBySeason(attendance.filter(a => a.players && a.players[playerId]));
+        // Enhanced filter: Search for player in main players object OR within any session of a cycle
+        const playerAttendance = filterBySeason(attendance.filter(a => {
+            const hasInMain = (a.players && a.players[playerId]) || (a.data && a.data[playerId]);
+            if (hasInMain) return true;
+            
+            // Also search inside cycle sessions
+            if (a.sessions && Array.isArray(a.sessions)) {
+                return a.sessions.some(s => s.players && s.players[playerId]);
+            }
+            return false;
+        }));
 
         const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
 
@@ -9670,19 +9680,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             attendanceSummary[status] = (attendanceSummary[status] || 0) + 1;
         });
 
-        // 1. Process explicit attendance records only (as requested: "que salgan las asistencias, no las convocatorias")
+        // 1. Process explicit attendance records
         playerAttendance.forEach(a => {
-            if (a.convocatoriaid) {
-                const c = convocatorias.find(cv => cv.id == a.convocatoriaid);
-                const score = (c?.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
-                const item = { ...a, rating: score };
+            const c = a.convocatoriaid ? convocatorias.find(cv => cv.id == a.convocatoriaid) : null;
+            const score = (c?.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
+            const isCiclo = a.tipo === 'Ciclo' || c?.tipo === 'Ciclo' || (a.sessions && Array.isArray(a.sessions));
+            const item = { ...a, rating: score };
 
-                if (c?.tipo === 'Ciclo') categorized.ciclos.push(item);
-                else if (c?.tipo === 'Torneo') categorized.torneos.push(item);
-                else if (c?.tipo === 'Sesión' || c?.tipo === 'Zubieta') categorized.sesiones.push(item);
-            } else {
-                categorized.sesiones.push(a);
+            if (isCiclo && a.sessions && Array.isArray(a.sessions)) {
+                // Split Cycle into its individual sessions for the player profile
+                a.sessions.forEach((sess, sIdx) => {
+                    if (sess.players && sess.players[playerId]) {
+                        categorized.ciclos.push({
+                            ...item,
+                            fecha: sess.fecha || a.fecha,
+                            players: sess.players,
+                            sesionLabel: `S${sIdx + 1}`
+                        });
+                    }
+                });
             }
+            else if (a.tipo === 'Torneo' || c?.tipo === 'Torneo') categorized.torneos.push(item);
+            else if (a.tipo === 'Sesión' || a.tipo === 'Zubieta' || c?.tipo === 'Sesión' || c?.tipo === 'Zubieta') categorized.sesiones.push(item);
+            else categorized.sesiones.push(item); // Default fallback
         });
 
         const playerTorneoConvs = rawPlayerConvs.filter(c => c.tipo === 'Torneo');
@@ -9704,6 +9724,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             cicloPercent: teamStats.totalCiclos > 0 ? Math.round((categorized.ciclos.length / teamStats.totalCiclos) * 100) : 0
         };
 
+        modalContainer.className = "bg-white w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
         modalContainer.innerHTML = `
             <div class="relative overflow-hidden">
                 <div class="h-32 bg-gradient-to-r from-blue-600 to-indigo-700 relative">
@@ -9995,12 +10016,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
                         else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
                         else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
+                        else if (statusValue === 'enfermo') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Enfermo</span>';
+                        else if (statusValue === 'viaje') badge = '<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Viaje</span>';
+                        else if (statusValue === 'medico') badge = '<span class="px-2 py-1 bg-sky-50 text-sky-600 rounded-lg text-[8px] font-black uppercase">Médico</span>';
+                        else if (statusValue === 'familia') badge = '<span class="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-[8px] font-black uppercase">Familia</span>';
+                        else if (statusValue === 'otros') badge = '<span class="px-2 py-1 bg-slate-50 text-slate-600 rounded-lg text-[8px] font-black uppercase">Otros</span>';
                         else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
                         return `
                                                                 <tr class="hover:bg-slate-50/50 transition-colors">
                                                                     <td class="py-4 px-4">
-                                                                        <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Evento'}</p>
+                                                                        <div class="flex items-center gap-2">
+                                                                            <p class="text-[10px] font-bold text-slate-700 uppercase">${a.nombre?.split(' ||| ')[0] || 'Evento'}</p>
+                                                                            ${a.sesionLabel ? `<span class="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[7px] font-black">${a.sesionLabel}</span>` : ''}
+                                                                        </div>
                                                                         <p class="text-[8px] font-black text-slate-400 uppercase">${a.fecha}</p>
                                                                     </td>
                                                                     <td class="py-4 px-4 text-center">${badge}</td>
@@ -11107,9 +11136,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     </div>
                                                     <div class="flex flex-col items-center">
                                                         <span class="text-[8px] font-black text-slate-500 uppercase tracking-tight">
-                                                            ${a.tipo === 'Ciclo' ? `${Math.round(total/3)} Convocados` : `${total} Convocados`}
+                                                            ${a.tipo === 'Ciclo' ? `${Object.keys(a.sessions?.[0]?.players || a.players || {}).length} Convocados` : `${total} Convocados`}
                                                         </span>
-                                                        <span class="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">Asistentes: ${present}</span>
+                                                        <span class="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">
+                                                            ${a.tipo === 'Ciclo' ? `Asistencias: ${present} / ${total}` : `Asistentes: ${present}`}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </td>
@@ -11311,6 +11342,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isCiclo) return cycleExpected;
             const expected = new Set();
             allConvs.filter(c => String(c.equipoid) === String(preData.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
+                // Initialize and Repair sessionData for editing
+                if (isCiclo) {
+                    sessionData = a.sessions || [];
+                    // Repair: ensure 3 sessions and all players are present
+                    for (let i = 0; i < 3; i++) {
+                        if (!sessionData[i]) sessionData[i] = { fecha: a.fecha, players: {} };
+                        if (!sessionData[i].players) sessionData[i].players = {};
+                        
+                        // Inherit players from the main list if missing
+                        const sessionPlayers = sessionData[i].players;
+                        list.forEach(p => {
+                            if (!sessionPlayers[p.id]) {
+                                sessionPlayers[p.id] = 'asiste';
+                            }
+                        });
+                        
+                        // Ensure format is {fecha, players}
+                        sessionData[i] = { 
+                            fecha: sessionData[i].fecha || a.fecha, 
+                            players: sessionPlayers 
+                        };
+                    }
+                    // Normalize back to just the players object array for the internal logic
+                    sessionData = sessionData.map(s => s.players);
+                }
+        
                 if (c.fecha === date) {
                     (c.playerids || []).forEach(id => expected.add(String(id)));
                 }
@@ -11383,12 +11440,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                             <div id="abs-opts-${p.id}" class="${status === 'asiste' || status === 'presente' ? 'hidden' : ''} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
                                 ${[
-                        { v: 'falta', l: 'Sin Mot.' },
+                        { v: 'falta', l: 'S.M' },
                         { v: 'zubieta', l: 'Zub' },
                         { v: 'estudios', l: 'Est' },
                         { v: 'lesion', l: 'Les' },
                         { v: 'enfermo', l: 'Enf' },
-                        { v: 'seleccion', l: 'Sel' }
+                        { v: 'medico', l: 'Med' },
+                        { v: 'familia', l: 'Fam' },
+                        { v: 'viaje', l: 'Viaj' },
+                        { v: 'otros', l: 'Otr' }
                     ].map(opt => `
                                     <label class="flex-1">
                                         <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
@@ -11510,10 +11570,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // If no one is invited for that date, we save no one for that session
                 const list = isCiclo ? teamPlayers.filter(p => expected.has(String(p.id))) : (expected.size > 0 ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers);
                 
-                // Clear out data for players not in the list to be strict
                 const filteredData = {};
                 list.forEach(p => {
-                    filteredData[p.id] = data[p.id] || 'asiste';
+                    // Use existing data or default to 'asiste'
+                    const existing = data[p.id];
+                    filteredData[p.id] = existing || 'asiste';
                 });
                 sessionData[idx] = filteredData;
             });
@@ -11859,8 +11920,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         { v: 'estudios', l: 'Est' },
                         { v: 'lesion', l: 'Les' },
                         { v: 'enfermo', l: 'Enf' },
+                        { v: 'medico', l: 'Med' },
+                        { v: 'familia', l: 'Fam' },
                         { v: 'viaje', l: 'Viaj' },
-                        { v: 'vacaciones', l: 'Vac' }
+                        { v: 'otros', l: 'Otr' }
                     ].map(opt => `
                                     <label class="flex-1">
                                         <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
