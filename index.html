@@ -151,50 +151,80 @@
                     <i data-lucide="alarm-clock" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
                     <span class="font-medium">Eventos / Agenda</span>
                 </a>
-
-                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Entrenamiento</div>
-                <a href="#" data-view="sesiones" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="calendar" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Sesiones</span>
-                </a>
-                <a href="#" data-view="tareas" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="clipboard-list" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Tareas</span>
-                </a>
                 <a href="#" data-view="campograma" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
                     <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><circle cx="12" cy="12" r="3"/></svg>
                     <span class="font-medium">Pizarra Táctica</span>
                 </a>
 
-                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Club</div>
-                <a href="#" data-view="jugadores" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="contact" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Jugadores</span>
-                </a>
-                <a href="#" data-view="equipos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="users" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Equipos</span>
-                </a>
-                <a href="#" data-view="clubes" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="building-2" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Clubes</span>
-                </a>
-                <a href="#" data-view="convocatorias" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="scroll-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Convocatorias</span>
-                </a>
-                <a href="#" data-view="convocatorias-pdf" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="file-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium text-xs">Convocatorias PDF Indiv.</span>
-                </a>
-                <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="check-square" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Asistencia</span>
-                </a>
-                <a href="#" data-view="torneos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="trophy" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Torneos</span>
-                </a>
+                <!-- DIRECTORIO -->
+                <div class="nav-section mt-4 active">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                        <span>Directorio</span>
+                        <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
+                    </button>
+                    <div class="section-content px-1">
+                        <a href="#" data-view="tareas" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="clipboard-list" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Tareas</span>
+                        </a>
+                        <a href="#" data-view="jugadores" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="contact" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Jugadores</span>
+                        </a>
+                        <a href="#" data-view="clubes" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="building-2" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Clubes</span>
+                        </a>
+                        <a href="#" data-view="equipos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="users" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Equipos</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- GESTIÓN -->
+                <div class="nav-section active">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                        <span>Gestión</span>
+                        <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
+                    </button>
+                    <div class="section-content px-1">
+                        <a href="#" data-view="sesiones" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="calendar" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Sesiones</span>
+                        </a>
+                        <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="check-square" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Asistencia</span>
+                        </a>
+                        <a href="#" data-view="torneos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="trophy" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Torneos</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- CONVOCATORIAS -->
+                <div class="nav-section active">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                        <span>Convocatorias</span>
+                        <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
+                    </button>
+                    <div class="section-content px-1">
+                        <a href="#" data-view="convocatorias" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="scroll-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Gestión Convocatorias</span>
+                        </a>
+                        <a href="#" data-view="prevision-clubes" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="mail" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">PREVISIÓN CLUBES</span>
+                        </a>
+                        <a href="#" data-view="convocatorias-pdf" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
+                            <i data-lucide="file-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
+                            <span class="font-medium">Convocatorias PDF</span>
+                        </a>
+                    </div>
+                </div>
 
                 <div class="div-perfil-personal space-y-1">
                     <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Cuenta</div>

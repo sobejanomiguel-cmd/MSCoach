@@ -196,6 +196,7 @@ class CoachDB {
                     'fecha', 'equipoid', 'nombre', 'tipo', 'lugar', 'players', 'sessions', 'convocatoriaid', 'observaciones'
                 ];
 
+                const toInsert = {};
                 Object.keys(data).forEach(key => {
                     const isAllowed = (storeName === 'jugadores' && playerFields.includes(key)) ||
                                       (storeName === 'asistencia' && asistenciaFields.includes(key)) ||

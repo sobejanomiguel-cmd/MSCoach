@@ -346,3 +346,25 @@ body.role-tecnico .nav-link[data-view="jugadores"] {
 body.modal-open {
     overflow: hidden;
 }
+/* Nav Collapsible */
+.section-content {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-section.active .section-content {
+    max-height: 500px;
+    opacity: 1;
+    margin-bottom: 0.5rem;
+}
+
+.nav-section.active i.chevron-icon {
+    transform: rotate(180deg);
+}
+
+.section-header {
+    cursor: pointer;
+    user-select: none;
+}

@@ -7,6 +7,97 @@ window.debounce = (fn, delay) => {
     };
 };
 
+window.toggleNavSection = (btn) => {
+    const section = btn.closest('.nav-section');
+    if (section) {
+        section.classList.toggle('active');
+    }
+};
+
+window.paginationState = {
+    convocatorias: 1,
+    asistencia: 1,
+    torneos: 1,
+    prevision: 1,
+    jugadores: 1,
+    clubes: 1,
+    equipos: 1
+};
+
+window.previsionFilters = {
+    activeType: 'Torneo',
+    selectedClubId: '',
+    searchQuery: ''
+};
+
+window.setPage = (view, page) => {
+    window.paginationState[view] = page;
+    const container = document.getElementById('content-container');
+    if (!container) return;
+
+    if (view === 'convocatorias') window.renderConvocatorias(container);
+    else if (view === 'asistencia') window.renderAsistencia(container);
+    else if (view === 'torneos') window.renderTorneos(container);
+    else if (view === 'prevision') window.renderPrevisionClubes(container);
+    else if (view === 'jugadores') window.renderJugadores(container);
+    else if (view === 'clubes') window.renderClubes(container);
+    else if (view === 'sesiones') window.renderSesiones(container, true);
+    else if (view === 'equipos') window.renderEquipos(container);
+};
+
+window.renderPagination = (totalItems, pageSize, currentPage, onPageChange) => {
+    const totalPages = Math.ceil(totalItems / pageSize);
+    if (totalPages <= 1) return '';
+
+    function viewFromCallback(cb) {
+        const s = cb.toLowerCase();
+        if (s.includes('convocatorias')) return 'convocatorias';
+        if (s.includes('asistencia')) return 'asistencia';
+        if (s.includes('torneos')) return 'torneos';
+        if (s.includes('prevision')) return 'prevision';
+        if (s.includes('jugadores')) return 'jugadores';
+        if (s.includes('clubes')) return 'clubes';
+        if (s.includes('sesiones')) return 'sesiones';
+        if (s.includes('equipos')) return 'equipos';
+        return '';
+    }
+
+    const viewName = viewFromCallback(onPageChange);
+    const isDirectCallback = onPageChange.startsWith('window.');
+    const getOnclick = (p) => isDirectCallback ? `${onPageChange}(${p})` : `window.setPage('${viewName}', ${p})`;
+
+    let pages = [];
+    const maxVisible = 5;
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    
+    if (end - start + 1 < maxVisible) {
+        start = Math.max(1, end - maxVisible + 1);
+    }
+
+    for (let i = start; i <= end; i++) {
+        pages.push(`
+            <button onclick="${getOnclick(i)}" class="w-10 h-10 rounded-xl font-black text-[10px] transition-all ${currentPage === i ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
+                ${i}
+            </button>
+        `);
+    }
+
+    return `
+        <div class="flex items-center justify-center gap-2 mt-12 py-8 border-t border-slate-50">
+            <button onclick="${getOnclick(currentPage - 1)}" ${currentPage === 1 ? 'disabled' : ''} class="p-3 bg-white text-slate-400 rounded-xl border border-slate-100 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center gap-2">
+                ${pages.join('')}
+            </div>
+            <button onclick="${getOnclick(currentPage + 1)}" ${currentPage === totalPages ? 'disabled' : ''} class="p-3 bg-white text-slate-400 rounded-xl border border-slate-100 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-all">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </button>
+        </div>
+    `;
+};
+
 window.generatePdfBlob = async (fileOrUrl) => {
     return new Promise((resolve) => {
         if (!fileOrUrl) return resolve(null);
@@ -1418,6 +1509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         'convocatorias': { title: 'Gestión de Convocatorias', subtitle: 'Listados de jugadores por ciclos y eventos.', addButtonLabel: 'Nueva Convocatoria', addButtonEnabled: true, secondaryButtonEnabled: true, secondaryButtonLabel: 'Importar CSV' },
         'torneos': { title: 'Control de Torneos', subtitle: 'Evaluación y rendimiento de jugadores en competición.', addButtonLabel: 'Nuevo Torneo', addButtonEnabled: true },
         'convocatorias-pdf': { title: 'CONVOCATORIAS PDF', subtitle: 'Generación de convocatorias individuales.', addButtonEnabled: false },
+        'prevision-clubes': { title: 'PREVISIÓN CLUBES', subtitle: 'Generación de informes de previsión para clubes.', addButtonEnabled: false },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
         'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
     };
@@ -1774,6 +1866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'asistencia': await window.renderAsistencia(wrapper); break;
             case 'convocatorias': await window.renderConvocatorias(wrapper); break;
             case 'convocatorias-pdf': await window.renderConvocatoriasPDF(wrapper); break;
+            case 'prevision-clubes': await window.renderPrevisionClubes(wrapper); break;
             case 'torneos': await window.renderTorneos(wrapper); break;
             case 'usuarios': await window.renderUsuarios(wrapper); break;
             case 'clubes': await window.renderClubes(wrapper); break;
@@ -1807,6 +1900,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const userRes = await supabaseClient.auth.getUser();
             const currentUser = userRes.data?.user;
+            if (currentUser) {
+                window.currentUser = currentUser;
+            }
 
             const tasks = allTasks; // Tareas are always global (library)
             const sessions = window.applyGlobalFilters(allSessions);
@@ -4010,13 +4106,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { data: profiles } = await supabaseClient.from('profiles').select('*');
 
         const isGlobal = window.currentVisibilityMode === 'global';
-        // En "Mi Espacio" (TODOS + Personal), solo mostramos las creadas por el usuario actual o compartidas con él
-        const mySessions = (isGlobal || sessionFilters.coach !== 'TODOS') ? sessions : sessions.filter(s => {
-            if (!currentUser) return false;
-            if (s.createdBy === currentUser.id) return true;
-            const { extra } = window.parseLugarMetadata(s.lugar);
-            return extra.sw && Array.isArray(extra.sw) && extra.sw.includes(currentUser.id);
-        });
+        const mySessions = sessions;
 
         const uniqueLugares = [...new Set(mySessions.map(s => window.cleanLugar(s.lugar)).filter(Boolean))].sort();
 
@@ -4110,11 +4200,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         }
 
-        const listContainer = onlyTable ? document.getElementById('sessions-list-container') : container.querySelector('#sessions-list-container');
+        const pageSize = 10;
+        const currentPage = window.paginationState.sesiones || 1;
+        const totalItems = filteredSessions.length;
+        const paginatedSessions = filteredSessions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+        const listContainer = container.querySelector('#sessions-list-container') || document.getElementById('sessions-list-container');
         if (listContainer) {
             listContainer.innerHTML = `
                 <!-- Desktop View -->
-                <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                <div class="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden mb-6">
                     <div class="table-container">
                         <table class="w-full">
                         <thead>
@@ -4128,12 +4223,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${filteredSessions.map(s => {
-                const d = new Date(s.fecha);
-                const day = d.getDate();
-                const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
-                const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
-                return `
+                            ${paginatedSessions.map(s => {
+                                const d = new Date(s.fecha);
+                                const day = d.getDate();
+                                const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
+                                const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
+                                return `
                                     <tr onclick="window.viewSessionFicha('${s.id}')" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
                                             <div class="flex items-center gap-2">
@@ -4157,13 +4252,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <div class="flex flex-col gap-1.5">
                                                 <div class="flex flex-wrap gap-1">
                                                     ${(() => {
-                        const { extra } = window.parseLugarMetadata(s.lugar);
-                        let teamIds = [s.equipoid];
-                        if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
-                        return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                                                        const { extra } = window.parseLugarMetadata(s.lugar);
+                                                        let teamIds = [s.equipoid];
+                                                        if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
+                                                        return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                             <span class="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-100/50">${teamsMap[id].split(' ||| ')[0]}</span>
                                                         `).join('');
-                    })()}
+                                                    })()}
                                                 </div>
                                                 <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">${coach ? (coach.name || coach.nombre) : 'Sistema'}</span>
                                             </div>
@@ -4195,15 +4290,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </td>
                                     </tr>
                                 `;
-            }).join('') || '<tr><td colspan="5" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
+                            }).join('') || '<tr><td colspan="6" class="py-24 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin sesiones que coincidan</td></tr>'}
                         </tbody>
                     </table>
                     </div>
                 </div>
 
                 <!-- Mobile View -->
-                <div class="md:hidden space-y-4">
-                    ${filteredSessions.map(s => `
+                <div class="md:hidden space-y-4 mb-6">
+                    ${paginatedSessions.map(s => `
                         <div onclick="window.viewSessionFicha(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
                             <div class="flex justify-between items-start mb-4">
                                 <div class="flex items-center gap-3">
@@ -4214,38 +4309,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div>
                                         <div class="flex flex-wrap gap-1 mb-1">
                                             ${(() => {
-                    const { extra } = window.parseLugarMetadata(s.lugar);
-                    let teamIds = [s.equipoid];
-                    if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
-                    return teamIds.filter(id => id && teamsMap[id]).map(id => `
+                                                const { extra } = window.parseLugarMetadata(s.lugar);
+                                                let teamIds = [s.equipoid];
+                                                if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
+                                                return teamIds.filter(id => id && teamsMap[id]).map(id => `
                                                     <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${teamsMap[id].split(' ||| ')[0]}</span>
                                                 `).join('');
-                })()}
+                                            })()}
                                         </div>
                                         <p class="text-xs font-black text-slate-800 mt-0.5">${s.hora || '--:--'}</p>
                                     </div>
                                 </div>
-                                <div class="flex gap-2">
-                                    <button onclick="event.stopPropagation(); window.duplicateSession(${s.id})" class="w-8 h-8 bg-amber-50 text-amber-500 rounded-lg flex items-center justify-center"><i data-lucide="copy" class="w-4 h-4"></i></button>
-                                    <button onclick="event.stopPropagation(); window.printSession(${s.id})" class="w-8 h-8 bg-slate-50 text-slate-400 rounded-lg flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4"></i></button>
-                                    <button onclick="event.stopPropagation(); window.deleteSession(${s.id})" class="w-8 h-8 bg-red-50 text-red-300 rounded-lg flex items-center justify-center"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                                </div>
                             </div>
-                            <h4 class="text-base font-black text-slate-800 uppercase tracking-tight mb-3 ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sin título'}</h4>
-                            <div class="flex items-center justify-between pt-4 border-t border-slate-50">
-                                <div class="flex items-center gap-2">
-                                    <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-500"></i>
-                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${(s.taskids || []).length} Ejercicios</span>
-                                </div>
-                            </div>
+                            <h4 class="text-xs font-black text-slate-800 uppercase mb-2">${s.titulo || 'Sesión'}</h4>
+                            <p class="text-[9px] font-bold text-slate-400 uppercase mb-4">${window.cleanLugar(s.lugar) || 'Campo No Asignado'}</p>
                         </div>
-                    `).join('') || '<div class="py-12 text-center text-slate-400 uppercase text-[10px] font-black tracking-widest">Sin resultados</div>'}
+                    `).join('')}
                 </div>
+
+                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageSesiones')}
             `;
         }
-
         if (window.lucide) lucide.createIcons();
-    }
+    };
+
+    window.setPageSesiones = (page) => {
+        window.paginationState.sesiones = page;
+        window.renderSesiones(document.getElementById('content-container'), true);
+    };
+
+    window.setPageConvocatorias = (page) => {
+        window.paginationState.convocatorias = page;
+        window.renderConvocatorias(document.getElementById('content-container'));
+    };
 
     window.renderSessionModal = async (sessionData = null) => {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
@@ -6469,7 +6565,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.exportConvocatoria = async (id, mode = 'download') => {
         const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
-        if (error) return;
+        if (error) {
+            console.error("Fetch error:", error);
+            return;
+        }
 
         const players = await db.getAll('jugadores');
         const teams = window.getSortedTeams(await db.getAll('equipos'));
@@ -6478,7 +6577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Aplicar posiciones específicas del torneo (herencia del rendimiento)
         const rendimiento = conv.rendimiento || {};
-        const docs = window.getConvMetadata(conv).documentos || [];
+        const meta = window.getConvMetadata(conv);
         convocados.forEach(p => {
             if (rendimiento[p.id] && rendimiento[p.id].pos) {
                 p.posicion = rendimiento[p.id].pos;
@@ -6488,45 +6587,95 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
 
+        // --- Cargar Fuentes ---
+        if (window.MONTSERRAT_REG && window.MONTSERRAT_BOLD) {
+            doc.addFileToVFS('Montserrat-Regular.ttf', window.MONTSERRAT_REG);
+            doc.addFileToVFS('Montserrat-Bold.ttf', window.MONTSERRAT_BOLD);
+            doc.addFont('Montserrat-Regular.ttf', 'Montserrat', 'normal');
+            doc.addFont('Montserrat-Bold.ttf', 'Montserrat', 'bold');
+            doc.setFont('Montserrat', 'normal');
+        } else {
+            doc.setFont("helvetica", "normal");
+        }
+
+        const loadImage = (url) => new Promise((resolve) => {
+            if (!url) return resolve(null);
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = url;
+        });
+
+        const rsLogo = await loadImage('Imagenes/RS.png');
+        const teamLogo = team?.escudo ? await loadImage(team.escudo) : null;
+
         // Estilo de diseño
         const blueColor = [37, 99, 235];
         const slateColor = [30, 41, 59];
+        const grayColor = [100, 116, 139];
 
-        // Añadir Logo si existe
-        if (team && team.escudo) {
-            try {
-                doc.addImage(team.escudo, 'PNG', 15, 15, 20, 20);
-            } catch (e) { console.error("Logo error:", e); }
+        // --- CABECERA (RS STYLE) ---
+        if (rsLogo) {
+            try { doc.addImage(rsLogo, 'PNG', 15, 12, 18, 18); } catch (e) { }
         }
-
-        // Título Cabecera
+        
         doc.setFontSize(22);
         doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
-        doc.setFont("helvetica", "bold");
-        doc.text(conv.nombre.toUpperCase(), 45, 25);
+        doc.setFont('Montserrat', 'bold');
+        doc.text(conv.nombre.toUpperCase(), 40, 22);
 
-        doc.setFontSize(10);
-        doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
-        doc.text(`CONVOCATORIA: ${conv.tipo.toUpperCase()}`, 45, 30);
-
-        // Datos del Evento
-        doc.setTextColor(100, 116, 139);
         doc.setFontSize(9);
-        doc.text(`EQUIPO: ${team ? team.nombre : 'General'}`, 45, 37);
-        doc.text(`FECHA: ${conv.fecha}   |   HORA: ${conv.hora || '--'}   |   LUGAR: ${window.cleanLugar(conv.lugar) || '--'}`, 45, 42);
+        doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+        doc.text(`CONVOCATORIA OFICIAL: ${conv.tipo.toUpperCase()}`, 40, 27);
 
-        // Línea separadora
-        doc.setDrawColor(241, 245, 249);
-        doc.line(15, 50, 195, 50);
+        // --- DATOS DEL EVENTO (BLOQUE IZQUIERDO) ---
+        doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+        doc.setFontSize(9);
+        doc.setFont('Montserrat', 'bold');
+        doc.text("FECHA PRINCIPAL:", 15, 45);
+        doc.setFont('Montserrat', 'normal');
+        doc.text(conv.fecha, 50, 45);
 
-        // Tabla de Jugadores
+        doc.setFont('Montserrat', 'bold');
+        doc.text("HORA:", 15, 50);
+        doc.setFont('Montserrat', 'normal');
+        doc.text(conv.hora || '--:--', 50, 50);
+
+        doc.setFont('Montserrat', 'bold');
+        doc.text("LUGAR:", 15, 55);
+        doc.setFont('Montserrat', 'normal');
+        doc.text(window.cleanLugar(conv.lugar).toUpperCase(), 50, 55);
+
+        // --- EXTRAS CICLO (S2, S3) ---
+        if (conv.tipo === 'Ciclo' && (meta.s2 || meta.s3)) {
+            let extraX = 110;
+            doc.setFont('Montserrat', 'bold');
+            doc.text("SESIONES ADICIONALES:", extraX, 45);
+            doc.setFont('Montserrat', 'normal');
+            if (meta.s2) doc.text(`S2: ${meta.s2.f}`, extraX, 50);
+            if (meta.s3) doc.text(`S3: ${meta.s3.f}`, extraX, 55);
+        } else {
+            // Si no es ciclo, ponemos el equipo
+            doc.setFont('Montserrat', 'bold');
+            doc.text("EQUIPO:", 110, 45);
+            doc.setFont('Montserrat', 'normal');
+            doc.text(team ? team.nombre.toUpperCase() : 'GENERAL', 130, 45);
+        }
+
+        // --- LÍNEA DECORATIVA ---
+        doc.setDrawColor(blueColor[0], blueColor[1], blueColor[2]);
+        doc.setLineWidth(0.5);
+        doc.line(15, 62, 195, 62);
+
+        // --- TABLA DE JUGADORES ---
         const isTorneo = (conv.tipo || '').toUpperCase() === 'TORNEO';
-        const tableBody = convocados.map((p, index) => {
+        const tableBody = convocados.sort((a,b) => a.nombre.localeCompare(b.nombre)).map((p, index) => {
             const row = [
                 index + 1,
-                p.nombre,
-                p.equipoConvenido || (team ? team.nombre : '--'),
-                p.posicion || '--',
+                p.nombre.toUpperCase(),
+                (p.equipoConvenido || p.club || '--').toUpperCase(),
+                (p.posicion || '--').toUpperCase(),
                 p.anionacimiento || '--'
             ];
             if (isTorneo) {
@@ -6540,26 +6689,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isTorneo) tableHead.push('NOTA');
 
         doc.autoTable({
-            startY: 55,
+            startY: 68,
             head: [tableHead],
             body: tableBody,
             headStyles: {
-                fillColor: blueColor,
+                fillColor: slateColor,
                 textColor: [255, 255, 255],
-                fontSize: 10,
+                fontSize: 9,
                 fontStyle: 'bold',
-                halign: 'center'
+                halign: 'center',
+                font: 'Montserrat'
             },
             bodyStyles: {
-                fontSize: 9,
-                textColor: [51, 65, 85],
-                cellPadding: 4
+                fontSize: 8,
+                textColor: [30, 41, 59],
+                cellPadding: 3,
+                font: 'Montserrat'
             },
             alternateRowStyles: {
                 fillColor: [248, 250, 252]
             },
             columnStyles: {
-                0: { halign: 'center', cellWidth: 15 },
+                0: { halign: 'center', cellWidth: 10 },
                 2: { halign: 'center' },
                 3: { halign: 'center' },
                 4: { halign: 'center' },
@@ -6568,13 +6719,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             margin: { left: 15, right: 15 }
         });
 
-        // --- ADD TACTICAL PITCH (CAMPOGRAMA) ON NEW PAGE ---
+        // --- CAMPOGRAMA (TACTICAL PITCH) ON NEW PAGE ---
         doc.addPage();
-
-        // Titulo de la página
-        doc.setFontSize(16);
+        
+        // Header de segunda página
+        if (rsLogo) {
+            try { doc.addImage(rsLogo, 'PNG', 15, 12, 12, 12); } catch (e) { }
+        }
+        doc.setFontSize(14);
         doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
-        doc.text("DISPOSICIÓN TÁCTICA", 15, 25);
+        doc.setFont('Montserrat', 'bold');
+        doc.text("DISPOSICIÓN TÁCTICA", 32, 21);
 
         let formationId = 'F11_433';
         if (window.formationsState) {
@@ -6582,40 +6737,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             else formationId = window.formationsState.convocatorias?.[id] || 'F11_433';
         }
         const activeFormation = FORMATIONS[formationId] || FORMATIONS['F11_433'];
-        doc.setFontSize(10);
+        
+        doc.setFontSize(9);
         doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
-        doc.text(`SISTEMA: ${activeFormation.name}`, 15, 32);
+        doc.text(`SISTEMA: ${activeFormation.name}`, 155, 21, { align: 'right' });
 
         // Draw Pitch Background
-        const px = 15, py = 40, pw = 180, ph = 120;
-        doc.setFillColor(26, 77, 46); // Dark green
-        doc.roundedRect(px, py, pw, ph, 5, 5, 'F');
+        const px = 15, py = 35, pw = 180, ph = 120;
+        doc.setFillColor(15, 23, 42); // Slate 900 for a more premium look
+        doc.roundedRect(px, py, pw, ph, 4, 4, 'F');
 
         // Draw Pitch Lines
         doc.setDrawColor(255, 255, 255);
-        doc.setLineWidth(0.3);
-
-        // Outer line
-        doc.rect(px + 10, py + 10, pw - 20, ph - 20);
-        // Middle line
-        doc.line(px + pw / 2, py + 10, px + pw / 2, py + ph - 10);
-        // Center circle
-        doc.circle(px + pw / 2, py + ph / 2, 12);
-
-        // Areas
+        doc.setLineWidth(0.2);
+        doc.rect(px + 8, py + 8, pw - 16, ph - 16); // Outer
+        doc.line(px + pw / 2, py + 8, px + pw / 2, py + ph - 8); // Middle
+        doc.circle(px + pw / 2, py + ph / 2, 12); // Center
+        
         // Left Area
-        doc.rect(px + 10, py + ph / 2 - 25, 25, 50);
-        doc.rect(px + 10, py + ph / 2 - 10, 8, 20);
+        doc.rect(px + 8, py + ph / 2 - 25, 20, 50);
+        doc.rect(px + 8, py + ph / 2 - 10, 7, 20);
         // Right Area
-        doc.rect(px + pw - 35, py + ph / 2 - 25, 25, 50);
-        doc.rect(px + pw - 18, py + ph / 2 - 10, 8, 20);
+        doc.rect(px + pw - 28, py + ph / 2 - 25, 20, 50);
+        doc.rect(px + pw - 15, py + ph / 2 - 10, 7, 20);
 
-        // Draw Players - Intelligent Assignment
+        // Position Assignment Logic
         const assignments = activeFormation.positions.map(() => []);
         const checkMatch = (pPos, targetSlot) => {
             const groupingRules = [
-                { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
-                { key: 'MC', list: ['MC', 'MCD', 'MCZ'] },
+                { key: 'DC', list: ['DC', 'DCD', 'DCZ', 'DFC', 'CD', 'CZ'] },
+                { key: 'MC', list: ['MC', 'MCD', 'MCZ', 'MVD', 'MVZ', 'MBD', 'MBZ'] },
                 { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
                 { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
             ];
@@ -6637,95 +6788,67 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         (convocados || []).forEach(player => {
-            const rawPos = player.posicion || '--';
-            const choices = rawPos.split(',').map(c => c.trim());
+            const rawPos = (player.posicion || '--').toUpperCase();
+            const choices = rawPos.split(/[,/]/).map(c => c.trim());
 
             let validSlots = [];
-            // P1
             activeFormation.positions.forEach((s, idx) => {
                 if (checkMatch(choices[0], s.pos)) validSlots.push({ idx, priority: 1 });
+                else if (choices[1] && checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
             });
-            // P2
-            if (choices[1]) {
-                activeFormation.positions.forEach((s, idx) => {
-                    if (checkMatch(choices[1], s.pos)) validSlots.push({ idx, priority: 2 });
+
+            if (validSlots.length > 0) {
+                validSlots.sort((a, b) => {
+                    const countA = assignments[a.idx].length;
+                    const countB = assignments[b.idx].length;
+                    if (countA !== countB) return countA - countB;
+                    return a.priority - b.priority;
                 });
+                assignments[validSlots[0].idx].push(player);
             }
-
-            if (validSlots.length === 0) return;
-
-            // Sort by occupancy, then priority
-            validSlots.sort((a, b) => {
-                const countA = assignments[a.idx].length;
-                const countB = assignments[b.idx].length;
-                if (countA !== countB) return countA - countB;
-                return a.priority - b.priority;
-            });
-
-            assignments[validSlots[0].idx].push(player);
         });
 
         activeFormation.positions.forEach((pos, idx) => {
             const playersInPos = assignments[idx];
+            const realX = px + 8 + (pos.x * (pw - 16) / 100);
+            const realY = py + 8 + (pos.y * (ph - 16) / 100);
 
-            // Renaming logic for single slots
-            let displayPos = pos.pos;
-            const groupingRules = [
-                { key: 'DC', list: ['DC', 'DCD', 'DCZ'] },
-                { key: 'MC', list: ['MC. ', 'MCD', 'MCZ'] },
-                { key: 'MP', list: ['MP', 'MPD', 'MPZ'] },
-                { key: 'AC', list: ['AC', 'ACD', 'ACZ'] }
-            ];
-            for (const rule of groupingRules) {
-                if (rule.list.includes(pos.pos)) {
-                    const countInFormation = activeFormation.positions.filter(p => rule.list.includes(p.pos)).length;
-                    if (countInFormation === 1) displayPos = rule.key;
-                }
-            }
-
-            const realX = px + 10 + (pos.x * (pw - 20) / 100);
-            const realY = py + 10 + (pos.y * (ph - 20) / 100);
-
-            // Always render Position Icon (Circle)
+            // Icon
             doc.setFillColor(255, 255, 255);
-            doc.circle(realX, realY, 4, 'F');
-
-            // Position Text
+            doc.circle(realX, realY, 3.5, 'F');
             doc.setFontSize(5);
             doc.setTextColor(0, 0, 0);
-            doc.setFont("Montserrat", "bold");
+            doc.setFont('Montserrat', 'bold');
             doc.text(pos.pos, realX, realY + 0.5, { align: 'center' });
 
-            // Render Player Names (if any)
-            playersInPos.forEach((player, idx) => {
-                // Player Name Tag (Stacked)
-                const offsetY = 5 + (idx * 5); // Shift down for each player
-                doc.setFillColor(30, 41, 59); // Slate 800
-                doc.rect(realX - 8, realY + offsetY, 16, 4, 'F');
+            // Players
+            playersInPos.forEach((p, pidx) => {
+                const offsetY = 5 + (pidx * 4.5);
+                doc.setFillColor(37, 99, 235); // Blue 600
+                doc.roundedRect(realX - 7, realY + offsetY, 14, 3.5, 0.5, 0.5, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.setFontSize(4.5);
-                const parts = player.nombre.trim().split(/\s+/);
-                const shortName = (parts.length > 1 ? `${parts[0]}. ${parts[1][0]}` : parts[0]).toUpperCase();
-                doc.text(shortName, realX, realY + offsetY + 2.8, { align: 'center' });
+                doc.setFontSize(4);
+                const parts = p.nombre.trim().split(/\s+/);
+                const short = (parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : parts[0]).toUpperCase();
+                doc.text(short, realX, realY + offsetY + 2.5, { align: 'center' });
             });
         });
 
-        doc.setFont("helvetica", "normal"); // Reset font
-
-        // Footer
+        // --- FOOTER ---
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
-            doc.setFontSize(8);
-            doc.setTextColor(148, 163, 184);
-            doc.text(`Generado por RS CENTRO - Página ${i} de ${pageCount}`, 150, 285);
+            doc.setFontSize(7);
+            doc.setTextColor(grayColor[0], grayColor[1], grayColor[2]);
+            doc.setFont('Montserrat', 'normal');
+            doc.text(`RS CENTRO • DOCUMENTO OFICIAL • PÁGINA ${i} DE ${pageCount}`, 105, 288, { align: 'center' });
         }
 
         if (mode === 'preview') {
             const blob = doc.output('blob');
             return URL.createObjectURL(blob);
         } else {
-            doc.save(`Convocatoria_${conv.nombre}_${conv.fecha}.pdf`);
+            doc.save(`CONVOCATORIA_${conv.nombre.replace(/\s+/g, '_')}_${conv.fecha}.pdf`);
         }
     };
 
@@ -7394,11 +7517,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.currentConvocatoriaCoachId = 'all';
 
     window.switchConvocatoriaCoach = (id) => {
+        window.paginationState.convocatorias = 1;
         window.currentConvocatoriaCoachId = id;
         window.renderView('convocatorias');
     };
 
     window.switchConvocatoriaComunidad = (com) => {
+        window.paginationState.convocatorias = 1;
+        window.currentConvocatoriaComunidad = com;
         currentConvocatoriaComunidad = com;
         window.renderView('convocatorias');
     };
@@ -7409,19 +7535,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.switchConvocatoriaTeamTab = (tid) => {
+        window.paginationState.convocatorias = 1;
+        window.currentConvocatoriaTeamId = tid;
         currentConvocatoriaTeamId = tid;
         window.renderView('convocatorias');
     };
 
     window.switchConvocatoriaTypeTab = (type) => {
+        window.paginationState.convocatorias = 1;
+        window.currentConvocatoriaTypeTab = type;
         currentConvocatoriaTypeTab = type;
         window.renderView('convocatorias');
     };
 
     window.switchConvocatoriaLugar = (lugar) => {
+        window.paginationState.convocatorias = 1;
         currentConvocatoriaLugar = lugar;
         window.renderView('convocatorias');
     };
+
 
     window.renderConvocatorias = async function (container) {
         const allConvs = await db.getAll('convocatorias');
@@ -7439,7 +7571,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return (b.hora || '').localeCompare(a.hora || '');
             });
 
-        // En "Mi Espacio" (Personal + Todas), solo lo que yo he creado o compartido conmigo
         const myConvs = (isGlobal || currentCoachId !== 'all') ? convs : convs.filter(c => {
             if (!currentUser) return false;
             if (c.createdBy === currentUser.id) return true;
@@ -7452,35 +7583,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
 
+        const normalizeStr = (s) => (s || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
         const filtered = myConvs.filter(c => {
             const { extra } = window.parseLugarMetadata(c.lugar);
-
-            // Filter by TYPE tab
-            const matchesType = (c.tipo || '').toLowerCase() === currentConvocatoriaTypeTab.toLowerCase();
-
-            // Filter by COACH (Direct column use + Shared with)
+            const matchesType = normalizeStr(c.tipo) === normalizeStr(currentConvocatoriaTypeTab);
             const matchesCoach = currentCoachId === 'all' || 
                                 (c.createdBy && c.createdBy.toString() === currentCoachId.toString()) ||
                                 (extra.sw && Array.isArray(extra.sw) && extra.sw.map(String).includes(currentCoachId.toString()));
-
-            // Filter by Team tab
             const matchesTeam = currentConvocatoriaTeamId === 'all' ||
                 (c.equipoid && c.equipoid.toString() === currentConvocatoriaTeamId.toString()) ||
                 (extra.eids && extra.eids.map(String).includes(currentConvocatoriaTeamId.toString()));
 
             const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
             const matchesLugar = currentConvocatoriaLugar === 'all' || sessionLugar.toUpperCase() === currentConvocatoriaLugar.toUpperCase();
-
-            // Filter by COMUNIDAD
             const comunidad = window.getComunidadByLugar(c.lugar, c.nombre);
             const matchesComunidad = currentConvocatoriaComunidad === 'all' || comunidad === currentConvocatoriaComunidad;
-
             const matchesSearch = !convocatoriaSearchTerm ||
                 (c.nombre || '').toLowerCase().includes(convocatoriaSearchTerm.toLowerCase()) ||
                 (window.cleanLugar(c.lugar)).toLowerCase().includes(convocatoriaSearchTerm.toLowerCase());
-
             return matchesType && matchesTeam && matchesLugar && matchesSearch && matchesComunidad && matchesCoach;
         });
+
+        const pageSize = 10;
+        const currentPage = window.paginationState.convocatorias || 1;
+        const totalItems = filtered.length;
+        const paginatedItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
@@ -7516,60 +7644,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             `;
         };
 
-        const renderConvRow = (c) => {
-            let displayLugar = window.cleanLugar(c.lugar) || '--';
-            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
-            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-            const { extra } = window.parseLugarMetadata(c.lugar);
-
-            return `
-                <tr class="hover:bg-slate-50 transition-colors group cursor-pointer" onclick="window.viewConvocatoria(${c.id})">
-                    <td class="p-6">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg">${(c.nombre || 'C').substring(0, 1).toUpperCase()}</div>
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                                    <span class="text-[7px] font-black px-1.5 py-0.5 rounded ${window.getComunidadByLugar(c.lugar, c.nombre) === 'NAVARRA' ? 'bg-red-50 text-red-600 border border-red-100' : (window.getComunidadByLugar(c.lugar, c.nombre) === 'LA RIOJA' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-400')} uppercase whitespace-nowrap">${window.getComunidadByLugar(c.lugar, c.nombre)}</span>
-                                </div>
-                                <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${c.tipo}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="p-6">
-                        <div class="flex flex-col">
-                            <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
-                            <span class="text-[9px] font-black text-slate-400 uppercase">
-                                ${extra.hi ? `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}` : (c.hora || '--:--')}
-                            </span>
-                        </div>
-                    </td>
-                    <td class="p-6">
-                        <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamName}</span>
-                    </td>
-                    <td class="p-6">
-                        <p class="text-[10px] font-bold text-slate-400 uppercase truncate max-w-[150px]">${displayLugar}</p>
-                    </td>
-                    <td class="p-6 text-center">
-                        <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-4 py-2 rounded-2xl border border-blue-100/50">
-                            <i data-lucide="users" class="w-4 h-4"></i>
-                            <span class="text-sm font-black tracking-tight">${playerCount}</span>
-                        </div>
-                    </td>
-                    <td class="p-6 text-right">
-                        <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
-                                <i data-lucide="edit-3" class="w-4 h-4"></i>
-                            </button>
-                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        };
-
         const teamsWithConvs = teams.filter(t =>
             convs.some(c => {
                 const { extra } = window.parseLugarMetadata(c.lugar);
@@ -7581,37 +7655,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = `
             <div class="space-y-6 mb-8">
                 <div class="flex flex-col md:flex-row gap-4">
-                    <!-- Type Tabs -->
                     <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
-                        <button onclick="window.switchConvocatoriaTypeTab('Ciclo')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Ciclo' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Ciclos
-                        </button>
-                        <button onclick="window.switchConvocatoriaTypeTab('Sesión')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Sesión' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Sesiones
-                        </button>
-                        <button onclick="window.switchConvocatoriaTypeTab('Zubieta')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Zubieta' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Zubieta
-                        </button>
+                        <button onclick="window.switchConvocatoriaTypeTab('Ciclo')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Ciclo' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Ciclos</button>
+                        <button onclick="window.switchConvocatoriaTypeTab('Sesión')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Sesión' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Sesiones</button>
+                        <button onclick="window.switchConvocatoriaTypeTab('Zubieta')" class="px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaTypeTab === 'Zubieta' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Zubieta</button>
                     </div>
-
-                    <!-- Comunidad Tabs -->
                     <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner">
-                        <button onclick="window.switchConvocatoriaComunidad('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Todas
-                        </button>
-                        <button onclick="window.switchConvocatoriaComunidad('NAVARRA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Navarra
-                        </button>
-                        <button onclick="window.switchConvocatoriaComunidad('LA RIOJA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            La Rioja
-                        </button>
+                        <button onclick="window.switchConvocatoriaComunidad('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Todas</button>
+                        <button onclick="window.switchConvocatoriaComunidad('NAVARRA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Navarra</button>
+                        <button onclick="window.switchConvocatoriaComunidad('LA RIOJA')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentConvocatoriaComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">La Rioja</button>
                     </div>
-
-                    <!-- Coach Tabs -->
                     <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-fit shadow-inner overflow-x-auto max-w-full custom-scrollbar">
-                        <button onclick="window.switchConvocatoriaCoach('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentCoachId === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                            Todas
-                        </button>
+                        <button onclick="window.switchConvocatoriaCoach('all')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentCoachId === 'all' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">Todas</button>
                         ${coaches.map(c => `
                             <button onclick="window.switchConvocatoriaCoach('${c.id}')" class="px-6 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${currentCoachId == c.id ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
                                 ${(c.name || c.nombre || 'Técnico').split(' ')[0]}
@@ -7620,10 +7675,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
 
-                <!-- Filters & Search Toolbar -->
                 <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:flex items-center gap-3">
-                        <!-- Team Filter -->
                         <div class="relative flex-1 lg:min-w-[220px]">
                             <select onchange="window.switchConvocatoriaTeamTab(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
                                 <option value="all" ${currentConvocatoriaTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
@@ -7631,8 +7684,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                         </div>
-
-                        <!-- Place Filter -->
                         <div class="relative flex-1 lg:min-w-[200px]">
                             <select onchange="window.switchConvocatoriaLugar(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
                                 <option value="all" ${currentConvocatoriaLugar === 'all' ? 'selected' : ''}>TODOS LOS LUGARES</option>
@@ -7640,213 +7691,131 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
                         </div>
-
-                        <!-- Search -->
                         <div class="relative flex-1 lg:min-w-[250px]">
                             <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                            <input type="text" 
-                                id="convocatoria-search-input"
-                                placeholder="BUSCAR POR NOMBRE O LUGAR..." 
-                                value="${convocatoriaSearchTerm}"
-                                oninput="window.updateConvocatoriaSearch(this.value)"
-                                class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
-                            ${convocatoriaSearchTerm ? `
-                                <button onclick="window.updateConvocatoriaSearch(''); window.renderConvocatorias(document.getElementById('content-container'))" 
-                                    class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all" title="Borrar búsqueda">
-                                    <i data-lucide="x" class="w-3 h-3"></i>
-                                </button>
-                            ` : ''}
+                            <input type="text" id="convocatoria-search-input" placeholder="BUSCAR POR NOMBRE O LUGAR..." value="${convocatoriaSearchTerm}" oninput="window.updateConvocatoriaSearch(this.value)" class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Mobile View -->
-            <div class="md:hidden space-y-4">
-                ${filtered.map(c => renderConvCard(c)).join('') || `<div class="py-20 text-center italic text-slate-400">No hay convocatorias registradas</div>`}
+            <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden mb-8">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-100">
+                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Evento / Convocatoria</th>
+                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha / Lugar</th>
+                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Plantilla</th>
+                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Convocados</th>
+                                <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50">
+                            ${paginatedItems.map(c => {
+                                const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
+                                const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+                                const lugar = window.cleanLugar(c.lugar) || 'SIN LUGAR';
+                                return `
+                                    <tr class="hover:bg-slate-50 transition-colors group cursor-pointer" onclick="window.viewConvocatoria(${c.id})">
+                                        <td class="p-6">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black text-xs">${(c.nombre || 'C').substring(0, 1).toUpperCase()}</div>
+                                                <div>
+                                                    <p class="text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
+                                                    <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-widest">${c.tipo}</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="p-6">
+                                            <div class="flex flex-col">
+                                                <span class="text-xs font-bold text-slate-700">${c.fecha}</span>
+                                                <span class="text-[9px] font-black text-slate-400 uppercase">${lugar}</span>
+                                            </div>
+                                        </td>
+                                        <td class="p-6">
+                                            <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest">${teamName}</span>
+                                        </td>
+                                        <td class="p-6 text-center">
+                                            <span class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-full text-sm font-black">${playerCount}</span>
+                                        </td>
+                                        <td class="p-6 text-right">
+                                            <div class="flex justify-end gap-2">
+                                                <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- Desktop View -->
-            <div class="hidden md:block bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-            <div class="table-container">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-50 border-b border-slate-100">
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Convocatoria</th>
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha / Horario</th>
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Jugadores</th>
-                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-50">
-                        ${filtered.map(c => renderConvRow(c)).join('') || `
-                            <tr><td colspan="6" class="p-12 text-center text-slate-300 italic text-xs">No se han encontrado convocatorias.</td></tr>
-                        `}
-                    </tbody>
-                </table>
-            </div>
-            
-            <div class="mt-8 flex justify-between items-center px-4">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Listado de Convocatorias y Citas · ${filtered.length} registros</p>
-            </div>
+            ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageConvocatorias')}
+
+            ${filtered.length === 0 ? `<div class="py-20 text-center italic text-slate-400">No hay convocatorias registradas</div>` : ''}
         `;
         if (window.lucide) lucide.createIcons();
-
-        const searchInput = document.getElementById('convocatoria-search-input');
-        if (searchInput && convocatoriaSearchTerm) {
-            searchInput.focus();
-            searchInput.setSelectionRange(convocatoriaSearchTerm.length, convocatoriaSearchTerm.length);
-        }
     }
 
     window.renderTorneos = async function (container) {
         const allConvs = await db.getAll('convocatorias');
-        const convs = window.applyGlobalFilters(allConvs).filter(c => ['Torneo', 'TORNEO'].includes(c.tipo))
-            .sort((a, b) => {
-                if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
-                return (b.hora || '').localeCompare(a.hora || '');
-            });
-
         const teams = window.getSortedTeams(await db.getAll('equipos'));
         const teamsMap = Object.fromEntries(teams.map(t => [t.id, t.nombre]));
 
-        const uniqueLugares = [...new Set(convs.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
+        const torneos = window.applyGlobalFilters(allConvs, 'fecha')
+            .filter(c => ['Torneo', 'TORNEO', 'torneo'].includes(c.tipo));
 
-        const filtered = convs.filter(c => {
-            const { extra } = window.parseLugarMetadata(c.lugar);
+        const uniqueLugares = [...new Set(torneos.map(c => window.cleanLugar(c.lugar)).filter(Boolean))].sort();
 
+        const filtered = torneos.filter(t => {
             const matchesTeam = currentTorneoTeamId === 'all' ||
-                (c.equipoid && c.equipoid.toString() === currentTorneoTeamId.toString()) ||
-                (extra.eids && extra.eids.map(String).includes(currentTorneoTeamId.toString())) ||
-                (extra.sw && extra.sw.map(String).includes(currentTorneoTeamId.toString()));
+                (t.equipoid && t.equipoid.toString() === currentTorneoTeamId.toString());
 
-            const sessionLugar = window.cleanLugar(c.lugar) || 'SIN ASIGNAR';
+            const sessionLugar = window.cleanLugar(t.lugar) || 'SIN ASIGNAR';
             const matchesLugar = currentTorneoLugar === 'all' || sessionLugar.toUpperCase() === currentTorneoLugar.toUpperCase();
 
+            const today = new Date().toISOString().split('T')[0];
+            const matchesStatus = currentTorneoStatusTab === 'upcoming' ? t.fecha >= today : t.fecha < today;
+
             const matchesSearch = !torneoSearchTerm ||
-                (c.nombre || '').toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
-                (window.cleanLugar(c.lugar)).toLowerCase().includes(torneoSearchTerm.toLowerCase());
+                (t.nombre || '').toLowerCase().includes(torneoSearchTerm.toLowerCase()) ||
+                (window.cleanLugar(t.lugar)).toLowerCase().includes(torneoSearchTerm.toLowerCase());
 
-            return matchesTeam && matchesLugar && matchesSearch;
-        });
+            return matchesTeam && matchesLugar && matchesStatus && matchesSearch;
+        }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-        const today = new Date().toISOString().split('T')[0];
-        const showStatusTabs = !torneoSearchTerm;
+        const pageSize = 10;
+        const currentPage = window.paginationState.torneos || 1;
+        const totalItems = filtered.length;
+        const paginatedTorneos = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-        // Determine segments based on status tab
-        let displaySections = [];
-        if (showStatusTabs) {
-            const upcoming = filtered.filter(c => c.fecha >= today);
-            const finished = filtered.filter(c => c.fecha < today);
-
-            if (currentTorneoStatusTab === 'upcoming') {
-                displaySections = [{ title: 'Próximos Torneos y Citas', items: upcoming }];
-            } else {
-                displaySections = [{ title: 'Torneos Finalizados', items: finished }];
-            }
-        } else {
-            displaySections = [{ title: '', items: filtered }];
-        }
-
-        // Helper for Mobile Card
         const renderTorneoCard = (c) => {
             const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
             const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
             return `
-                <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all">
-                    <div class="flex justify-between items-start mb-4">
+                <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all cursor-pointer">
+                    <div class="flex justify-between items-start">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-xs shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0, 1).toUpperCase()}</div>
+                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg shadow-blue-500/20 flex-shrink-0" title="${playerCount} convocados">${playerCount}</div>
                             <div>
                                 <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
-                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">${c.fecha}</p>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">${c.fecha}</p>
                             </div>
                         </div>
-                        <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest">${teamName}</span>
-                    </div>
-                    <div class="flex items-center justify-between mt-4">
-                        <div class="flex items-center gap-2 text-blue-600 font-black">
-                            <i data-lucide="users" class="w-4 h-4"></i>
-                            <span class="text-xs uppercase">${playerCount} Convocados</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-red-300 hover:text-red-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        </div>
+                        <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest max-w-[120px] text-center leading-normal break-words">${teamName}</span>
                     </div>
                 </div>
             `;
         };
 
-        // Helper for Desktop Row
-        const renderTorneoRow = (c) => {
-            let displayLugar = window.cleanLugar(c.lugar) || '--';
-            const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
-            const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
-            return `
-                <tr class="hover:bg-blue-50/30 transition-colors group cursor-pointer" onclick="window.viewTorneoRendimiento(${c.id})">
-                    <td class="p-4 md:p-6">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black shadow-lg shadow-blue-500/20">${(c.nombre || 'T').substring(0, 1).toUpperCase()}</div>
-                            <p class="text-xs md:text-sm font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors">${c.nombre}</p>
-                        </div>
-                    </td>
-                    <td class="p-4 md:p-6">
-                        <div class="flex flex-col">
-                            <span class="text-[10px] md:text-xs font-bold text-slate-700">${c.fecha}</span>
-                            <span class="text-[9px] font-black text-slate-400 uppercase">
-                                ${(() => {
-                    const { extra } = window.parseLugarMetadata(c.lugar);
-                    if (extra.hi) return `${extra.hl ? `${extra.hl} > ` : ''}${extra.hi}${extra.hs ? ` > ${extra.hs}` : ''}`;
-                    return c.hora || '--:--';
-                })()}
-                            </span>
-                        </div>
-                    </td>
-                    <td class="p-4 md:p-6">
-                        <span class="px-3 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] md:text-[10px] font-black uppercase tracking-widest">${teamName}</span>
-                    </td>
-                    <td class="p-4 md:p-6">
-                        <p class="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase truncate max-w-[80px] md:max-w-[150px]">${displayLugar}</p>
-                    </td>
-                    <td class="p-4 md:p-6 text-center">
-                        <div class="inline-flex items-center gap-2.5 bg-blue-50 text-blue-600 px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl border border-blue-100/50">
-                            <i data-lucide="users" class="w-3.5 h-3.5 md:w-4 h-4"></i>
-                            <span class="text-xs md:text-sm font-black tracking-tight">${playerCount}</span>
-                        </div>
-                    </td>
-                    <td class="p-4 md:p-6 text-right">
-                        <div class="flex justify-end gap-1 md:gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onclick="event.stopPropagation(); window.editConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
-                                <i data-lucide="edit-3" class="w-3.5 h-3.5 md:w-4 h-4"></i>
-                            </button>
-                            <button onclick="event.stopPropagation(); window.deleteConvocatoria(${c.id})" class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                                <i data-lucide="trash-2" class="w-3.5 h-3.5 md:w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        };
-
-        let teamsWithTorneos = teams.filter(t =>
-            convs.some(c => {
-                const { extra } = window.parseLugarMetadata(c.lugar);
-                return (c.equipoid && c.equipoid.toString() === t.id.toString()) ||
-                    (extra.eids && extra.eids.map(String).includes(t.id.toString()));
-            })
-        );
-
-        // Sort by year ascending (2010 to 2017)
-        teamsWithTorneos = window.getSortedTeams(teamsWithTorneos);
+        let teamsWithTorneos = window.getSortedTeams(teams.filter(t => torneos.some(c => String(c.equipoid) === String(t.id))));
 
         container.innerHTML = `
-            <!-- Filters & Search Toolbar -->
             <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm mb-8">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:flex items-center gap-3">
-                    <!-- Team Filter -->
                     <div class="relative flex-1 lg:min-w-[220px]">
                         <select onchange="window.switchTorneoTeamTab(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
                             <option value="all" ${currentTorneoTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
@@ -7854,8 +7823,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </select>
                         <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                     </div>
-
-                    <!-- Place Filter -->
                     <div class="relative flex-1 lg:min-w-[200px]">
                         <select onchange="window.switchTorneoLugar(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer text-slate-500">
                             <option value="all" ${currentTorneoLugar === 'all' ? 'selected' : ''}>TODOS LOS LUGARES</option>
@@ -7863,105 +7830,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </select>
                         <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
                     </div>
-
-                    <!-- Search -->
                     <div class="relative flex-1 lg:min-w-[250px]">
                         <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
-                        <input type="text" 
-                            id="torneo-search-input"
-                            placeholder="BUSCAR TORNEO O LUGAR..." 
-                            value="${torneoSearchTerm}"
-                            oninput="window.updateTorneoSearch(this.value)"
-                            class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
-                        ${torneoSearchTerm ? `
-                            <button onclick="window.updateTorneoSearch(''); window.renderTorneos(document.getElementById('content-container'))" 
-                                class="absolute right-4 top-1/2 -translate-y-1/2 p-1 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all" title="Borrar búsqueda">
-                                <i data-lucide="x" class="w-3 h-3"></i>
-                            </button>
-                        ` : ''}
+                        <input type="text" id="torneo-search-input" placeholder="BUSCAR TORNEO O LUGAR..." value="${torneoSearchTerm}" oninput="window.updateTorneoSearch(this.value)" class="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-100 rounded-xl text-[10px] font-black outline-none focus:ring-4 ring-blue-50 transition-all uppercase tracking-widest">
                     </div>
                 </div>
             </div>
 
-            ${showStatusTabs ? `
-                <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-full md:w-fit mb-8 shadow-inner">
-                    <button onclick="window.switchTorneoStatusTab('upcoming')" class="flex-1 md:flex-none px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentTorneoStatusTab === 'upcoming' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                        Próximas Citas
-                    </button>
-                    <button onclick="window.switchTorneoStatusTab('finished')" class="flex-1 md:flex-none px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${currentTorneoStatusTab === 'finished' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400 hover:text-slate-600'}">
-                        Torneos Jugados
-                    </button>
-                </div>
-            ` : ''}
-
-            <!-- Mobile View (Cards) -->
-            <div class="md:hidden space-y-10">
-                ${displaySections.map(sec => `
-                    ${sec.title ? `
-                        <div class="px-2 pt-6 pb-2 border-b border-slate-100 mb-2">
-                            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">${sec.title}</h3>
-                        </div>
-                    ` : ''}
-                    <div class="space-y-4">
-                        ${sec.items.map(c => renderTorneoCard(c)).join('') || `
-                            <div class="py-10 text-center italic text-slate-300 text-xs">No hay torneos en esta sección</div>
-                        `}
-                    </div>
-                `).join('')}
-                ${filtered.length === 0 ? `<div class="py-20 text-center italic text-slate-400">No hay torneos registrados</div>` : ''}
+            <div class="flex items-center p-1.5 bg-slate-100 rounded-[1.5rem] w-full md:w-fit mb-8 shadow-inner">
+                <button onclick="window.switchTorneoStatusTab('upcoming')" class="flex-1 px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentTorneoStatusTab === 'upcoming' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400'}">Próximas Citas</button>
+                <button onclick="window.switchTorneoStatusTab('finished')" class="flex-1 px-8 py-3 rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentTorneoStatusTab === 'finished' ? 'bg-white text-blue-600 shadow-lg' : 'text-slate-400'}">Torneos Jugados</button>
             </div>
 
-            <!-- Desktop View (Table) -->
-            <div class="hidden md:block space-y-12">
-                ${displaySections.map(sec => `
-                    <div class="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                        ${sec.title ? `
-                            <div class="flex items-center gap-4 mb-6 px-4">
-                                <h3 class="text-[11px] font-black text-slate-800 uppercase tracking-[0.3em]">${sec.title}</h3>
-                                <div class="h-px flex-1 bg-slate-100"></div>
-                                <span class="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-full">${sec.items.length}</span>
-                            </div>
-                        ` : ''}
-                        <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-slate-50 border-b border-slate-100">
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Torneo / Evento</th>
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Fecha</th>
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Equipo</th>
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Lugar</th>
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-center">Convocados</th>
-                                            <th class="p-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-50">
-                                        ${sec.items.map(c => renderTorneoRow(c)).join('') || `
-                                            <tr><td colspan="6" class="p-12 text-center text-slate-300 italic text-xs">No hay torneos en esta sección.</td></tr>
-                                        `}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                `).join('')}
-                ${filtered.length === 0 ? `
-                    <div class="bg-white rounded-[2.5rem] border border-slate-100 p-20 text-center italic text-slate-300">
-                        No se han encontrado torneos registrados.
-                    </div>
-                ` : ''}
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                ${paginatedTorneos.map(t => renderTorneoCard(t)).join('')}
             </div>
-            <div class="mt-8 flex justify-between items-center px-4">
-                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sincronizado con Supabase · ${filtered.length} torneos listados</p>
-            </div>
+
+            ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageTorneos')}
+
+            ${filtered.length === 0 ? `<div class="py-20 text-center italic text-slate-400">No hay torneos registrados</div>` : ''}
         `;
         if (window.lucide) lucide.createIcons();
-
-        const searchInput = document.getElementById('torneo-search-input');
-        if (searchInput && torneoSearchTerm) {
-            searchInput.focus();
-            searchInput.setSelectionRange(torneoSearchTerm.length, torneoSearchTerm.length);
-        }
     }
 
     window.viewTorneoRendimiento = async (id) => {
@@ -7974,7 +7863,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
             if (error) throw error;
 
-            // Fetch players directly from Supabase for maximum reliability in this view
             const { data: players } = await supabaseClient.from('jugadores').select('*');
             const teams = window.getSortedTeams(await db.getAll('equipos'));
             const { data: users } = await supabaseClient.from('profiles').select('*');
@@ -7984,7 +7872,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const rendimiento = conv.rendimiento || {};
             const docs = window.getConvMetadata(conv).documentos || [];
 
-            // Aplicar posiciones específicas del torneo (herencia)
             convocados.forEach(p => {
                 if (rendimiento[p.id] && rendimiento[p.id].pos) {
                     p.posicion = rendimiento[p.id].pos;
@@ -8013,7 +7900,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <!-- Left: Evaluation Table -->
                         <div class="lg:col-span-7 space-y-6">
                             <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm">
                                 <form id="torneo-rendimiento-form">
@@ -8031,7 +7917,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             </thead>
                                             <tbody id="torneo-table-body">
                                                 ${convocados.map(p => {
-                const { extra: meta } = window.parseLugarMetadata(conv.lugar);
                 const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '' };
                 return `
                                                         <tr class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
@@ -8041,12 +7926,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
-                                                                    ${(() => {
-                        const currentPos = evalData.pos || window.parsePosition(p.posicion)[0] || '';
-                        return PLAYER_POSITIONS.map(pos => `
-                                                                            <option value="${pos}" ${currentPos === pos ? 'selected' : ''}>${pos}</option>
-                                                                        `).join('');
-                    })()}
+                                                                    ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${(evalData.pos || window.parsePosition(p.posicion)[0]) === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                                                                 </select>
                                                             </td>
                                                             <td class="p-4">
@@ -8067,7 +7947,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     `;
             }).join('')}
                                                 
-                                                <!-- Row for adding new players -->
                                                 <tr class="bg-blue-50/10">
                                                     <td class="p-4" colspan="4">
                                                         <div class="space-y-4">
@@ -8079,19 +7958,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                                         ${teams.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
                                                                     </select>
                                                                 </div>
+                                                                <div class="relative w-full md:w-1/3">
+                                                                    <i data-lucide="building" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i>
+                                                                    <select id="torneo-club-add-filter" class="w-full pl-10 pr-4 py-2.5 bg-white border border-blue-100 rounded-xl text-[11px] font-black uppercase outline-none focus:ring-4 ring-blue-50/50 transition-all">
+                                                                        <option value="none">Filtrar por Club...</option>
+                                                                        ${[...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort().map(c => `<option value="${c}">${c}</option>`).join('')}
+                                                                    </select>
+                                                                </div>
                                                                 <div class="relative flex-1">
                                                                     <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400"></i>
                                                                     <input type="text" id="add-player-torneo-input" placeholder="O busca por nombre..." class="w-full pl-10 pr-4 py-2.5 bg-white border border-blue-100 rounded-xl text-[11px] font-bold outline-none focus:ring-4 ring-blue-50/50 transition-all">
                                                                 </div>
                                                             </div>
-                                                            <!-- Checklist Area -->
                                                             <div id="add-player-results" class="hidden relative bg-white border border-blue-50 rounded-2xl overflow-hidden transition-all duration-300">
-                                                                <!-- Listado con checks -->
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td class="p-4 bg-blue-50/20 text-center align-bottom">
-                                                        <button type="button" id="confirm-bulk-add" class="hidden w-10 h-10 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 flex items-center justify-center hover:bg-blue-700 transition-all animate-in zoom-in">
+                                                        <button type="button" id="confirm-bulk-add" class="hidden w-full md:w-10 h-10 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 flex items-center justify-center hover:bg-blue-700 transition-all animate-in zoom-in" title="Añadir Selección">
                                                             <i data-lucide="user-plus" class="w-5 h-5"></i>
                                                         </button>
                                                     </td>
@@ -8106,10 +7990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
 
-                        <!-- Right: Stats/Graph Side -->
                         <div class="lg:col-span-5 space-y-8">
-
-
                              <div class="grid grid-cols-2 gap-4">
                                 <div class="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl shadow-blue-500/20 text-white">
                                     <p class="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2">Media Equipo</p>
@@ -8125,7 +8006,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                              </div>
 
-                             <!-- Campograma -->
                              <div class="bg-slate-900 p-8 rounded-[3rem] shadow-2xl overflow-hidden relative group/pitch">
                                  <div class="flex justify-between items-center mb-6">
                                      <h4 class="text-xs font-black text-white/40 uppercase tracking-widest flex items-center gap-2">
@@ -8150,7 +8030,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                  </div>
                              </div>
 
-                             <!-- Documentos -->
                              <div class="bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm space-y-6">
                                  <div class="flex justify-between items-center">
                                      <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -8190,7 +8069,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div id="torneo-sharing-list" class="grid grid-cols-2 md:grid-cols-4 gap-2 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
                                     ${(users && currentUser) ? users.filter(u => u.id !== currentUser.id).map(u => `
                                         <label class="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all select-none">
-                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${conv.sharedWith && conv.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600 focus:ring-blue-100">
+                                            <input type="checkbox" name="sharedWith" value="${u.id}" ${conv.sharedWith && conv.sharedWith.includes(u.id) ? 'checked' : ''} class="w-4 h-4 rounded text-blue-600">
                                             <div class="flex-1 min-w-0">
                                                 <p class="text-[10px] font-bold text-slate-700 truncate">${u.name || u.full_name || u.nombre || 'Sin nombre'}</p>
                                             </div>
@@ -8205,7 +8084,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             modalOverlay.classList.add('active');
             if (window.lucide) lucide.createIcons();
 
-            // Helper to update pitch in memory
             window.updateLocalPlayerPos = (pid, newPos) => {
                 const p = convocados.find(player => player.id == pid);
                 if (p) {
@@ -8217,13 +8095,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             };
 
-            // Helper to remove player
             window.removePlayerFromTorneo = async (tid, pid) => {
                 window.customConfirm('QUITAR JUGADOR', '¿Seguro que quieres quitar a este futbolista del torneo?', async () => {
                     const newPids = pids.filter(id => id.toString() !== pid.toString());
                     try {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                         if (error) throw error;
+                        if (document.getElementById('content-container')) {
+                            window.renderTorneos(document.getElementById('content-container'));
+                        }
                         window.viewTorneoRendimiento(tid);
                     } catch (err) {
                         window.customAlert('Error al quitar', err.message, 'error');
@@ -8231,36 +8111,56 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             };
 
-            // Add player search logic
             const addInput = document.getElementById('add-player-torneo-input');
             const teamAddFilter = document.getElementById('torneo-team-add-filter');
+            const clubAddFilter = document.getElementById('torneo-club-add-filter');
             const addResults = document.getElementById('add-player-results');
             const confirmBtn = document.getElementById('confirm-bulk-add');
 
             const bulkSelection = new Set();
 
             const updateAddResults = () => {
-                const term = (addInput.value || '').toLowerCase().trim();
-                const teamId = String(teamAddFilter.value);
-
-                if (teamId === 'none' && term.length < 2) {
-                    addResults.classList.add('hidden');
-                    addResults.innerHTML = '';
-                    return;
-                }
+                const term = (addInput?.value || '').toLowerCase().trim();
+                const teamId = String(teamAddFilter?.value || 'none');
+                const clubName = String(clubAddFilter?.value || 'none');
 
                 if (!players) return;
 
-                // Filtrar los que NO están ya en el torneo
                 let filtered = players.filter(p => !pids.includes(String(p.id)));
 
-                // Filtro por equipo
-                if (teamId !== 'none') {
-                    filtered = filtered.filter(p => String(p.equipoid) === teamId);
+                if (teamId !== 'none' && teams) {
+                    const selectedTeam = teams.find(t => String(t.id) === String(teamId) || String(t.nombre).toUpperCase() === String(teamId).toUpperCase());
+                    if (selectedTeam) {
+                        filtered = filtered.filter(p => {
+                            if (!p.equipoid) return false;
+                            if (Array.isArray(p.equipoid)) {
+                                return p.equipoid.some(eid => 
+                                    String(eid) === String(selectedTeam.id) || 
+                                    String(eid).toUpperCase() === String(selectedTeam.nombre).toUpperCase()
+                                );
+                            }
+                            return String(p.equipoid) === String(selectedTeam.id) || 
+                                   String(p.equipoid).toUpperCase() === String(selectedTeam.nombre).toUpperCase() ||
+                                   p.equipoid == selectedTeam.id;
+                        });
+                    }
                 }
 
-                // Filtro por término
-                if (term.length >= 2) {
+                if (clubName !== 'none') {
+                    filtered = filtered.filter(p => {
+                        if (!p.equipoConvenido) return false;
+                        if (Array.isArray(p.equipoConvenido)) {
+                            return p.equipoConvenido.some(c => 
+                                String(c).trim().toLowerCase().includes(clubName.trim().toLowerCase()) ||
+                                String(clubName).trim().toLowerCase().includes(String(c).trim().toLowerCase())
+                            );
+                        }
+                        return String(p.equipoConvenido).trim().toLowerCase().includes(clubName.trim().toLowerCase()) ||
+                               String(clubName).trim().toLowerCase().includes(String(p.equipoConvenido).trim().toLowerCase());
+                    });
+                }
+
+                if (term.length > 0) {
                     filtered = filtered.filter(p => (p.nombre || '').toLowerCase().includes(term));
                 }
 
@@ -8287,10 +8187,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         `).join('')}
                     </div>
                 `;
-
                     addResults.classList.remove('hidden');
 
-                    // Toggle logic
                     addResults.querySelectorAll('.torneo-add-check').forEach(chk => {
                         chk.onchange = (e) => {
                             if (e.target.checked) bulkSelection.add(String(e.target.value));
@@ -8319,8 +8217,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (window.lucide) lucide.createIcons();
             };
 
+            updateAddResults();
+
             if (addInput) addInput.oninput = updateAddResults;
             if (teamAddFilter) teamAddFilter.onchange = updateAddResults;
+            if (clubAddFilter) clubAddFilter.onchange = updateAddResults;
 
             if (confirmBtn) {
                 confirmBtn.onclick = async () => {
@@ -8329,6 +8230,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
                         if (error) throw error;
+                        if (document.getElementById('content-container')) {
+                            window.renderTorneos(document.getElementById('content-container'));
+                        }
                         window.viewTorneoRendimiento(id);
                     } catch (err) {
                         window.customAlert('Error al añadir', err.message, 'error');
@@ -8341,6 +8245,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                     if (error) throw error;
+                    if (document.getElementById('content-container')) {
+                        window.renderTorneos(document.getElementById('content-container'));
+                    }
                     window.viewTorneoRendimiento(tid);
                 } catch (err) {
                     window.customAlert('Error al añadir', err.message, 'error');
@@ -8396,25 +8303,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Global Click Listeners
     document.addEventListener('click', (e) => {
-        // Modal backdrop close
         if (e.target === modalOverlay) {
             closeModal();
         }
-
-        // Close custom multiselects if clicking outside
         if (!e.target.closest('.group\\/ms')) {
             document.querySelectorAll('[id$="-menu"]').forEach(m => m.classList.add('hidden'));
         }
-
-        // Close player search results if clicking outside
-        if (!e.target.closest('#add-player-torneo-input')) {
+        if (!e.target.closest('#add-player-torneo-input') && !e.target.closest('#add-player-results') && !e.target.closest('#torneo-team-add-filter') && !e.target.closest('#torneo-club-add-filter')) {
             const res = document.getElementById('add-player-results');
             if (res) res.classList.add('hidden');
         }
-
-        // Sidebar mobile close logic
         if (window.innerWidth < 768 && sidebar && mobileMenuBtn && !sidebar.contains(e.target) && !mobileMenuBtn.contains(e.target)) {
             sidebar.classList.add('-translate-x-full');
             sidebar.classList.remove('active-mobile');
@@ -8440,8 +8339,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 <form id="unified-event-form" class="space-y-8">
                     <input type="hidden" name="fecha" value="${date}">
-                    
-                    <!-- PARTE 1: EVENTO / TAREA -->
                     <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
                         <h4 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                             <i data-lucide="alarm-clock" class="w-4 h-4"></i> Datos del Evento
@@ -8463,14 +8360,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
 
-                    <!-- PARTE 2: VINCULACIONES -->
                     <div class="space-y-4">
                         <div class="flex items-center gap-2 mb-2 p-2">
                             <i data-lucide="link" class="w-4 h-4 text-blue-500"></i>
                             <span class="text-xs font-black text-slate-400 uppercase tracking-widest">¿Qué quieres vincular a este día?</span>
                         </div>
 
-                        <!-- Sesión Checkbox -->
                         <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:border-blue-200 transition-all">
                             <label class="flex items-center gap-4 cursor-pointer">
                                 <input type="checkbox" id="link-session" class="w-6 h-6 rounded-xl border-2 border-slate-200 text-blue-600 focus:ring-blue-100">
@@ -8492,7 +8387,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
 
-                        <!-- Convocatoria Checkbox -->
                         <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:border-emerald-200 transition-all">
                             <label class="flex items-center gap-4 cursor-pointer">
                                 <input type="checkbox" id="link-convocatoria" class="w-6 h-6 rounded-xl border-2 border-slate-200 text-emerald-600 focus:ring-emerald-100">
@@ -8520,7 +8414,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                      <input type="text" id="unified-player-search" placeholder="Buscar jugador..." class="w-full pl-10 pr-4 py-2 bg-white border border-slate-100 rounded-xl text-[10px] outline-none focus:ring-2 ring-emerald-50">
                                  </div>
                                 <div id="conv-players-list" class="max-h-48 overflow-y-auto custom-scrollbar p-2 bg-slate-50 rounded-2xl border border-slate-100 hidden">
-                                    <!-- Players list -->
                                 </div>
                             </div>
                         </div>
@@ -8537,7 +8430,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.lucide) lucide.createIcons();
         modalOverlay.classList.add('active');
 
-        // UI Logic for toggles
         const sCheck = document.getElementById('link-session');
         const sFields = document.getElementById('session-fields');
         sCheck.onchange = () => sFields.classList.toggle('hidden', !sCheck.checked);
@@ -8546,7 +8438,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cFields = document.getElementById('convocatoria-fields');
         cCheck.onchange = () => cFields.classList.toggle('hidden', !cCheck.checked);
 
-        // Session Template Logic
         const sTeamSel = document.getElementById('session-master-equipo');
         const sTemplSel = document.getElementById('session-template-selector');
         const sTasksInput = document.querySelector('input[name="session_tasks"]');
@@ -8570,13 +8461,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const found = sesiones.find(s => s.id == sid);
             if (found && found.taskids) {
                 sTasksInput.value = (found.taskids || []).join('; ');
-                // Opcional: llenar también el nombre del evento si está vacío
                 const nameInput = document.querySelector('input[name="nombre"]');
                 if (!nameInput.value) nameInput.value = found.titulo;
             }
         };
 
-        // Player loader for convocatoria
         const teamSel = document.getElementById('conv-master-equipo');
         const pList = document.getElementById('conv-players-list');
         const cTemplSel = document.getElementById('conv-template-selector');
@@ -8589,7 +8478,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // Población de jugadores
             pList.classList.remove('hidden');
             const filteredPlayers = players.filter(p => p.equipoid == tid);
             pList.innerHTML = filteredPlayers.map(p => `
@@ -8599,7 +8487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </label>
             `).join('') || '<p class="text-[10px] text-slate-400 p-2 italic">Sin jugadores en este equipo</p>';
 
-            // Población de plantillas de convocatoria
             const filteredConvs = convocatorias.filter(c => c.equipoid == tid);
             if (filteredConvs.length > 0) {
                 cTemplSel.innerHTML = '<option value="">Opcional: Importar convocatoria existente...</option>' +
@@ -8648,7 +8535,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const currentUser = userRes.data?.user;
                 if (!currentUser) throw new Error("Usuario no autenticado");
 
-                // 1. Crear Evento
                 const evento = {
                     nombre: baseData.nombre,
                     categoria: baseData.categoria,
@@ -8660,7 +8546,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const { data: evRes, error: evErr } = await supabaseClient.from('eventos').insert(evento).select();
                 if (evErr) throw evErr;
 
-                // 2. Crear Sesión si procede
                 if (sCheck.checked) {
                     const session = {
                         titulo: baseData.nombre,
@@ -8673,7 +8558,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     await supabaseClient.from('sesiones').insert(session);
                 }
 
-                // 3. Crear Convocatoria si procede
                 if (cCheck.checked) {
                     const playerIds = formData.getAll('conv_playerids');
                     const conv = {
@@ -8687,14 +8571,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     };
                     const newConv = await db.add('convocatorias', conv);
 
-                    // Auto-crear asistencia para el planificador
                     try {
                         const playersData = {};
                         playerIds.forEach(pid => { playersData[pid] = { status: 'asiste' }; });
-
                         const team = teams.find(t => t.id.toString() === (baseData.conv_equipoid || '').toString());
                         const teamName = team ? team.nombre : 'EQUIPO';
-
                         const attendanceData = {
                             fecha: baseData.fecha || new Date().toISOString().split('T')[0],
                             nombre: window.formatAttendanceName(baseData.fecha, teamName, baseData.conv_tipo, baseData.nombre),
@@ -8711,13 +8592,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
 
-                // Forzar actualización de IndexedDB para que se vea en el calendario sin esperar al pooler
                 if (window.syncAllData) await window.syncAllData();
-
                 window.customAlert('¡Planificado!', 'Se han creado los registros solicitados.', 'success');
                 closeModal();
-
-                // Refresh calendar view
                 window.switchView('calendario');
             } catch (err) {
                 console.error(err);
@@ -8726,7 +8603,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    // === NOTIFICATION CENTER ===
     const initNotifications = async () => {
         const notifBtn = document.getElementById('notif-btn');
         const notifBtnMobile = document.getElementById('notif-btn-mobile');
@@ -8744,7 +8620,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isClosing) {
                 notifPanel.classList.add('hidden');
             } else {
-                // Opening: refresh first to get latest IDs
                 await window.refreshNotifications();
                 notifPanel.classList.remove('hidden');
 
@@ -8753,7 +8628,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const ringIcon = notifBtn.querySelector('i');
                 if (ringIcon) ringIcon.classList.remove('animate-ring');
 
-                // Mark current items as seen
                 const seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
                 const currentIds = Array.from(notifList.querySelectorAll('[data-notif-id]')).map(el => el.dataset.notifId);
                 const updatedSeen = [...new Set([...seenNotifs, ...currentIds])];
@@ -8831,7 +8705,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     if (hasUnseen && notifPanel.classList.contains('hidden')) {
                         notifBadge.classList.remove('hidden');
-                        if (notifBadgeMobile) notifBadgeMobile.classList.remove('hidden');
+                        if (notifBadgeMobile) notifBadgeMobile.classList.add('hidden');
                         const ringIcon = notifBtn.querySelector('i');
                         if (ringIcon) ringIcon.classList.add('animate-ring');
                     }
@@ -8929,20 +8803,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
         }
 
-        // Marcar una notificación individual como leída/no leída
         window.toggleNotifSeen = (fullId, currentIsSeen) => {
             let seenNotifs = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]');
             if (currentIsSeen) {
-                // Mark as UNREAD: remove from seen
                 seenNotifs = seenNotifs.filter(id => id !== fullId);
             } else {
-                // Mark as READ: add to seen
                 if (!seenNotifs.includes(fullId)) seenNotifs.push(fullId);
             }
             localStorage.setItem('ms_coach_seen_notifs', JSON.stringify(seenNotifs));
             window.refreshNotifications();
         };
-        // Descartar notificación individual (Borrar)
+
         window.dismissIndividualNotif = (fullId) => {
             const dismissedNotifs = JSON.parse(localStorage.getItem('ms_coach_dismissed_notifs') || '[]');
             if (!dismissedNotifs.includes(fullId)) dismissedNotifs.push(fullId);
@@ -8950,7 +8821,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.refreshNotifications();
         };
 
-        // Swipe Functionality Logic
         window.initNotifSwiping = () => {
             const containers = document.querySelectorAll('.notif-swipe-container');
             containers.forEach(container => {
@@ -8958,20 +8828,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const actionLeft = container.querySelector('.notif-swipe-action-left');
                 const actionRight = container.querySelector('.notif-swipe-action-right');
                 const fullId = container.dataset.notifId;
-
                 if (!content) return;
-
                 let startX = 0;
                 let currentTranslate = 0;
                 let isDragging = false;
                 const threshold = 80;
-
                 const onStart = (e) => {
                     startX = (e.type === 'touchstart') ? e.touches[0].clientX : e.clientX;
                     isDragging = true;
                     content.style.transition = 'none';
-
-                    // Attach global listeners for move and end
                     if (e.type === 'touchstart') {
                         document.addEventListener('touchmove', onMove, { passive: false });
                         document.addEventListener('touchend', onEnd);
@@ -8980,23 +8845,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                         document.addEventListener('mouseup', onEnd);
                     }
                 };
-
                 const onMove = (e) => {
                     if (!isDragging) return;
-
-                    // Prevent default scrolling if swiping horizontally
                     const x = (e.type === 'touchmove') ? e.touches[0].clientX : e.clientX;
                     currentTranslate = x - startX;
-
                     if (Math.abs(currentTranslate) > 10) {
                         if (e.cancelable) e.preventDefault();
                     }
-
                     if (currentTranslate > 120) currentTranslate = 120;
                     if (currentTranslate < -120) currentTranslate = -120;
-
                     content.style.transform = `translateX(${currentTranslate}px)`;
-
                     if (currentTranslate > 20) {
                         actionLeft.style.opacity = Math.min(1, currentTranslate / 60);
                         actionRight.style.opacity = 0;
@@ -9008,13 +8866,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         actionRight.style.opacity = 0;
                     }
                 };
-
                 const onEnd = (e) => {
                     if (!isDragging) return;
                     isDragging = false;
-
                     content.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
-
                     if (currentTranslate > threshold) {
                         content.style.transform = 'translateX(0px)';
                         const isSeen = JSON.parse(localStorage.getItem('ms_coach_seen_notifs') || '[]').includes(fullId);
@@ -9027,34 +8882,24 @@ document.addEventListener('DOMContentLoaded', async () => {
                         actionLeft.style.opacity = 0;
                         actionRight.style.opacity = 0;
                     }
-
-                    // Clean up global listeners
                     document.removeEventListener('touchmove', onMove);
                     document.removeEventListener('touchend', onEnd);
                     document.removeEventListener('mousemove', onMove);
                     document.removeEventListener('mouseup', onEnd);
-
                     currentTranslate = 0;
                 };
-
                 content.onmousedown = onStart;
                 content.ontouchstart = onStart;
             });
         };
-
-        // Trigger check at start
         await window.refreshNotifications();
-
-        // Refresh every minute to check time-based notifications
         setInterval(window.refreshNotifications, 60 * 1000);
     };
 
-    // === EMAIL NOTIFICATIONS ===
     window.sendEmailNotification = async (type, item) => {
         try {
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (!user || !user.email) return;
-
             const isSession = type === 'sesiones';
             const subject = `⚽ Recordatorio RS CENTRO: ${item.nombre || item.titulo}`;
             const html = `
@@ -9077,23 +8922,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     </div>
                 </div>
             `;
-
-            // Para que esto funcione, se requiere una Supabase Edge Function o un servicio como Resend.
-            // Implementación vía Edge Function (Recomendado):
-            /*
-            await supabaseClient.functions.invoke('send-email', {
-                body: { to: user.email, subject, html }
-            });
-            */
-
-            // Simulación en consola por ahora (hasta configurar la clave de Resend/Edge Function)
             console.log("SIMULACIÓN DE ENVÍO DE EMAIL:");
             console.log(`Para: ${user.email}`);
             console.log(`Asunto: ${subject}`);
-
-            // Si el usuario tiene una Edge Function llamada 'send-email', se activaría aquí.
             window.customAlert('Aviso Email', `Se ha programado el recordatorio para ${user.email}. (Asegúrate de tener configurada la Edge Function en Supabase)`, 'success');
-
         } catch (err) {
             console.error("Error sending email:", err);
         }
@@ -9103,10 +8935,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const checked = Array.from(document.querySelectorAll('input[name="posicion"]:checked')).map(i => i.value);
         const select = document.querySelector('select[name="lateralidad"]');
         if (!select) return;
-
         let hasD = checked.some(p => p.endsWith('D'));
         let hasZ = checked.some(p => p.endsWith('Z'));
-
         if (hasD && hasZ) select.value = 'Ambidiestro';
         else if (hasD) select.value = 'Derecho';
         else if (hasZ) select.value = 'Zurdo';
@@ -9116,20 +8946,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!pos) return [];
         if (Array.isArray(pos)) return pos;
         if (typeof pos !== 'string') return [pos];
-
         let cleanPos = pos.trim();
-        // Handle strings that look like arrays: ["ACD"] or ['ACD'] or [ACD]
         if (cleanPos.startsWith('[') && cleanPos.endsWith(']')) {
             try {
-                const parsed = JSON.parse(cleanPos.replace(/'/g, '"')); // Try fixing single quotes
+                const parsed = JSON.parse(cleanPos.replace(/'/g, '"'));
                 if (Array.isArray(parsed)) return parsed;
             } catch (e) {
-                // Manual fallback for very malformed strings
                 cleanPos = cleanPos.substring(1, cleanPos.length - 1).replace(/['"]/g, '');
             }
         }
-
-        // Handle comma or slash separated strings
         return cleanPos.split(/[,/]/).map(s => s.trim()).filter(Boolean);
     };
 
@@ -9142,38 +8967,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.bulkUpdateLateralidad = async (e) => {
         const btn = e?.currentTarget || document.querySelector('button[onclick*="bulkUpdateLateralidad"]');
         if (!btn) return;
-
         const originalHtml = btn.innerHTML;
         btn.style.pointerEvents = 'none';
-
         try {
-            // Use current filtered players or fallback to all
             const players = window.currentFilteredPlayers || await db.getAll('jugadores');
             const total = players.length;
             let updatedCount = 0;
-
             if (total === 0) {
                 window.customAlert('Aviso', 'No hay jugadores para actualizar', 'info');
                 return;
             }
-
             for (let i = 0; i < total; i++) {
                 const p = players[i];
-
-                // Actualizar progreso visual en el botón
                 btn.innerHTML = `<i class="w-4 h-4 animate-spin text-amber-600"></i> ${i + 1}/${total}`;
-
                 const positions = window.parsePosition(p.posicion);
                 if (positions.length === 0) continue;
-
                 let hasD = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('D'));
                 let hasZ = positions.some(pos => typeof pos === 'string' && pos.toUpperCase().endsWith('Z'));
-
                 let newPie = '';
                 if (hasD && hasZ) newPie = 'Ambidiestro';
                 else if (hasD) newPie = 'Derecho';
                 else if (hasZ) newPie = 'Zurdo';
-
                 if (newPie && (!p.lateralidad || p.lateralidad.trim() === '')) {
                     p.lateralidad = newPie;
                     await db.update('jugadores', p);
@@ -9206,7 +9020,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentPosicion = window.currentJugadoresPosicion || 'all';
         const currentClub = window.currentJugadoresClub || 'all';
 
-        // Obtener años y clubes únicos para los filtros (Menor a Mayor)
         const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a, b) => a - b);
         const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
@@ -9214,7 +9027,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const matchesTeam = currentTeamId === 'all' ||
                 p.equipoid?.toString() === currentTeamId.toString() ||
                 (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(currentTeamId.toString()));
-
             const matchesSearch = !searchTerm || p.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
             const matchesAno = currentAno === 'all' || p.anionacimiento?.toString() === currentAno.toString();
             const matchesSexo = currentSexo === 'all' ||
@@ -9227,86 +9039,58 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         window.currentFilteredPlayers = filtered;
 
+        const pageSize = 25;
+        const currentPage = window.paginationState.jugadores || 1;
+        const totalItems = filtered.length;
+        const paginatedItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
-                <!-- Search & Filters Toolbar -->
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div>
+                    <div class="flex gap-2">
+                        <button onclick="window.showNewPlayerModal()" class="px-6 py-4 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20">
+                            <i data-lucide="user-plus" class="w-4 h-4"></i> Nuevo Jugador
+                        </button>
                         <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm mr-2">
-                            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                            Limpiar Duplicados
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Limpiar Duplicados
                         </button>
                     </div>
                     <div class="relative w-full md:w-96 group">
                         <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors"></i>
-                        <input type="text" 
-                            id="jugadores-search-input"
-                            placeholder="Buscar jugador por nombre..." 
-                            value="${searchTerm}"
-                            oninput="window.updateJugadoresSearch(this.value)"
-                            class="w-full pl-12 pr-12 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
-                        ${searchTerm ? `
-                            <button onclick="window.updateJugadoresSearch(''); window.renderJugadores(document.getElementById('content-container'))" 
-                                class="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 bg-slate-50 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all" title="Borrar búsqueda">
-                                <i data-lucide="x" class="w-4 h-4"></i>
-                            </button>
-                        ` : ''}
+                        <input type="text" id="jugadores-search-input" placeholder="Buscar jugador por nombre..." value="${searchTerm}" oninput="window.updateJugadoresSearch(this.value)" class="w-full pl-12 pr-12 py-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all shadow-sm">
                     </div>
                 </div>
 
-                <!-- Interactive Filters Toolbar -->
                 <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
-                    <!-- Detailed Selectors Row -->
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:flex items-center gap-2">
-                        <!-- Team Filter (New Primary) -->
                         <div class="relative flex-1 lg:min-w-[200px]">
                             <select onchange="window.switchJugadoresTeam(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
                                 <option value="all" ${currentTeamId === 'all' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
-                                ${sortedTeams.map(t => `
-                                    <option value="${t.id}" ${currentTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>
-                                `).join('')}
+                                ${sortedTeams.map(t => `<option value="${t.id}" ${currentTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                         </div>
-
                         <div class="relative flex-1 lg:min-w-[140px]">
                             <select onchange="window.switchJugadoresAno(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
                                 <option value="all" ${currentAno === 'all' ? 'selected' : ''}>AÑOS: TODOS</option>
                                 ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
                             </select>
-                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
                         </div>
-
                         <div class="relative flex-1 lg:min-w-[140px]">
                             <select onchange="window.switchJugadoresPosicion(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
                                 <option value="all" ${currentPosicion === 'all' ? 'selected' : ''}>TODAS LAS POSICIONES</option>
                                 ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${currentPosicion === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                             </select>
-                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
                         </div>
-
                         <div class="relative flex-1 lg:min-w-[140px]">
                             <select onchange="window.switchJugadoresSexo(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
                                 <option value="all" ${currentSexo === 'all' ? 'selected' : ''}>AMBOS SEXOS</option>
                                 <option value="Masculino" ${currentSexo === 'Masculino' ? 'selected' : ''}>MASCULINO</option>
                                 <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>FEMENINO</option>
-                                <option value="none" ${currentSexo === 'none' ? 'selected' : ''}>SIN ASIGNAR</option>
                             </select>
-                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
                         </div>
-
-                        <!-- Club Filter -->
-                        <div class="relative flex-1 lg:min-w-[160px]">
-                            <select onchange="window.switchJugadoresClub(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
-                                <option value="all" ${currentClub === 'all' ? 'selected' : ''}>CLUBES: TODOS</option>
-                                ${uniqueClubs.map(c => `<option value="${c}" ${currentClub === c ? 'selected' : ''}>${c}</option>`).join('')}
-                            </select>
-                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"></i>
-                        </div>
-
-                        <button onclick="window.bulkUpdateLateralidad(event)" class="lg:ml-auto flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all group" title="Auto-asignar pie por posición">
-                            <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i>
-                            AUTO-PIE
+                        <button onclick="window.bulkUpdateLateralidad(event)" class="lg:ml-auto flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all group">
+                            <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i> AUTO-PIE
                         </button>
                     </div>
                 </div>
@@ -9320,130 +9104,98 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Pie</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Sexo</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                ${filtered.map(p => {
+                            <tbody class="divide-y divide-slate-50">
+                                ${paginatedItems.map(p => {
             const playerTeam = teams.find(t => t.id?.toString() === p.equipoid?.toString());
             const playerTeamName = playerTeam ? playerTeam.nombre.split(' ||| ')[0] : '';
             return `
-                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+                                        <tr class="hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-4">
                                                 <div class="flex items-center gap-4">
-                                                    <div class="w-12 h-12 rounded-xl bg-slate-50 overflow-hidden border border-slate-100 group-hover:border-blue-200 transition-all cursor-pointer flex items-center justify-center" onclick="window.editPlayer('${p.id}')">
-                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden')">` : ''}
-                                                        <i data-lucide="user" class="w-5 h-5 text-slate-300 ${p.foto ? 'hidden' : ''}"></i>
+                                                    <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
+                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : `<i data-lucide="user" class="w-4 h-4 text-slate-300"></i>`}
                                                     </div>
                                                     <div>
-                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight cursor-text outline-none focus:text-blue-600 focus:ring-0" contenteditable="true" onblur="if(this.innerText !== '${p.nombre}') window.updatePlayerField('${p.id}', 'nombre', this.innerText.toUpperCase())" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.nombre}</p>
-                                                        <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                                            <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
-                                                            ${p.equipoid ? `<span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${playerTeamName}</span>` : ''}
-                                                            ${(p.equipo_ids || []).map(tid => {
-                const t = teams.find(tm => tm.id?.toString() === tid.toString());
-                if (!t) return '';
-                return `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded-[4px] text-[7px] font-black uppercase tracking-tight">${t.nombre.split(' ||| ')[0]}</span>`;
-            }).join('')}
-                                                        </div>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase">${p.nombre}</p>
+                                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4">
-                                                <div class="cursor-pointer" onclick="window.toggleInlinePosSelector('${p.id}', event)">
-                                                    <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em] border-b border-blue-200/30 hover:border-blue-600 transition-all">
-                                                        ${window.parsePosition(p.posicion).join(', ') || '--'}
-                                                    </span>
+                                            <td class="px-6 py-4 text-[10px] font-black text-blue-600 uppercase tracking-widest">${window.parsePosition(p.posicion).join(', ') || '--'}</td>
+                                            <td class="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">${p.anionacimiento || '--'}</td>
+                                            <td class="px-6 py-4 text-center">
+                                                <div class="inline-flex gap-0.5">
+                                                    ${Array.from({ length: 5 }).map((_, i) => `
+                                                        <i data-lucide="star" class="w-2.5 h-2.5 ${i < (p.nivel || 3) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}"></i>
+                                                    `).join('')}
                                                 </div>
-                                            </td>
-                                            <td class="px-6 py-4 text-center">
-                                                <div class="inline-block px-2 py-1 bg-slate-50 border border-slate-100 rounded-lg">
-                                                    <p class="text-[10px] font-black text-slate-500 cursor-text outline-none focus:text-blue-600" contenteditable="true" onblur="if(this.innerText !== '${p.anionacimiento || ''}') window.updatePlayerField('${p.id}', 'anionacimiento', parseInt(this.innerText))" onkeydown="if(event.key === 'Enter') { event.preventDefault(); this.blur(); }">${p.anionacimiento || ''}</p>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 text-center">
-                                                ${window.renderStars(p.nivel || 3, p.id)}
-                                            </td>
-                                            <td class="px-6 py-4 text-center">
-                                                <button onclick="window.togglePlayerLateralidad('${p.id}', '${p.lateralidad || ''}')" class="text-[9px] font-black uppercase tracking-tight transition-all hover:scale-110 ${p.lateralidad === 'Zurdo' ? 'text-amber-600' : (p.lateralidad === 'Ambidiestro' ? 'text-emerald-600' : 'text-slate-400')}">
-                                                    ${p.lateralidad || '--'}
-                                                </button>
-                                            </td>
-                                            <td class="px-6 py-4 text-center">
-                                                <button onclick="window.togglePlayerSexo('${p.id}', '${p.sexo || ''}')" class="text-[10px] font-black uppercase tracking-widest transition-all hover:scale-110 ${p.sexo?.toUpperCase().startsWith('F') ? 'text-rose-500' : (p.sexo?.toUpperCase().startsWith('M') ? 'text-blue-500' : 'text-slate-300')}">
-                                                    ${p.sexo?.substring(0, 1).toUpperCase() || '?'}
-                                                </button>
                                             </td>
                                             <td class="px-6 py-4 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <button onclick="window.viewPlayerProfile('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Ficha">
-                                                        <i data-lucide="user" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.editPlayer('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
+                                                    <button onclick="window.viewPlayerProfile('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><i data-lucide="user" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.editPlayer('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
                                                 </div>
                                             </td>
                                         </tr>
                                     `;
-        }).join('') || `
-                                    <tr>
-                                        <td colspan="7" class="py-20 text-center">
-                                            <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
-                                            <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No se han encontrado jugadores</p>
-                                        </td>
-                                    </tr>
-                                `}
+        }).join('') || `<tr><td colspan="5" class="py-20 text-center text-slate-300 italic text-xs">No hay jugadores</td></tr>`}
                             </tbody>
                         </table>
                     </div>
                 </div>
+                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setJugadoresPage')}
             </div>
         `;
+        if (window.lucide) lucide.createIcons();
+    };
 
-        if (window.lucide) {
-            requestAnimationFrame(() => {
-                lucide.createIcons();
-            });
-        }
-
-        const searchInput = document.getElementById('jugadores-search-input');
-        if (searchInput && searchTerm) {
-            searchInput.focus();
-            searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
-        }
+    window.setJugadoresPage = (page) => {
+        window.paginationState.jugadores = page;
+        window.renderJugadores(document.getElementById('content-container'));
     };
 
     window.switchJugadoresTeam = (teamId) => {
+        window.paginationState.jugadores = 1;
         window.currentJugadoresTeamId = teamId;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
     window.updateJugadoresSearch = window.debounce((val) => {
+        window.paginationState.jugadores = 1;
         window.jugadoresSearchTerm = val;
         window.renderJugadores(document.getElementById('content-container'));
     }, 300);
 
     window.switchJugadoresAno = (val) => {
+        window.paginationState.jugadores = 1;
         window.currentJugadoresAno = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
     window.switchJugadoresSexo = (val) => {
+        window.paginationState.jugadores = 1;
         window.currentJugadoresSexo = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
     window.switchJugadoresPosicion = (val) => {
+        window.paginationState.jugadores = 1;
         window.currentJugadoresPosicion = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
     window.switchJugadoresClub = (val) => {
+        window.paginationState.jugadores = 1;
         window.currentJugadoresClub = val;
         window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.setPage = (page, view = window.currentView) => {
+        window.paginationState[view] = page;
+        window.renderView(view);
     };
 
     window.showNewPlayerModal = async () => {
@@ -9534,7 +9286,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div id="star-rating-new"></div>
                             </div>
 
-                            <!-- Otros Equipos (Solo Femenino) -->
                             <div id="extra-teams-container" class="space-y-2 md:col-span-2 hidden">
                                 <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
@@ -9592,23 +9343,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
-            data.posicion = formData.getAll('posicion').join(', '); // Save as clean string
-            data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
+            data.posicion = formData.getAll('posicion').join(', ');
+            data.equipo_ids = formData.getAll('equipo_ids');
 
-            // Cast numeric fields
             if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
             if (data.nivel) data.nivel = parseInt(data.nivel);
 
-            // Handle equipoid (should be number or null)
             if (data.equipoid === "") data.equipoid = null;
             else if (data.equipoid) data.equipoid = parseInt(data.equipoid);
 
-            // Handle multi-team (should be array of numbers)
             if (data.equipo_ids && Array.isArray(data.equipo_ids)) {
                 data.equipo_ids = data.equipo_ids.map(id => parseInt(id));
             }
 
-            // Forzar el campo exacto para Supabase
             data.equipoConvenido = formData.get('equipoConvenido') || null;
 
             try {
@@ -9636,29 +9383,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         const attendance = await db.getAll('asistencia');
         const convocatorias = await db.getAll('convocatorias');
 
-        // --- SEASON TABS CALCULATION ---
         const allDates = [...attendance.map(a => a.fecha), ...convocatorias.map(c => c.fecha)].filter(Boolean);
         const availableSeasons = [...new Set(allDates.map(d => window.getSeason(d)))].sort().reverse();
 
-        // Cache for inner scopes
         const rawPlayerConvs = convocatorias.filter(c => {
             const pids = c.playerids || [];
             return pids.map(String).includes(String(playerId));
         });
 
-        // Filter by season
         const filterBySeason = (items, dateField = 'fecha') => {
             if (selectedSeason === 'ALL') return items;
             return items.filter(i => window.getSeason(i[dateField]) === selectedSeason);
         };
 
         const playerConvs = filterBySeason(rawPlayerConvs);
-        // Enhanced filter: Search for player in main players object OR within any session of a cycle
         const playerAttendance = filterBySeason(attendance.filter(a => {
             const hasInMain = (a.players && a.players[playerId]) || (a.data && a.data[playerId]);
             if (hasInMain) return true;
             
-            // Also search inside cycle sessions
             if (a.sessions && Array.isArray(a.sessions)) {
                 return a.sessions.some(s => s.players && s.players[playerId]);
             }
@@ -9666,11 +9408,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }));
 
         const team = teams.find(t => t.id?.toString() === player.equipoid?.toString());
-
-        // --- PRE-CALCULATE CATEGORIZED DATA ---
         const categorized = { ciclos: [], sesiones: [], torneos: [] };
 
-        // Detailed Attendance Counts
         const attendanceSummary = {};
         playerAttendance.forEach(a => {
             const s = a.players[playerId];
@@ -9680,7 +9419,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             attendanceSummary[status] = (attendanceSummary[status] || 0) + 1;
         });
 
-        // 1. Process explicit attendance records
         playerAttendance.forEach(a => {
             const c = a.convocatoriaid ? convocatorias.find(cv => cv.id == a.convocatoriaid) : null;
             const score = (c?.rendimiento && c.rendimiento[playerId]) ? c.rendimiento[playerId].score : null;
@@ -9688,7 +9426,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const item = { ...a, rating: score };
 
             if (isCiclo && a.sessions && Array.isArray(a.sessions)) {
-                // Split Cycle into its individual sessions for the player profile
                 a.sessions.forEach((sess, sIdx) => {
                     if (sess.players && sess.players[playerId]) {
                         categorized.ciclos.push({
@@ -9702,15 +9439,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             else if (a.tipo === 'Torneo' || c?.tipo === 'Torneo') categorized.torneos.push(item);
             else if (a.tipo === 'Sesión' || a.tipo === 'Zubieta' || c?.tipo === 'Sesión' || c?.tipo === 'Zubieta') categorized.sesiones.push(item);
-            else categorized.sesiones.push(item); // Default fallback
+            else categorized.sesiones.push(item);
         });
 
         const playerTorneoConvs = rawPlayerConvs.filter(c => c.tipo === 'Torneo');
         const playerTorneoNames = [...new Set(playerTorneoConvs.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
-
         const uniqueTorneoNames = [...new Set(categorized.torneos.map(t => t.nombre?.split(' ||| ')[0] || 'Torneo'))];
 
-        // --- CALCULATE PARTICIPATION PERCENTAGES ---
         const teamId = player.equipoid?.toString();
         const teamStats = {
             totalTorneos: convocatorias.filter(c => c.equipoid?.toString() === teamId && c.tipo === 'Torneo').length,
@@ -9771,6 +9506,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             </div>
                             
+                            <div class="mt-4">
                                 <div class="relative w-full md:w-64">
                                     <select onchange="window.viewPlayerProfile('${playerId}', this.value)" class="w-full p-3 bg-slate-100 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer text-slate-600">
                                         <option value="ALL" ${selectedSeason === 'ALL' ? 'selected' : ''}>HISTORIAL COMPLETO</option>
@@ -9781,16 +9517,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         </div>
                     </div>
-
-                    ${(() => {
-                // Background Repair: If player has photo but no blob, try to generate it now
-                if (player.foto && !player.foto_blob) {
-                    window.generatePdfBlob(player.foto).then(blob => {
-                        if (blob) db.update('jugadores', { id: playerId, foto_blob: blob });
-                    });
-                }
-                return '';
-            })()}
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
                         <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100">
@@ -9830,149 +9556,141 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p class="text-[9px] font-bold text-slate-400 mt-4 leading-relaxed uppercase italic">Nivel estimado según rendimiento actual.</p>
                         </div>
 
-                                <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 flex flex-col justify-between">
-                                    <div class="mb-6">
-                                        <div class="flex justify-between items-center mb-3">
-                                            <p class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Competiciones</p>
-                                            <span class="text-[10px] font-black text-indigo-600">${playerStats.torneoPercent}%</span>
-                                        </div>
-                                        <div class="flex items-center gap-4 mb-4">
-                                            <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                <i data-lucide="trophy" class="w-6 h-6 text-indigo-600"></i>
-                                            </div>
-                                            <div>
-                                                <span class="text-3xl font-black text-slate-800">${playerTorneoConvs.length}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Torneos Seleccionados</p>
-                                            </div>
-                                        </div>
-                                        <div class="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
-                                            <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${playerStats.torneoPercent}%"></div>
-                                        </div>
-                                        <p class="text-[8px] font-black text-indigo-500 uppercase tracking-widest text-right mt-2 mb-6">${playerStats.torneoPercent}% Participación</p>
-                                        <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-2 custom-scrollbar">
-                                            ${playerTorneoNames.map(t => `
-                                                <span class="px-2 py-1 bg-white/80 border border-indigo-100 rounded-lg text-[8px] font-black text-indigo-600 uppercase truncate max-w-[120px] shadow-sm">${t}</span>
-                                            `).join('') || '<span class="text-[8px] text-slate-300 italic uppercase">Sin selecciones registradas</span>'}
-                                        </div>
-                                    </div>
-                                    <p class="text-[9px] font-bold text-indigo-400/70 mt-4 leading-relaxed uppercase italic">Participación en eventos competitivos.</p>
+                        <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 flex flex-col justify-between">
+                            <div class="mb-6">
+                                <div class="flex justify-between items-center mb-3">
+                                    <p class="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Competiciones</p>
+                                    <span class="text-[10px] font-black text-indigo-600">${playerStats.torneoPercent}%</span>
                                 </div>
+                                <div class="flex items-center gap-4 mb-4">
+                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                        <i data-lucide="trophy" class="w-6 h-6 text-indigo-600"></i>
+                                    </div>
+                                    <div>
+                                        <span class="text-3xl font-black text-slate-800">${playerTorneoConvs.length}</span>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase">Torneos Seleccionados</p>
+                                    </div>
+                                </div>
+                                <div class="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: ${playerStats.torneoPercent}%"></div>
+                                </div>
+                                <p class="text-[8px] font-black text-indigo-500 uppercase tracking-widest text-right mt-2 mb-6">${playerStats.torneoPercent}% Participación</p>
+                                <div class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-2 custom-scrollbar">
+                                    ${playerTorneoNames.map(t => `
+                                        <span class="px-2 py-1 bg-white/80 border border-indigo-100 rounded-lg text-[8px] font-black text-indigo-600 uppercase truncate max-w-[120px] shadow-sm">${t}</span>
+                                    `).join('') || '<span class="text-[8px] text-slate-300 italic uppercase">Sin selecciones registradas</span>'}
+                                </div>
+                            </div>
+                            <p class="text-[9px] font-bold text-indigo-400/70 mt-4 leading-relaxed uppercase italic">Participación en eventos competitivos.</p>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                        ${(() => {
-                return `
-                                <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/50 flex flex-col justify-between">
+                        <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/50 flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-center mb-3">
+                                    <p class="text-[9px] font-black text-amber-500 uppercase tracking-widest">Entrenamientos</p>
+                                    <span class="text-[10px] font-black text-amber-600">${playerStats.sesionPercent}%</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                        <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i>
+                                    </div>
                                     <div>
-                                        <div class="flex justify-between items-center mb-3">
-                                            <p class="text-[9px] font-black text-amber-500 uppercase tracking-widest">Entrenamientos</p>
-                                            <span class="text-[10px] font-black text-amber-600">${playerStats.sesionPercent}%</span>
-                                        </div>
-                                        <div class="flex items-center gap-4">
+                                        <span class="text-3xl font-black text-slate-800">${teamStats.totalSesiones}</span>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase">Selecciones Totales</p>
+                                    </div>
+                                </div>
+                                <div class="w-full h-2 bg-amber-100 rounded-full overflow-hidden mt-6">
+                                    <div class="h-full bg-amber-500 rounded-full transition-all duration-1000" style="width: ${playerStats.sesionPercent}%"></div>
+                                </div>
+                                <p class="text-[8px] font-black text-amber-500 uppercase tracking-widest text-right mt-2">${playerStats.sesionPercent}% Asistencia</p>
+                            </div>
+                            <p class="text-[9px] font-bold text-amber-500/70 mt-4 leading-relaxed uppercase italic">Asistencia a entrenamientos regulares.</p>
+                        </div>
+
+                        <div class="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100/50 flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-center mb-3">
+                                    <p class="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Ciclos de Trabajo</p>
+                                    <span class="text-[10px] font-black text-emerald-600">${playerStats.cicloPercent}%</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                                        <i data-lucide="layers" class="w-6 h-6 text-emerald-500"></i>
+                                    </div>
+                                    <div>
+                                        <span class="text-3xl font-black text-slate-800">${categorized.ciclos.length}</span>
+                                        <p class="text-[8px] font-bold text-slate-400 uppercase">Ciclos Completados</p>
+                                    </div>
+                                </div>
+                                <div class="w-full h-2 bg-emerald-100 rounded-full overflow-hidden mt-6">
+                                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-1000" style="width: ${playerStats.cicloPercent}%"></div>
+                                </div>
+                                <p class="text-[8px] font-black text-emerald-500 uppercase tracking-widest text-right mt-2">${playerStats.cicloPercent}% Cumplimiento</p>
+                            </div>
+                            <p class="text-[9px] font-bold text-emerald-500/70 mt-4 leading-relaxed uppercase italic">Participación en periodos de formación.</p>
+                        </div>
+
+                        <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100/50 flex flex-col justify-between">
+                            <div>
+                                <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
+                                ${(() => {
+                                    const allEvents = [...categorized.sesiones, ...categorized.ciclos, ...categorized.torneos];
+                                    const ratings = allEvents.map(t => {
+                                        return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
+                                    }).filter(r => r.rating && r.rating !== '--');
+                                    const avgRating = ratings.length > 0 ? (ratings.reduce((acc, r) => acc + parseFloat(r.rating), 0) / ratings.length).toFixed(1) : null;
+                                    const ratingPercent = avgRating ? Math.round((avgRating / 10) * 100) : 0;
+                                    if (ratings.length === 0) return `
+                                        <div class="flex items-center gap-4 mb-4">
                                             <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                <i data-lucide="calendar" class="w-6 h-6 text-amber-500"></i>
+                                                <i data-lucide="award" class="w-6 h-6 text-rose-300"></i>
                                             </div>
                                             <div>
-                                                <span class="text-3xl font-black text-slate-800">${teamStats.totalSesiones}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Selecciones Totales</p>
+                                                <span class="text-3xl font-black text-slate-300">--</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Media Torneos</p>
                                             </div>
                                         </div>
-                                        <div class="w-full h-2 bg-amber-100 rounded-full overflow-hidden mt-6">
-                                            <div class="h-full bg-amber-500 rounded-full transition-all duration-1000" style="width: ${playerStats.sesionPercent}%"></div>
-                                        </div>
-                                        <p class="text-[8px] font-black text-amber-500 uppercase tracking-widest text-right mt-2">${playerStats.sesionPercent}% Asistencia</p>
-                                    </div>
-                                    <p class="text-[9px] font-bold text-amber-500/70 mt-4 leading-relaxed uppercase italic">Asistencia a entrenamientos regulares.</p>
-                                </div>
-
-                                <div class="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100/50 flex flex-col justify-between">
-                                    <div>
+                                        <div class="py-6 text-center bg-white/30 rounded-xl border border-dashed border-rose-100"><p class="text-[8px] text-slate-300 italic uppercase">Sin puntuaciones</p></div>
+                                    `;
+                                    return `
                                         <div class="flex justify-between items-center mb-3">
-                                            <p class="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Ciclos de Trabajo</p>
-                                            <span class="text-[10px] font-black text-emerald-600">${playerStats.cicloPercent}%</span>
+                                            <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
+                                            <span class="text-[10px] font-black text-rose-600">${ratingPercent}%</span>
                                         </div>
-                                        <div class="flex items-center gap-4">
+                                        <div class="flex items-center gap-4 mb-4">
                                             <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                <i data-lucide="layers" class="w-6 h-6 text-emerald-500"></i>
+                                                <i data-lucide="award" class="w-6 h-6 text-rose-600"></i>
                                             </div>
                                             <div>
-                                                <span class="text-3xl font-black text-slate-800">${categorized.ciclos.length}</span>
-                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Ciclos Completados</p>
+                                                <span class="text-3xl font-black text-slate-800">${avgRating}</span>
+                                                <p class="text-[8px] font-bold text-slate-400 uppercase">Nota Media</p>
                                             </div>
                                         </div>
-                                        <div class="w-full h-2 bg-emerald-100 rounded-full overflow-hidden mt-6">
-                                            <div class="h-full bg-emerald-500 rounded-full transition-all duration-1000" style="width: ${playerStats.cicloPercent}%"></div>
+                                        <div class="w-full h-2 bg-rose-100 rounded-full overflow-hidden mt-6">
+                                            <div class="h-full bg-rose-500 rounded-full transition-all duration-1000" style="width: ${ratingPercent}%"></div>
                                         </div>
-                                        <p class="text-[8px] font-black text-emerald-500 uppercase tracking-widest text-right mt-2">${playerStats.cicloPercent}% Cumplimiento</p>
-                                    </div>
-                                    <p class="text-[9px] font-bold text-emerald-500/70 mt-4 leading-relaxed uppercase italic">Participación en periodos de formación.</p>
-                                </div>
-
-                                <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100/50 flex flex-col justify-between">
-                                    <div>
-                                        <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
-                                        ${(() => {
-                        const allEvents = [...categorized.sesiones, ...categorized.ciclos, ...categorized.torneos];
-                        const ratings = allEvents.map(t => {
-                            return { nombre: t.nombre?.split(' ||| ')[0] || 'Evento', rating: t.rating, fecha: t.fecha };
-                        }).filter(r => r.rating && r.rating !== '--');
-
-                        const avgRating = ratings.length > 0 ? (ratings.reduce((acc, r) => acc + parseFloat(r.rating), 0) / ratings.length).toFixed(1) : null;
-                        const ratingPercent = avgRating ? Math.round((avgRating / 10) * 100) : 0;
-
-                        if (ratings.length === 0) return `
-                                                <div class="flex items-center gap-4 mb-4">
-                                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                        <i data-lucide="award" class="w-6 h-6 text-rose-300"></i>
-                                                    </div>
+                                        <p class="text-[8px] font-black text-rose-500 uppercase tracking-widest text-right mt-2 mb-6">${ratingPercent}% Rendimiento</p>
+                                        <div class="space-y-3 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+                                            ${ratings.map(r => `
+                                                <div class="flex justify-between items-center py-2 border-b border-rose-100/30">
                                                     <div>
-                                                        <span class="text-3xl font-black text-slate-300">--</span>
-                                                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Media Torneos</p>
+                                                        <p class="text-[9px] font-black text-slate-700 uppercase truncate max-w-[100px]">${r.nombre}</p>
+                                                        <p class="text-[7px] font-bold text-slate-400 uppercase">${r.fecha}</p>
+                                                    </div>
+                                                    <div class="flex items-center gap-1.5">
+                                                        <span class="text-xs font-black text-rose-600">${r.rating}</span>
                                                     </div>
                                                 </div>
-                                                <div class="py-6 text-center bg-white/30 rounded-xl border border-dashed border-rose-100"><p class="text-[8px] text-slate-300 italic uppercase">Sin puntuaciones</p></div>
-                                            `;
-
-                        return `
-                                                <div class="flex justify-between items-center mb-3">
-                                                    <p class="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-3">Rendimiento en Torneos</p>
-                                                    <span class="text-[10px] font-black text-rose-600">${ratingPercent}%</span>
-                                                </div>
-                                                <div class="flex items-center gap-4 mb-4">
-                                                    <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                                                        <i data-lucide="award" class="w-6 h-6 text-rose-600"></i>
-                                                    </div>
-                                                    <div>
-                                                        <span class="text-3xl font-black text-slate-800">${avgRating}</span>
-                                                        <p class="text-[8px] font-bold text-slate-400 uppercase">Nota Media</p>
-                                                    </div>
-                                                </div>
-                                                <div class="w-full h-2 bg-rose-100 rounded-full overflow-hidden mt-6">
-                                                    <div class="h-full bg-rose-500 rounded-full transition-all duration-1000" style="width: ${ratingPercent}%"></div>
-                                                </div>
-                                                <p class="text-[8px] font-black text-rose-500 uppercase tracking-widest text-right mt-2 mb-6">${ratingPercent}% Rendimiento</p>
-                                                <div class="space-y-3 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
-                                                    ${ratings.map(r => `
-                                                        <div class="flex justify-between items-center py-2 border-b border-rose-100/30">
-                                                            <div>
-                                                                <p class="text-[9px] font-black text-slate-700 uppercase truncate max-w-[100px]">${r.nombre}</p>
-                                                                <p class="text-[7px] font-bold text-slate-400 uppercase">${r.fecha}</p>
-                                                            </div>
-                                                            <div class="flex items-center gap-1.5">
-                                                                <span class="text-xs font-black text-rose-600">${r.rating}</span>
-                                                            </div>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            `;
-                    })()}
-                                    </div>
-                                    <p class="text-[9px] font-bold text-rose-500/60 mt-4 leading-relaxed uppercase italic">Media histórica en competición.</p>
-                                </div>
-                            `;
-            })()}
+                                            `).join('')}
+                                        </div>
+                                    `;
+                                })()}
+                            </div>
+                            <p class="text-[9px] font-bold text-rose-500/60 mt-4 leading-relaxed uppercase italic">Media histórica en competición.</p>
+                        </div>
                     </div>
-                    
 
                     <div class="mt-8 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                         <div class="flex items-center justify-between mb-8">
@@ -9986,13 +9704,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                         
                         <div class="space-y-12">
                             ${(() => {
-                if (categorized.sesiones.length === 0 && categorized.ciclos.length === 0 && categorized.torneos.length === 0) {
-                    return '<div class="py-20 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-100"><p class="text-xs font-black text-slate-300 uppercase tracking-widest italic">No hay registros de asistencia</p></div>';
-                }
+                                if (categorized.sesiones.length === 0 && categorized.ciclos.length === 0 && categorized.torneos.length === 0) {
+                                    return '<div class="py-20 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-100"><p class="text-xs font-black text-slate-300 uppercase tracking-widest italic">No hay registros de asistencia</p></div>';
+                                }
 
-                const renderGroup = (title, items, icon, colorClass) => {
-                    if (items.length === 0) return '';
-                    return `
+                                const renderGroup = (title, items, icon, colorClass) => {
+                                    if (items.length === 0) return '';
+                                    return `
                                         <div class="space-y-4">
                                             <div class="flex items-center gap-3 pb-2 border-b-2 border-slate-50">
                                                 <i data-lucide="${icon}" class="w-4 h-4 ${colorClass}"></i>
@@ -10009,21 +9727,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     </thead>
                                                     <tbody class="divide-y divide-slate-50">
                                                         ${items.sort((a, b) => b.fecha.localeCompare(a.fecha)).map(a => {
-                        const status = a.players[playerId];
-                        const reason = (typeof status === 'object') ? status.reason : '';
-                        const statusValue = (typeof status === 'object') ? status.status : status;
-                        let badge = '';
-                        if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
-                        else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
-                        else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
-                        else if (statusValue === 'enfermo') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Enfermo</span>';
-                        else if (statusValue === 'viaje') badge = '<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Viaje</span>';
-                        else if (statusValue === 'medico') badge = '<span class="px-2 py-1 bg-sky-50 text-sky-600 rounded-lg text-[8px] font-black uppercase">Médico</span>';
-                        else if (statusValue === 'familia') badge = '<span class="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-[8px] font-black uppercase">Familia</span>';
-                        else if (statusValue === 'otros') badge = '<span class="px-2 py-1 bg-slate-50 text-slate-600 rounded-lg text-[8px] font-black uppercase">Otros</span>';
-                        else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
+                                                            const status = a.players[playerId];
+                                                            const reason = (typeof status === 'object') ? status.reason : '';
+                                                            const statusValue = (typeof status === 'object') ? status.status : status;
+                                                            let badge = '';
+                                                            if (statusValue === 'asiste') badge = '<span class="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[8px] font-black uppercase">Presente</span>';
+                                                            else if (statusValue === 'falta') badge = '<span class="px-2 py-1 bg-rose-50 text-rose-600 rounded-lg text-[8px] font-black uppercase">Sin Motivo</span>';
+                                                            else if (statusValue === 'lesion') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Lesionado</span>';
+                                                            else if (statusValue === 'enfermo') badge = '<span class="px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[8px] font-black uppercase">Enfermo</span>';
+                                                            else if (statusValue === 'viaje') badge = '<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">Viaje</span>';
+                                                            else if (statusValue === 'medico') badge = '<span class="px-2 py-1 bg-sky-50 text-sky-600 rounded-lg text-[8px] font-black uppercase">Médico</span>';
+                                                            else if (statusValue === 'familia') badge = '<span class="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-[8px] font-black uppercase">Familia</span>';
+                                                            else if (statusValue === 'otros') badge = '<span class="px-2 py-1 bg-slate-50 text-slate-600 rounded-lg text-[8px] font-black uppercase">Otros</span>';
+                                                            else badge = `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase">${statusValue}</span>`;
 
-                        return `
+                                                            return `
                                                                 <tr class="hover:bg-slate-50/50 transition-colors">
                                                                     <td class="py-4 px-4">
                                                                         <div class="flex items-center gap-2">
@@ -10036,20 +9754,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                                     <td class="py-4 px-4 text-[9px] font-bold text-slate-500 italic">${reason || (statusValue === 'asiste' ? '-' : '...')}</td>
                                                                 </tr>
                                                             `;
-                    }).join('')}
+                                                        }).join('')}
                                                     </tbody>
                                                 </table>
                                             </div>
                                         </div>
                                     `;
-                };
+                                };
 
-                return `
+                                return `
                                     ${renderGroup('Ciclos de Perfeccionamiento', categorized.ciclos, 'refresh-ccw', 'text-blue-500')}
                                     ${renderGroup('Entrenamientos', categorized.sesiones, 'calendar', 'text-amber-500')}
                                     ${renderGroup('Torneos', categorized.torneos, 'trophy', 'text-indigo-500')}
                                 `;
-            })()}
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -10105,9 +9823,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Posiciones</label>
                                 <div class="flex flex-wrap gap-2 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
                                     ${PLAYER_POSITIONS.map(pos => {
-            const playerPositions = window.parsePosition(player.posicion);
-            const isSelected = playerPositions.includes(pos);
-            return `
+                                        const playerPositions = window.parsePosition(player.posicion);
+                                        const isSelected = playerPositions.includes(pos);
+                                        return `
                                             <label class="cursor-pointer group">
                                                 <input type="checkbox" name="posicion" value="${pos}" class="hidden peer" ${isSelected ? 'checked' : ''} onchange="window.autoDetectLateralidad(this)">
                                                 <span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight border border-slate-200 bg-white text-slate-400 peer-checked:bg-blue-600 peer-checked:text-white peer-checked:border-blue-600 transition-all hover:border-blue-200">
@@ -10115,7 +9833,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 </span>
                                             </label>
                                         `;
-        }).join('')}
+                                    }).join('')}
                                 </div>
                             </div>
                             <div class="space-y-2">
@@ -10155,20 +9873,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div id="star-rating-edit"></div>
                             </div>
 
-                            <!-- Otros Equipos (Solo Femenino) -->
                             <div id="extra-teams-container-edit" class="space-y-2 md:col-span-2 ${player.sexo === 'Femenino' ? '' : 'hidden'}">
                                 <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
                                     ${teams.map(t => {
-            const isMain = player.equipoid?.toString() === t.id.toString();
-            const isSecondary = (player.equipo_ids || []).map(String).includes(t.id.toString());
-            return `
+                                        const isMain = player.equipoid?.toString() === t.id.toString();
+                                        const isSecondary = (player.equipo_ids || []).map(String).includes(t.id.toString());
+                                        return `
                                             <label class="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all ${isMain ? 'opacity-50 pointer-events-none bg-slate-50' : ''}">
                                                 <input type="checkbox" name="equipo_ids" value="${t.id}" ${isSecondary ? 'checked' : ''} ${isMain ? 'disabled' : ''} class="w-4 h-4 rounded text-blue-600">
                                                 <span class="text-[9px] font-bold text-slate-600 truncate uppercase">${t.nombre.split(' ||| ')[0]}</span>
                                             </label>
                                         `;
-        }).join('')}
+                                    }).join('')}
                                 </div>
                             </div>
                         </div>
@@ -10215,23 +9932,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.id = playerId;
-            data.posicion = formData.getAll('posicion').join(', '); // Save as clean string
-            data.equipo_ids = formData.getAll('equipo_ids'); // Save as array
+            data.posicion = formData.getAll('posicion').join(', ');
+            data.equipo_ids = formData.getAll('equipo_ids');
 
-            // Cast numeric fields
             if (data.anionacimiento) data.anionacimiento = parseInt(data.anionacimiento);
             if (data.nivel) data.nivel = parseInt(data.nivel);
 
-            // Handle equipoid (should be number or null)
             if (data.equipoid === "") data.equipoid = null;
             else if (data.equipoid) data.equipoid = parseInt(data.equipoid);
 
-            // Handle multi-team (should be array of numbers)
             if (data.equipo_ids && Array.isArray(data.equipo_ids)) {
                 data.equipo_ids = data.equipo_ids.map(id => parseInt(id));
             }
 
-            // Forzar el campo exacto para Supabase
             data.equipoConvenido = formData.get('equipoConvenido') || null;
 
             try {
@@ -10266,12 +9979,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.renderEquipos = async function (container) {
-        const teams = window.getSortedTeams(await db.getAll('equipos'));
+        const teams = await db.getAll('equipos');
         const players = await db.getAll('jugadores');
         const sortedTeams = window.getSortedTeams(teams);
 
+        const pageSize = 25;
+        const currentPage = window.paginationState.equipos || 1;
+        const totalItems = sortedTeams.length;
+        const paginated = sortedTeams.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
+                <div class="flex justify-between items-center px-2">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Gestión de Plantillas</h3>
+                    <button onclick="window.showNewTeamModal()" class="px-6 py-4 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Nueva Plantilla
+                    </button>
+                </div>
+
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -10283,15 +10008,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                ${sortedTeams.map(t => {
+                            <tbody class="divide-y divide-slate-50">
+                                ${paginated.map(t => {
             const teamPlayers = players.filter(p => p.equipoid?.toString() === t.id.toString());
             const teamName = (t.nombre || '').split(' ||| ')[0];
             return `
-                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+                                        <tr class="hover:bg-blue-50/30 transition-all group">
                                             <td class="px-8 py-5">
                                                 <div class="flex items-center gap-4">
-                                                    <div class="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden p-2 group-hover:border-blue-200 transition-all">
+                                                    <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden p-2 group-hover:border-blue-200 transition-all">
                                                         ${t.escudo ? `<img src="${t.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="shield" class="w-5 h-5 text-blue-600"></i>`}
                                                     </div>
                                                     <div>
@@ -10299,28 +10024,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-5">
-                                                <span class="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                                                    ${t.categoria || 'BASE'}
-                                                </span>
+                                            <td class="px-6 py-4">
+                                                <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest">${t.categoria || 'BASE'}</span>
                                             </td>
-                                            <td class="px-6 py-5 text-center">
+                                            <td class="px-6 py-4 text-center">
                                                 <div class="flex flex-col items-center">
                                                     <span class="text-sm font-black text-slate-700">${teamPlayers.length}</span>
                                                     <span class="text-[8px] font-black text-slate-300 uppercase tracking-widest">Jugadores</span>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-5 text-right">
+                                            <td class="px-6 py-4 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <button onclick="window.switchJugadoresTeam('${t.id}'); window.switchView('jugadores')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Plantilla">
-                                                        <i data-lucide="users" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.editTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.deleteTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all" title="Eliminar">
-                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                    </button>
+                                                    <button onclick="window.switchJugadoresTeam('${t.id}'); window.switchView('jugadores')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Plantilla"><i data-lucide="users" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.editTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.deleteTeam('${t.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -10330,10 +10047,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </table>
                     </div>
                 </div>
+                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageEquipos')}
             </div>
         `;
         if (window.lucide) lucide.createIcons();
     };
+
+    window.setPageEquipos = (page) => {
+        window.paginationState.equipos = page;
+        window.renderEquipos(document.getElementById('content-container'));
+    };
+
 
     window.showNewTeamModal = () => {
         modalContainer.innerHTML = `
@@ -10514,69 +10238,76 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.renderClubes = async function (container) {
         const clubes = await db.getAll('clubes');
+        const sorted = clubes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        const pageSize = 25;
+        const currentPage = window.paginationState.clubes || 1;
+        const totalItems = sorted.length;
+        const paginated = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
+                <div class="flex justify-between items-center px-2">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Directorio de Clubes</h3>
+                    <button onclick="window.showNewClubModal()" class="px-6 py-4 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Nuevo Club
+                    </button>
+                </div>
+
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-slate-50/50 border-b border-slate-100">
-                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club</th>
+                                <tr class="bg-slate-50 border-b border-slate-100">
+                                    <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Club / Institución</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Localidad</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                ${clubes.length === 0 ? `
-                                    <tr>
-                                        <td colspan="2" class="py-20 text-center">
-                                            <i data-lucide="building-2" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
-                                            <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay clubes registrados</p>
+                            <tbody class="divide-y divide-slate-50">
+                                ${paginated.length === 0 ? `
+                                    <tr><td colspan="3" class="py-20 text-center italic text-slate-400">No hay clubes registrados</td></tr>
+                                ` : paginated.map(c => `
+                                    <tr class="hover:bg-slate-50 transition-all group">
+                                        <td class="px-8 py-4">
+                                            <div class="flex items-center gap-4">
+                                                <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden group-hover:border-blue-200 transition-all">
+                                                    ${c.escudo ? `<img src="${c.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-5 h-5 text-slate-300"></i>`}
+                                                </div>
+                                                <div>
+                                                    <p class="text-[11px] font-black text-slate-800 uppercase">${c.nombre}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 text-[10px] font-black text-slate-400 uppercase">${c.localidad || '--'}</td>
+                                        <td class="px-6 py-4 text-right">
+                                            <div class="flex justify-end gap-2">
+                                                <button onclick="window.editClub('${c.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                <button onclick="window.deleteClub('${c.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                            </div>
                                         </td>
                                     </tr>
-                                ` : clubes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(club => {
-            return `
-                                        <tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
-                                            <td class="px-8 py-5">
-                                                <div class="flex items-center gap-4">
-                                                    <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center border border-slate-100 overflow-hidden p-2 group-hover:border-blue-200 transition-all">
-                                                        ${club.escudo ? `<img src="${club.escudo}" class="w-full h-full object-contain">` : `<i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i>`}
-                                                    </div>
-                                                    <div>
-                                                        <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${club.nombre}</p>
-                                                        ${club.lugar ? `
-                                                            <div class="flex items-center gap-1.5 mt-1">
-                                                                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${club.lugar}</p>
-                                                                ${club.ubicacion ? `<a href="${club.ubicacion}" target="_blank" class="text-blue-500 hover:text-blue-700"><i data-lucide="map-pin" class="w-3 h-3"></i></a>` : ''}
-                                                            </div>
-                                                        ` : ''}
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-5 text-right">
-                                                <div class="flex justify-end gap-2">
-                                                    <button onclick="window.viewClubTeams('${club.nombre}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all" title="Ver Ficha">
-                                                        <i data-lucide="layout" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.editClub('${club.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all" title="Editar">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.deleteClub('${club.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-red-500 hover:text-white rounded-xl transition-all" title="Eliminar">
-                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-        }).join('')}
+                                `).join('')}
                             </tbody>
                         </table>
                     </div>
                 </div>
+                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageClubes')}
             </div>
         `;
         if (window.lucide) lucide.createIcons();
     };
+
+    window.setPageClubes = (page) => {
+        window.paginationState.clubes = page;
+        window.renderClubes(document.getElementById('content-container'));
+    };
+
+    window.setPageTorneos = (page) => {
+        window.paginationState.torneos = page;
+        window.renderTorneos(document.getElementById('content-container'));
+    };
+
 
     window.showNewClubModal = () => {
         modalContainer.innerHTML = `
@@ -10590,7 +10321,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <form id="new-club-form" class="space-y-6">
                     <div class="flex flex-col md:flex-row gap-8">
-                        <!-- Logo Upload -->
                         <div class="flex flex-col items-center gap-4">
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Escudo / Logo</label>
                             <div class="relative group">
@@ -10603,7 +10333,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <p class="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Click para subir foto</p>
                         </div>
 
-                        <!-- Info -->
                         <div class="flex-1 space-y-6">
                             <div class="space-y-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre del Club</label>
@@ -10738,7 +10467,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sesiones = await db.getAll('sesiones');
         const convocatorias = await db.getAll('convocatorias');
 
-        // Calculate Stats
         const clubPlayers = allPlayers.filter(p => p.equipoConvenido === clubName);
         const clubPlayerIds = new Set(clubPlayers.map(p => p.id.toString()));
 
@@ -10802,24 +10530,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="space-y-6">
                     <div class="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar space-y-12">
                         ${(() => {
-                if (clubPlayers.length === 0) return `
+                            if (clubPlayers.length === 0) return `
                                 <div class="py-20 text-center">
                                     <i data-lucide="users" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
                                     <p class="text-[10px] font-black text-slate-300 uppercase tracking-widest italic">No hay jugadores registrados para este club</p>
                                 </div>
                             `;
-
-                // Group by birth year
-                const grouped = {};
-                clubPlayers.forEach(p => {
-                    const year = p.anionacimiento || 'Sin Año';
-                    if (!grouped[year]) grouped[year] = [];
-                    grouped[year].push(p);
-                });
-
-                return Object.keys(grouped).sort((a, b) => b.localeCompare(a)).map(year => {
-                    const players = grouped[year].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-                    return `
+                            const grouped = {};
+                            clubPlayers.forEach(p => {
+                                const year = p.anionacimiento || 'Sin Año';
+                                if (!grouped[year]) grouped[year] = [];
+                                grouped[year].push(p);
+                            });
+                            return Object.keys(grouped).sort((a, b) => b.localeCompare(a)).map(year => {
+                                const players = grouped[year].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+                                return `
                                     <div class="space-y-4">
                                         <div class="flex items-center gap-4 px-4">
                                             <h4 class="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">GENERACIÓN ${year}</h4>
@@ -10845,10 +10570,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         </div>
                                     </div>
                                 `;
-                }).join('');
-            })()}
+                            }).join('');
+                        })()}
                     </div>
-                    
                     <div class="pt-6 border-t border-slate-100 flex justify-end">
                         <button onclick="closeModal()" class="px-10 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl hover:bg-black transition-all uppercase tracking-widest text-[10px]">Cerrar Ficha</button>
                     </div>
@@ -10881,17 +10605,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             let renamedCount = 0;
             let dateFixCount = 0;
 
-            // 1. Normalizar nombres y LUGARES de registros existentes
             for (const asist of asistencias) {
                 const team = teams.find(t => t.id == asist.equipoid);
                 const teamName = team ? team.nombre : 'EQUIPO';
-
                 const linkedConv = convocatorias.find(c => c.id.toString() === asist.convocatoriaid?.toString());
                 const eventName = linkedConv ? linkedConv.nombre : asist.nombre;
                 const eventType = linkedConv ? linkedConv.tipo : asist.tipo;
-
                 const newName = window.formatAttendanceName(asist.fecha, teamName, eventType, eventName);
-
                 let needsUpdate = false;
                 const updatePayload = { id: asist.id };
 
@@ -10899,23 +10619,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     updatePayload.nombre = newName;
                     needsUpdate = true;
                 }
-
-                // Sincronizar lugar si falta en la asistencia pero está en la convocatoria
                 if (!asist.lugar && linkedConv && linkedConv.lugar) {
                     updatePayload.lugar = linkedConv.lugar;
                     needsUpdate = true;
                 }
-
                 if (needsUpdate) {
                     await db.update('asistencia', updatePayload);
                     renamedCount++;
                 }
             }
 
-            // 2. Normalizar fechas de torneos y corregir asignaciones por año
             for (const conv of convocatorias) {
                 if (['Torneo', 'TORNEO'].includes(conv.tipo)) {
-                    // Normalizar fecha fin
                     const { base, extra } = window.parseLugarMetadata(conv.lugar);
                     if (!extra.fecha_fin) {
                         extra.fecha_fin = conv.fecha;
@@ -10923,8 +10638,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         await db.update('convocatorias', { id: conv.id, lugar: newLugar });
                         dateFixCount++;
                     }
-
-                    // CORRECCIÓN DE EQUIPO: Si el torneo dice 2010 pero el equipo es 2011
                     const convName = (conv.nombre || '').toUpperCase();
                     if (convName.includes('2010')) {
                         const currentTeam = teams.find(t => t.id == conv.equipoid);
@@ -10932,7 +10645,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const correctTeam = teams.find(t => (t.nombre || '').includes('2010'));
                             if (correctTeam) {
                                 await db.update('convocatorias', { id: conv.id, equipoid: correctTeam.id });
-                                // Actualizar también la asistencia vinculada si existe
                                 const linkedAsist = asistencias.find(a => String(a.convocatoriaid) === String(conv.id));
                                 if (linkedAsist) {
                                     await db.update('asistencia', { id: linkedAsist.id, equipoid: correctTeam.id });
@@ -10943,13 +10655,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
 
-            // 3. Create missing records from convocatorias
             for (const conv of convocatorias) {
                 const team = teams.find(t => t.id == conv.equipoid);
                 const teamName = team ? team.nombre : 'EQUIPO';
                 const standardName = window.formatAttendanceName(conv.fecha, teamName, conv.tipo, conv.nombre);
-
-                // Comprobación de duplicados: por ID vinculado o por coincidencia de nombre/fecha/equipo
                 const alreadyLinked = linkedIds.has(conv.id.toString());
                 const alreadyExistsByName = asistencias.some(a =>
                     a.fecha === conv.fecha &&
@@ -10960,13 +10669,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!alreadyLinked && !alreadyExistsByName) {
                     const playersData = {};
                     const pids = Array.isArray(conv.playerids) ? conv.playerids : [];
-                    pids.forEach(pid => {
-                        playersData[pid] = { status: 'asiste' };
-                    });
-
+                    pids.forEach(pid => { playersData[pid] = { status: 'asiste' }; });
                     const team = teams.find(t => t.id == conv.equipoid);
                     const teamName = team ? team.nombre : 'EQUIPO';
-
                     const attendanceData = {
                         fecha: conv.fecha || new Date().toISOString().split('T')[0],
                         nombre: window.formatAttendanceName(conv.fecha, teamName, conv.tipo, conv.nombre),
@@ -10976,7 +10681,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         lugar: conv.lugar || '',
                         players: playersData
                     };
-
                     try {
                         await db.add('asistencia', attendanceData);
                         createdCount++;
@@ -10999,76 +10703,69 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.renderAsistencia = async function (container) {
         const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const allAttendance = await db.getAll('asistencia');
-        const attendance = window.applyGlobalFilters(allAttendance);
-        const sortedTeams = window.getSortedTeams(teams);
-
-        // Inicializar filtros si no existen
+        const allAttendance = await window.applyGlobalFilters(await db.getAll('asistencia'));
+        
         if (!window.asistenciaFilters) window.asistenciaFilters = { activeTeamId: 'TODOS', activeType: 'Sesión', activeLugar: 'TODOS' };
-
         const activeType = window.asistenciaFilters.activeType || 'Sesión';
         const activeTeamId = window.asistenciaFilters.activeTeamId || 'TODOS';
-        const activeLugar = window.asistenciaFilters.activeLugar || 'TODOS';
 
-        const filteredAttendance = attendance.filter(a => {
-            if (activeType === 'all') {
-                return activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
-            }
+        const filteredAttendance = allAttendance.filter(a => {
+            if (activeType === 'all') return activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
+            
+            const clean = (t) => {
+                if (!t) return '';
+                let s = t.toString().trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (s === 'sesion' || s === 'sesiones' || s === 'entrenamiento' || s === 'tecnificacion') return 'sesion';
+                if (s === 'ciclo' || s === 'ciclos') return 'ciclo';
+                if (s === 'torneo' || s === 'torneos') return 'torneo';
+                return s;
+            };
 
-            const clean = (t) => (t || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
             const target = clean(activeType);
-            let item = clean(a.tipo);
+            const item = clean(a.tipo);
 
             let matchesType = false;
             if (target === 'sesion') {
-                matchesType = item === 'sesion' || item === 'convocatoria' || item === '' || (!['ciclo', 'torneo'].includes(item));
-            } else if (target === 'ciclo') {
-                matchesType = item === 'ciclo';
-            } else if (target === 'torneo') {
-                matchesType = item === 'torneo';
+                matchesType = (item === 'sesion' || item === 'convocatoria' || item === '' || !['ciclo', 'torneo'].includes(item));
             } else {
-                matchesType = item === target;
+                matchesType = (item === target);
             }
 
             const matchesTeam = activeTeamId === 'TODOS' || (a.equipoid && a.equipoid.toString() === activeTeamId.toString());
             return matchesType && matchesTeam;
         }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
+        const pageSize = 10;
+        let currentPage = window.paginationState.asistencia || 1;
+        const totalItems = filteredAttendance.length;
+        const maxPages = Math.max(1, Math.ceil(totalItems / pageSize));
+        if (currentPage > maxPages) {
+            currentPage = 1;
+            window.paginationState.asistencia = 1;
+        }
+        const paginatedAttendance = filteredAttendance.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
         container.innerHTML = `
             <div class="space-y-6 animate-in fade-in duration-500">
-                <!-- Primary Tabs: Tipo de Evento -->
                 <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-[2rem] w-fit">
-                    <button onclick="window.filterAsistenciaType('all')" 
-                        class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                        TODAS
-                    </button>
-                    ${[
-                { id: 'Sesión', label: 'SESIONES' },
-                { id: 'Ciclo', label: 'CICLOS' },
-                { id: 'Torneo', label: 'TORNEOS' }
-            ].map(type => `
-                        <button onclick="window.filterAsistenciaType('${type.id}')" 
-                            class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === type.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                            ${type.label}
-                        </button>
+                    <button onclick="window.filterAsistenciaType('all')" class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}">TODAS</button>
+                    ${[{ id: 'Sesión', label: 'SESIONES' }, { id: 'Ciclo', label: 'CICLOS' }, { id: 'Torneo', label: 'TORNEOS' }].map(type => `
+                        <button onclick="window.filterAsistenciaType('${type.id}')" class="px-8 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.1em] transition-all ${activeType === type.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}">${type.label}</button>
                     `).join('')}
                 </div>
 
-                <!-- Filters Toolbar -->
                 <div class="bg-white p-3 rounded-[2rem] border border-slate-100 shadow-sm">
                     <div class="flex items-center gap-3">
-                        <!-- Team Filter -->
                         <div class="relative w-full md:w-80">
                             <select onchange="window.filterAsistencia(this.value)" class="w-full p-3.5 bg-blue-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-200 transition-all appearance-none cursor-pointer text-blue-600">
                                 <option value="TODOS" ${activeTeamId === 'TODOS' ? 'selected' : ''}>TODAS LAS PLANTILLAS</option>
-                                ${sortedTeams.map(t => `<option value="${t.id}" ${activeTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                                ${window.getSortedTeams(teams).map(t => `<option value="${t.id}" ${activeTeamId.toString() === t.id.toString() ? 'selected' : ''}>${t.nombre.split(' ||| ')[0]}</option>`).join('')}
                             </select>
                             <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                         </div>
                     </div>
                 </div>
 
-                <!-- Table View -->
                 <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full">
@@ -11077,1055 +10774,66 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipo</th>
                                     <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sesión / Evento</th>
-                                    <th class="text-left px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Lugar</th>
                                     <th class="text-center px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Asistencia</th>
                                     <th class="text-right px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-50">
-                                ${filteredAttendance.length > 0 ? filteredAttendance.map(a => {
-                const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
-                let total = 0;
-                let present = 0;
-
-                if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
-                    a.sessions.forEach(s => {
-                        const sPls = s.players || {};
-                        total += Object.keys(sPls).length;
-                        present += Object.values(sPls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
-                    });
-                } else {
-                    const pls = a.players || a.data || {};
-                    total = Object.keys(pls).length;
-                    present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
-                }
-                const percent = total > 0 ? Math.round((present / total) * 100) : 0;
-
-                return `
+                                ${paginatedAttendance.length > 0 ? paginatedAttendance.map(a => {
+                                    const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
+                                    let total = 0, present = 0;
+                                    if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+                                        a.sessions.forEach(s => {
+                                            const sPls = s.players || {};
+                                            total += Object.keys(sPls).length;
+                                            present += Object.values(sPls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                                        });
+                                    } else {
+                                        const pls = a.players || a.data || {};
+                                        total = Object.keys(pls).length;
+                                        present = Object.values(pls).filter(v => (v.status || v) === 'asiste' || (v.status || v) === 'presente').length;
+                                    }
+                                    const percent = total > 0 ? Math.round((present / total) * 100) : 0;
+                                    return `
                                         <tr class="hover:bg-slate-50/50 transition-colors group">
-                                            <td class="px-8 py-5">
-                                                <div class="flex items-center gap-3">
-                                                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-black text-[10px] group-hover:bg-blue-600 group-hover:text-white transition-all">
-                                                        ${a.fecha.split('-')[2]}
-                                                    </div>
-                                                    <div>
-                                                        <p class="text-xs font-black text-slate-800 uppercase">${new Date(a.fecha).toLocaleDateString('es', { month: 'short', year: 'numeric' })}</p>
-                                                        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-2">
-                                                            ${a.fecha}
-                                                            <span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-md font-black text-[7px] border border-blue-100/50">
-                                                                ${a.tipo === 'Ciclo' ? Math.round(total/3) : total} CONV.
-                                                            </span>
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-8 py-5 text-xs font-black text-slate-600 uppercase">
-                                                ${team ? team.nombre.split(' ||| ')[0] : 'General'}
-                                            </td>
-                                            <td class="px-8 py-5 text-xs font-black text-slate-800 uppercase">
-                                                ${a.nombre?.split(' ||| ')[0] || 'Entrenamiento'}
-                                            </td>
-                                            <td class="px-8 py-5">
-                                                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${window.cleanLugar(a.lugar) || '--'}</span>
-                                            </td>
-                                            <td class="px-8 py-5">
-                                                <div class="flex flex-col items-center gap-1">
-                                                    <span class="text-[10px] font-black ${percent > 80 ? 'text-emerald-600' : (percent > 50 ? 'text-amber-600' : 'text-rose-600')}">${percent}%</span>
-                                                    <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                                        <div class="h-full ${percent > 80 ? 'bg-emerald-500' : (percent > 50 ? 'bg-amber-500' : 'bg-rose-500')}" style="width: ${percent}%"></div>
-                                                    </div>
-                                                    <div class="flex flex-col items-center">
-                                                        <span class="text-[8px] font-black text-slate-500 uppercase tracking-tight">
-                                                            ${a.tipo === 'Ciclo' ? `${Object.keys(a.sessions?.[0]?.players || a.players || {}).length} Convocados` : `${total} Convocados`}
-                                                        </span>
-                                                        <span class="text-[7px] font-bold text-slate-400 uppercase tracking-tighter">
-                                                            ${a.tipo === 'Ciclo' ? `Asistencias: ${present} / ${total}` : `Asistentes: ${present}`}
-                                                        </span>
-                                                    </div>
+                                            <td class="px-8 py-5"><p class="text-xs font-black text-slate-800 uppercase">${a.fecha}</p></td>
+                                            <td class="px-8 py-5 text-xs font-black text-slate-600 uppercase">${team ? team.nombre.split(' ||| ')[0] : 'General'}</td>
+                                            <td class="px-8 py-5 text-xs font-black text-slate-800 uppercase">${a.nombre?.split(' ||| ')[0] || 'Entrenamiento'}</td>
+                                            <td class="px-8 py-5 text-center">
+                                                <div class="flex flex-col items-center">
+                                                    <span class="text-[10px] font-black ${percent > 50 ? 'text-emerald-600' : 'text-rose-600'}">${percent}%</span>
+                                                    <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden"><div class="h-full ${percent > 50 ? 'bg-emerald-500' : 'bg-rose-500'}" style="width: ${percent}%"></div></div>
                                                 </div>
                                             </td>
                                             <td class="px-8 py-5 text-right">
                                                 <div class="flex justify-end gap-2">
-                                                    <button onclick="console.log('View ID:', '${String(a.id)}'); window.viewAsistenciaDetail('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all" title="Ver Detalle">
-                                                        <i data-lucide="eye" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="console.log('Edit ID:', '${String(a.id)}'); window.editAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-600 rounded-xl transition-all" title="Editar Asistencia">
-                                                        <i data-lucide="edit-3" class="w-4 h-4"></i>
-                                                    </button>
-                                                    <button onclick="window.deleteAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all" title="Eliminar">
-                                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                                    </button>
+                                                    <button onclick="window.viewAsistenciaDetail('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:text-blue-600 rounded-xl transition-all"><i data-lucide="eye" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.editAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:text-amber-600 rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.deleteAsistencia('${String(a.id)}')" class="p-2 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                                                 </div>
                                             </td>
                                         </tr>
                                     `;
-            }).join('') : `
-                                    <tr>
-                                        <td colspan="5" class="px-8 py-20 text-center">
-                                            <div class="flex flex-col items-center gap-4 opacity-30">
-                                                <i data-lucide="calendar-x" class="w-12 h-12"></i>
-                                                <p class="text-[10px] font-black uppercase tracking-widest">No hay registros de asistencia</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                `}
+                                }).join('') : '<tr><td colspan="5" class="py-20 text-center italic text-slate-400">No hay registros</td></tr>'}
                             </tbody>
                         </table>
                     </div>
                 </div>
-            </div>
-        `;
-
-        if (window.lucide) lucide.createIcons();
-    };
-
-    window.showNewAsistenciaModal = async () => {
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Pasar Asistencia</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Seleccionar Tipo de Evento</p>
-                    </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button onclick="window.showAsistenciaStep1('Sesión')" class="flex flex-col items-center gap-4 p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100 hover:bg-emerald-100 transition-all group">
-                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-emerald-600 group-hover:text-white transition-all">
-                            <i data-lucide="calendar" class="w-8 h-8"></i>
-                        </div>
-                        <span class="text-xs font-black text-emerald-600 uppercase tracking-widest">Asistencia Sesión</span>
-                    </button>
-
-                    <button onclick="window.showAsistenciaStep1('Ciclo')" class="flex flex-col items-center gap-4 p-8 bg-blue-50 rounded-[2.5rem] border border-blue-100 hover:bg-blue-100 transition-all group">
-                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
-                            <i data-lucide="layers" class="w-8 h-8"></i>
-                        </div>
-                        <span class="text-xs font-black text-blue-600 uppercase tracking-widest">Asistencia Ciclo</span>
-                    </button>
-
-                    <button onclick="window.showAsistenciaStep1('Zubieta')" class="flex flex-col items-center gap-4 p-8 bg-amber-50 rounded-[2.5rem] border border-amber-100 hover:bg-amber-100 transition-all group">
-                        <div class="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:bg-amber-600 group-hover:text-white transition-all">
-                            <i data-lucide="trophy" class="w-8 h-8"></i>
-                        </div>
-                        <span class="text-xs font-black text-amber-600 uppercase tracking-widest">Asistencia Zubieta</span>
-                    </button>
-                </div>
+                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setAsistenciaPage')}
             </div>
         `;
         if (window.lucide) lucide.createIcons();
-        modalOverlay.classList.add('active');
     };
 
-    window.showAsistenciaStep1 = async (type) => {
-        const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const sortedTeams = window.getSortedTeams(teams);
-
-        modalContainer.innerHTML = `
-            <div class="p-8">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nueva Asistencia</h3>
-                        <p class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-1">Paso 1: Selección de Equipo (${type})</p>
-                    </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-
-                <form id="pre-asistencia-form" class="space-y-6">
-                    <input type="hidden" name="tipo" value="${type}">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo / Plantilla</label>
-                            <select name="equipoid" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-emerald-50 transition-all">
-                                <option value="">Seleccionar Equipo...</option>
-                                ${sortedTeams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
-                            </select>
-                        </div>
-                        ${type === 'Ciclo' ? `
-                        <div class="space-y-4 col-span-1 md:col-span-2 bg-blue-50/50 p-6 rounded-[2rem] border border-blue-100">
-                            <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-2">Fechas del Ciclo (3 Sesiones)</p>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="space-y-2">
-                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 1</label>
-                                    <input name="fecha_1" type="date" required value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 2</label>
-                                    <input name="fecha_2" type="date" required value="${new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Sesión 3</label>
-                                    <input name="fecha_3" type="date" required value="${new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]}" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none">
-                                </div>
-                            </div>
-                        </div>
-                        ` : `
-                        <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
-                            <input name="fecha" type="date" required value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
-                        </div>
-                        `}
-                    </div>
-                    <div class="space-y-2">
-                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Nombre / Título (Opcional)</label>
-                        <input name="nombre" type="text" placeholder="Ej: ${type} Técnico Lunes" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
-                    </div>
-
-                    <div class="pt-6 border-t border-slate-100 flex justify-between gap-3">
-                        <button type="button" onclick="window.showNewAsistenciaModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Atrás</button>
-                        <button type="submit" class="px-12 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px]">Siguiente: Pasar Lista</button>
-                    </div>
-                </form>
-            </div>
-        `;
-
-        if (window.lucide) lucide.createIcons();
-        modalOverlay.classList.add('active');
-
-        document.getElementById('pre-asistencia-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const preData = Object.fromEntries(new FormData(e.target));
-            await window.showAsistenciaRosterModal(preData);
-        };
+    window.setAsistenciaPage = (page) => {
+        window.paginationState.asistencia = page;
+        window.renderAsistencia(document.getElementById('content-container'));
     };
 
-    window.setAttendance = (pid, value) => {
-        const ausenteBtn = document.getElementById(`aus-btn-${pid}`);
-        const asisteBtn = document.getElementById(`as-btn-${pid}`);
-        const opts = document.getElementById(`abs-opts-${pid}`);
-        if (!ausenteBtn || !asisteBtn || !opts) return;
-
-        if (value === 'asiste') {
-            ausenteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-            asisteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
-            opts.classList.add('hidden');
-        } else {
-            asisteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-            ausenteBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
-            opts.classList.remove('hidden');
-        }
-    };
-
-    window.showAsistenciaRosterModal = async (preData) => {
-        const isCiclo = preData.tipo === 'Ciclo';
-        const players = await db.getAll('jugadores');
-        const allConvs = await db.getAll('convocatorias');
-        const allSesiones = await db.getAll('sesiones');
-
-        // State for cycle sessions if applicable
-        let currentSessionIdx = 1;
-        const sessionDates = isCiclo ? [preData.fecha_1, preData.fecha_2, preData.fecha_3] : [preData.fecha];
-        const sessionData = isCiclo ? [{}, {}, {}] : [{}]; // Will store { pid: status } for each session
-
-        // Find players for the team
-        let teamPlayers = players.filter(p => p.equipoid?.toString() === preData.equipoid.toString()).sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-        if (teamPlayers.length === 0) {
-            window.customAlert('Atención', 'No hay jugadores vinculados a este equipo.', 'warning');
-            return;
-        }
-
-        // For Cycles, we use a single "expected" set for all sessions based on the cycle's start date
-        const cycleExpected = new Set();
-        if (isCiclo) {
-            allConvs.filter(c => String(c.equipoid) === String(preData.equipoid) && c.tipo === 'Ciclo').forEach(c => {
-                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
-                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
-                if (dates.includes(preData.fecha_1)) {
-                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
-                }
-            });
-        }
-
-        const getExpectedPlayersForDate = (date) => {
-            if (isCiclo) return cycleExpected;
-            const expected = new Set();
-            allConvs.filter(c => String(c.equipoid) === String(preData.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
-                // Initialize and Repair sessionData for editing
-                if (isCiclo) {
-                    sessionData = a.sessions || [];
-                    // Repair: ensure 3 sessions and all players are present
-                    for (let i = 0; i < 3; i++) {
-                        if (!sessionData[i]) sessionData[i] = { fecha: a.fecha, players: {} };
-                        if (!sessionData[i].players) sessionData[i].players = {};
-                        
-                        // Inherit players from the main list if missing
-                        const sessionPlayers = sessionData[i].players;
-                        list.forEach(p => {
-                            if (!sessionPlayers[p.id]) {
-                                sessionPlayers[p.id] = 'asiste';
-                            }
-                        });
-                        
-                        // Ensure format is {fecha, players}
-                        sessionData[i] = { 
-                            fecha: sessionData[i].fecha || a.fecha, 
-                            players: sessionPlayers 
-                        };
-                    }
-                    // Normalize back to just the players object array for the internal logic
-                    sessionData = sessionData.map(s => s.players);
-                }
-        
-                if (c.fecha === date) {
-                    (c.playerids || []).forEach(id => expected.add(String(id)));
-                }
-            });
-            allSesiones.filter(s => String(s.equipoid) === String(preData.equipoid) && s.fecha === date)
-                .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
-            return expected;
-        };
-
-        // Initialize sessionData with 'asiste' for all expected players if it's a Cycle
-        if (isCiclo) {
-            sessionDates.forEach((date, idx) => {
-                const expected = getExpectedPlayersForDate(date);
-                expected.forEach(pid => {
-                    sessionData[idx][pid] = 'asiste';
-                });
-            });
-        }
-
-        let currentExpected = getExpectedPlayersForDate(sessionDates[0]);
-        let showingFull = false;
-
-        const renderTable = () => {
-            const tbody = document.getElementById('asistencia-roster-tbody');
-            if (!tbody) return;
-
-            const date = sessionDates[currentSessionIdx - 1];
-            const expected = getExpectedPlayersForDate(date);
-            const currentStatus = sessionData[currentSessionIdx - 1];
-
-            // If it's a Cycle, we strictly show only invited players (unless showingFull is true)
-            // If it's NOT a Cycle, we show everyone or filtered depending on context
-            let list;
-            if (isCiclo) {
-                list = showingFull ? teamPlayers : teamPlayers.filter(p => expected.has(String(p.id)));
-                // Fallback: if no convocados found and not showing full, show empty list as requested
-            } else {
-                list = showingFull ? teamPlayers : (expected.size > 0 ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers);
-            }
-
-            tbody.innerHTML = list.map(p => {
-                const statusRaw = currentStatus[p.id] || 'asiste';
-                const status = (typeof statusRaw === 'object' ? (statusRaw.status || 'asiste') : statusRaw);
-                return `
-                <tr class="group hover:bg-slate-50 transition-all">
-                    <td class="py-4 px-2">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                ${window.parsePosition(p.posicion)[0] || 'PJ'}
-                            </div>
-                            <div>
-                                <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
-                                ${expected.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
-                            </div>
-                        </div>
-                    </td>
-                    <td class="py-4">
-                        <div class="flex flex-col gap-2">
-                            <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                                <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} 
-                                           onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'asiste')" class="hidden">
-                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
-                                </label>
-                                <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' ? 'checked' : ''} 
-                                           onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'falta')" class="hidden">
-                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
-                                </label>
-                            </div>
-                            <div id="abs-opts-${p.id}" class="${status === 'asiste' || status === 'presente' ? 'hidden' : ''} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
-                                ${[
-                        { v: 'falta', l: 'S.M' },
-                        { v: 'zubieta', l: 'Zub' },
-                        { v: 'estudios', l: 'Est' },
-                        { v: 'lesion', l: 'Les' },
-                        { v: 'enfermo', l: 'Enf' },
-                        { v: 'medico', l: 'Med' },
-                        { v: 'familia', l: 'Fam' },
-                        { v: 'viaje', l: 'Viaj' },
-                        { v: 'otros', l: 'Otr' }
-                    ].map(opt => `
-                                    <label class="flex-1">
-                                        <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
-                                               onclick="window.updateCycleStatus(${currentSessionIdx - 1}, '${p.id}', '${opt.v}')" class="hidden peer">
-                                        <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
-                                    </label>
-                                `).join('')}
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            `}).join('');
-
-            const statusText = document.getElementById('roster-status-text');
-            if (statusText) {
-                statusText.textContent = `Sesión ${currentSessionIdx} de 3 - ${sessionDates[currentSessionIdx-1]} (${list.length} Convocados)`;
-            }
-        };
-
-        window.updateCycleStatus = (sessionIdx, pid, status) => {
-            sessionData[sessionIdx][pid] = status;
-            // Update UI feedback immediately without full re-render if possible, but for simplicity we can just update the button classes
-            const asBtn = document.getElementById(`as-btn-${pid}`);
-            const ausBtn = document.getElementById(`aus-btn-${pid}`);
-            const opts = document.getElementById(`abs-opts-${pid}`);
-            
-            if (status === 'asiste') {
-                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
-                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-                if (opts) opts.classList.add('hidden');
-            } else {
-                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
-                if (opts) opts.classList.remove('hidden');
-            }
-        };
-
-        window.switchCycleTab = (idx) => {
-            currentSessionIdx = idx;
-            document.querySelectorAll('.cycle-tab-btn').forEach((btn, i) => {
-                if (i + 1 === idx) {
-                    btn.className = 'cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
-                } else {
-                    btn.className = 'cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
-                }
-            });
-            document.getElementById('current-session-date-display').textContent = sessionDates[idx - 1];
-            renderTable();
-        };
-
-        modalContainer.innerHTML = `
-            <div class="p-8 max-h-[90vh] flex flex-col">
-                <div class="flex justify-between items-center mb-6 shrink-0">
-                    <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Pasar Lista</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${preData.nombre || 'Control Diario'} - ${preData.tipo}</p>
-                    </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-
-                ${isCiclo ? `
-                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100">
-                    <button onclick="window.switchCycleTab(1)" class="cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
-                    <button onclick="window.switchCycleTab(2)" class="cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
-                    <button onclick="window.switchCycleTab(3)" class="cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
-                </div>
-                ` : ''}
-
-                <div class="mb-6 flex items-center justify-between gap-4 p-4 bg-slate-50 rounded-[2rem] border border-slate-100 animate-in slide-in-from-top duration-300">
-                    <div class="flex items-center gap-3">
-                        <div class="flex items-center gap-3">
-                            <i data-lucide="calendar" class="w-5 h-5 text-blue-600"></i>
-                            <p id="current-session-date-display" class="text-xs font-black text-slate-800 uppercase italic">${sessionDates[0]}</p>
-                        </div>
-                    </div>
-                    <button id="toggle-full-roster" class="px-4 py-2 bg-white border border-slate-200 text-[10px] font-black text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest shadow-sm">
-                        Ver Plantilla Completa
-                    </button>
-                </div>
-
-                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <table class="w-full">
-                        <thead class="sticky top-0 bg-white z-10">
-                            <tr class="border-b border-slate-100">
-                                <th class="text-left py-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                                <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="asistencia-roster-tbody" class="divide-y divide-slate-50">
-                            <!-- Players rendered here -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="pt-8 border-t border-slate-100 flex justify-between items-center gap-3 shrink-0">
-                    <button onclick="window.showAsistenciaStep1('${preData.tipo || 'Sesión'}')" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Atrás</button>
-                    <button id="save-asistencia-btn" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Guardar Registro</button>
-                </div>
-            </div>
-        `;
-
-        renderTable();
-        if (window.lucide) lucide.createIcons();
-
-        document.getElementById('toggle-full-roster').onclick = () => {
-            showingFull = !showingFull;
-            document.getElementById('toggle-full-roster').textContent = showingFull ? 'Ver Solo Convocados' : 'Ver Plantilla Completa';
-            renderTable();
-        };
-
-        document.getElementById('save-asistencia-btn').onclick = async () => {
-            // Before saving, ensure only expected players are saved for Cycles if desired
-            // Or at least initialize correctly
-            sessionData.forEach((data, idx) => {
-                const date = sessionDates[idx];
-                const expected = getExpectedPlayersForDate(date);
-                
-                // For Cycles, we ONLY want to save expected players if any are defined
-                // If no one is invited for that date, we save no one for that session
-                const list = isCiclo ? teamPlayers.filter(p => expected.has(String(p.id))) : (expected.size > 0 ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers);
-                
-                const filteredData = {};
-                list.forEach(p => {
-                    // Use existing data or default to 'asiste'
-                    const existing = data[p.id];
-                    filteredData[p.id] = existing || 'asiste';
-                });
-                sessionData[idx] = filteredData;
-            });
-
-            const payload = {
-                ...preData,
-                fecha: sessionDates[0],
-                players: sessionData[0],
-                sessions: isCiclo ? sessionData.map((data, i) => ({ fecha: sessionDates[i], players: data })) : null
-            };
-
-            try {
-                const saved = await db.add('asistencia', payload);
-                
-                // Sync to players record (Optimized Parallel)
-                try {
-                    const players = await db.getAll('jugadores');
-                    const aid = String(saved.id);
-                    const syncPromises = Object.entries(payload.players || {}).map(async ([pid, status]) => {
-                        const p = players.find(pl => String(pl.id) === String(pid));
-                        if (p) {
-                            const currentAsis = p.asistencia || {};
-                            currentAsis[aid] = status;
-                            return db.update('jugadores', { id: p.id, asistencia: currentAsis });
-                        }
-                    });
-                    await Promise.all(syncPromises);
-                } catch (syncErr) {
-                    console.warn("Error syncing attendance to player records:", syncErr);
-                }
-
-                window.customAlert('¡Éxito!', 'Control de asistencia guardado.', 'success');
-                closeModal();
-                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
-            } catch (err) {
-                window.customAlert('Error', 'No se pudo guardar la asistencia.', 'error');
-            }
-        };
-    };
-
-    window.viewAsistenciaDetail = async (id) => {
-        const a = await db.get('asistencia', Number(id) || id);
-        if (!a) {
-            console.error("No se encontró el registro de asistencia con ID:", id);
-            return;
-        }
-
-        const isCiclo = a.tipo === 'Ciclo' && Array.isArray(a.sessions);
-        let currentSessionIdx = 1;
-
-        const teams = window.getSortedTeams(await db.getAll('equipos'));
-        const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
-        const players = await db.getAll('jugadores');
-
-        const allConvs = await db.getAll('convocatorias');
-        const allSesiones = await db.getAll('sesiones');
-
-        const cycleExpected = new Set();
-        if (isCiclo) {
-            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo === 'Ciclo').forEach(c => {
-                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
-                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
-                if (dates.includes(a.fecha)) {
-                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
-                }
-            });
-        }
-
-        const getExpectedPlayersForDate = (date) => {
-            if (isCiclo) return cycleExpected;
-            const expected = new Set();
-            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
-                if (c.fecha === date) (c.playerids || []).forEach(id => expected.add(String(id)));
-            });
-            allSesiones.filter(s => String(s.equipoid) === String(a.equipoid) && s.fecha === date)
-                .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
-            return expected;
-        };
-
-        const renderSessionContent = () => {
-            const session = isCiclo ? a.sessions[currentSessionIdx - 1] : a;
-            // Fallback for dates if they are missing in the session object
-            let date = session.fecha;
-            if (!date && isCiclo) {
-                const baseDate = new Date(a.fecha);
-                date = new Date(baseDate.getTime() + (currentSessionIdx - 1) * 7 * 86400000).toISOString().split('T')[0];
-            } else if (!date) {
-                date = a.fecha;
-            }
-
-            const expected = getExpectedPlayersForDate(date);
-            const pls = session.players || session.data || {};
-            const pids = Object.keys(pls);
-
-            const teamPlayers = players.filter(p => {
-                const isRecorded = pids.includes(p.id.toString()) || pids.includes(p.id);
-                if (isCiclo) return expected.has(String(p.id));
-                return isRecorded;
-            }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-
-            const statsHtml = ['asiste', 'falta', 'zubieta', 'estudios', 'lesion', 'enfermo', 'seleccion', 'viaje', 'vacaciones'].map(status => {
-                const count = Object.values(pls).filter(v => (v.status || v) === status || (v.status || v) === (status === 'asiste' ? 'presente' : '')).length;
-                const labelMap = { 'asiste': 'PRESENTES', 'falta': 'SIN MOTIVO', 'zubieta': 'ZUBIETA', 'estudios': 'ESTUDIOS', 'lesion': 'LESION.', 'enfermo': 'ENFERMOS', 'seleccion': 'SELECCIÓN', 'viaje': 'VIAJE COL.', 'vacaciones': 'VACACIONES' };
-                const colorMap = { 'asiste': 'emerald', 'falta': 'rose', 'zubieta': 'indigo', 'estudios': 'blue', 'lesion': 'amber', 'enfermo': 'orange', 'seleccion': 'sky', 'viaje': 'cyan', 'vacaciones': 'purple' };
-                return `
-                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
-                        <p class="text-[6px] font-black text-slate-400 uppercase tracking-widest mb-1">${labelMap[status]}</p>
-                        <p class="text-lg font-black text-${colorMap[status]}-600">${count}</p>
-                    </div>
-                `;
-            }).join('');
-
-            const tableHtml = teamPlayers.map(p => {
-                const statusRaw = pls[p.id]?.status || pls[p.id] || 'N/A';
-                const status = (statusRaw === 'no_asiste' || statusRaw === 'falta') ? 'falta' : (statusRaw === 'lesionado' || statusRaw === 'lesion') ? 'lesion' : statusRaw;
-                let statusLabel = 'Presente';
-                let colorClass = 'bg-emerald-100 text-emerald-700';
-                if (status === 'falta') { statusLabel = 'Sin Motivo'; colorClass = 'bg-rose-100 text-rose-700'; }
-                else if (status === 'zubieta') { statusLabel = 'Zubieta'; colorClass = 'bg-indigo-100 text-indigo-700'; }
-                else if (status === 'estudios') { statusLabel = 'Estudios'; colorClass = 'bg-blue-100 text-blue-700'; }
-                else if (status === 'lesion') { statusLabel = 'Lesionado'; colorClass = 'bg-amber-100 text-amber-700'; }
-                else if (status === 'enfermo') { statusLabel = 'Enfermo'; colorClass = 'bg-orange-100 text-orange-700'; }
-                else if (status === 'seleccion') { statusLabel = 'Selección'; colorClass = 'bg-sky-100 text-sky-700'; }
-                else if (status === 'viaje') { statusLabel = 'Viaje Col.'; colorClass = 'bg-cyan-100 text-cyan-700'; }
-                else if (status === 'vacaciones') { statusLabel = 'Vacaciones'; colorClass = 'bg-purple-100 text-purple-700'; }
-                else if (status === 'N/A') { statusLabel = 'No registrado'; colorClass = 'bg-slate-100 text-slate-400'; }
-
-                return `
-                    <tr class="group hover:bg-slate-50 transition-all">
-                        <td class="py-3">
-                            <p class="font-bold text-slate-700 uppercase transition-all">${p.nombre} ${p.apellidos || ''}</p>
-                            <p class="text-[8px] font-bold text-blue-500 uppercase tracking-tight">${p.equipoConvenido || 'Sin Club'}</p>
-                        </td>
-                        <td class="py-3 text-right">
-                            <span class="px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${colorClass}">${statusLabel}</span>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-
-            return { statsHtml, tableHtml, date: session.fecha };
-        };
-
-        window.switchViewSessionTab = (idx) => {
-            currentSessionIdx = idx;
-            const content = renderSessionContent();
-            document.getElementById('session-stats-container').innerHTML = content.statsHtml;
-            document.getElementById('session-table-body').innerHTML = content.tableHtml;
-            document.getElementById('view-session-date-display').textContent = content.date;
-            
-            document.querySelectorAll('.view-session-tab-btn').forEach((btn, i) => {
-                if (i + 1 === idx) {
-                    btn.className = 'view-session-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
-                } else {
-                    btn.className = 'view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
-                }
-            });
-        };
-
-        const initialContent = renderSessionContent();
-
-        modalContainer.innerHTML = `
-            <div class="p-8 max-h-[90vh] flex flex-col">
-                <div class="flex justify-between items-start mb-8 shrink-0">
-                    <div>
-                        <div class="flex items-center gap-3 mb-1">
-                            <span class="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-[8px] font-black uppercase tracking-widest">${team ? team.nombre.split(' ||| ')[0] : 'General'}</span>
-                            <span id="view-session-date-display" class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${initialContent.date}</span>
-                        </div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${a.nombre?.split(' ||| ')[0] || 'Control de Asistencia'}</h3>
-                        ${a.lugar ? `<p class="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-1 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3 h-3"></i> ${window.parseLugarMetadata(a.lugar).base}</p>` : ''}
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="window.generateAsistenciaPDF('${a.id}', false)" class="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
-                        <button onclick="window.editAsistencia('${a.id}')" class="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all"><i data-lucide="edit-3" class="w-5 h-5"></i></button>
-                        <button onclick="window.deleteAsistencia('${a.id}')" class="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
-                        <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
-                    </div>
-                </div>
-
-                ${isCiclo ? `
-                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100 shrink-0">
-                    <button onclick="window.switchViewSessionTab(1)" class="view-session-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
-                    <button onclick="window.switchViewSessionTab(2)" class="view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
-                    <button onclick="window.switchViewSessionTab(3)" class="view-session-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
-                </div>
-                ` : ''}
-
-                <div id="session-stats-container" class="grid grid-cols-3 md:grid-cols-7 gap-2 mb-8 shrink-0">
-                    ${initialContent.statsHtml}
-                </div>
-
-                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <table class="w-full text-xs">
-                        <thead class="sticky top-0 bg-white z-10 border-b border-slate-100">
-                            <tr>
-                                <th class="text-left py-3 font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                                <th class="text-right py-3 font-black text-slate-400 uppercase tracking-widest">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="session-table-body" class="divide-y divide-slate-50">
-                            ${initialContent.tableHtml}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-
-        if (window.lucide) lucide.createIcons();
-        modalOverlay.classList.add('active');
-    };
-
-    window.editAsistencia = async (id) => {
-        const a = await db.get('asistencia', Number(id) || id);
-        if (!a) return;
-
-        const isCiclo = a.tipo === 'Ciclo';
-        let currentSessionIdx = 1;
-        const sessionDates = isCiclo && Array.isArray(a.sessions) ? a.sessions.map(s => s.fecha) : [a.fecha];
-        const sessionData = isCiclo && Array.isArray(a.sessions) ? a.sessions.map(s => ({ ...s.players })) : [{ ...a.players }];
-
-        // Improved session dates initialization for cycles
-        if (isCiclo) {
-            // If sessions array exists, try to get dates from there
-            if (Array.isArray(a.sessions) && a.sessions.length > 0) {
-                for (let i = 0; i < 3; i++) {
-                    if (a.sessions[i] && a.sessions[i].fecha) {
-                        sessionDates[i] = a.sessions[i].fecha;
-                    } else {
-                        // Estimate date based on previous session or base date
-                        const prevDate = i > 0 ? new Date(sessionDates[i-1]) : new Date(a.fecha);
-                        sessionDates[i] = new Date(prevDate.getTime() + (i > 0 ? 7 : 0) * 86400000).toISOString().split('T')[0];
-                    }
-                }
-            } else {
-                // No sessions array, generate from base date
-                const baseDate = new Date(a.fecha);
-                for (let i = 0; i < 3; i++) {
-                    sessionDates[i] = new Date(baseDate.getTime() + i * 7 * 86400000).toISOString().split('T')[0];
-                }
-            }
-
-            // Also check if they are all identical (fix for previous bug)
-            if (sessionDates[0] === sessionDates[1] && sessionDates[1] === sessionDates[2]) {
-                const baseDate = new Date(sessionDates[0]);
-                sessionDates[1] = new Date(baseDate.getTime() + 7 * 86400000).toISOString().split('T')[0];
-                sessionDates[2] = new Date(baseDate.getTime() + 14 * 86400000).toISOString().split('T')[0];
-            }
-        }
-
-        if (isCiclo) {
-            while (sessionData.length < 3) sessionData.push({});
-        }
-
-        const players = await db.getAll('jugadores');
-        const pids = new Set();
-        sessionData.forEach(data => Object.keys(data).forEach(id => pids.add(String(id))));
-
-        let teamPlayers = players.filter(p => pids.has(String(p.id)) || (a.equipoid && String(p.equipoid) === String(a.equipoid))).sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-        const allConvs = await db.getAll('convocatorias');
-        const allSesiones = await db.getAll('sesiones');
-
-        const cycleExpected = new Set();
-        if (isCiclo) {
-            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo === 'Ciclo').forEach(c => {
-                const meta = c.lugar ? window.parseLugarMetadata(c.lugar) : {};
-                const dates = [c.fecha, c.fecha_1, c.fecha_2, c.fecha_3, meta.s2?.f, meta.s3?.f].filter(Boolean);
-                if (dates.includes(a.fecha)) {
-                    (c.playerids || []).forEach(id => cycleExpected.add(String(id)));
-                }
-            });
-        }
-
-        const getExpectedPlayersForDate = (date) => {
-            if (isCiclo) return cycleExpected;
-            const expected = new Set();
-            allConvs.filter(c => String(c.equipoid) === String(a.equipoid) && c.tipo !== 'Ciclo').forEach(c => {
-                if (c.fecha === date) (c.playerids || []).forEach(id => expected.add(String(id)));
-            });
-            if (!isCiclo) {
-                allSesiones.filter(s => String(s.equipoid) === String(a.equipoid) && s.fecha === date)
-                    .forEach(s => (s.playerids || []).forEach(id => expected.add(String(id))));
-            }
-            return expected;
-        };
-
-        // If it's a Cycle and we don't have full session data yet, pre-fill with 'asiste' for convocados
-        if (isCiclo) {
-            sessionDates.forEach((date, idx) => {
-                const expected = getExpectedPlayersForDate(date);
-                expected.forEach(pid => {
-                    if (!sessionData[idx][pid]) sessionData[idx][pid] = 'asiste';
-                });
-            });
-        }
-
-        const renderTable = () => {
-            const tbody = document.getElementById('edit-asistencia-tbody');
-            if (!tbody) return;
-
-            const date = sessionDates[currentSessionIdx - 1];
-            const expected = getExpectedPlayersForDate(date);
-            const currentStatus = sessionData[currentSessionIdx - 1];
-
-            // Filter team players to only show those in expected for Cycles
-            const list = isCiclo ? teamPlayers.filter(p => expected.has(String(p.id))) : teamPlayers;
-
-            tbody.innerHTML = list.map(p => {
-                const statusRaw = currentStatus[p.id] || 'asiste';
-                const status = (typeof statusRaw === 'object' ? (statusRaw.status || 'asiste') : statusRaw);
-                return `
-                <tr class="group hover:bg-slate-50 transition-all">
-                    <td class="py-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center font-black text-[10px] text-slate-400 uppercase">
-                                ${window.parsePosition(p.posicion)[0] || 'PJ'}
-                            </div>
-                            <div>
-                                <span class="text-xs font-black text-slate-700 uppercase block">${p.nombre} ${p.apellidos || ''}</span>
-                                ${expected.has(String(p.id)) ? `<span class="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Convocado</span>` : ''}
-                            </div>
-                        </div>
-                    </td>
-                    <td class="py-4">
-                        <div class="flex flex-col gap-2">
-                            <div class="flex gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                                <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" value="asiste" ${status === 'asiste' || status === 'presente' ? 'checked' : ''} 
-                                           onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'asiste')" class="hidden">
-                                    <div id="as-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status === 'asiste' || status === 'presente' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'text-slate-400'} transition-all">Asiste</div>
-                                </label>
-                                <label class="flex-1">
-                                    <input type="radio" name="p_${p.id}" id="aus-radio-${p.id}" value="falta" ${status !== 'asiste' && status !== 'presente' ? 'checked' : ''} 
-                                           onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', 'falta')" class="hidden">
-                                    <div id="aus-btn-${p.id}" class="py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer ${status !== 'asiste' && status !== 'presente' ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'text-slate-400'} transition-all">Ausente</div>
-                                </label>
-                            </div>
-                            <div id="abs-opts-${p.id}" class="${status === 'asiste' || status === 'presente' ? 'hidden' : ''} grid grid-cols-5 gap-1 bg-rose-50 p-1 rounded-xl border border-rose-100/50 transition-all">
-                                ${[
-                        { v: 'falta', l: 'S.M' },
-                        { v: 'zubieta', l: 'Zub' },
-                        { v: 'estudios', l: 'Est' },
-                        { v: 'lesion', l: 'Les' },
-                        { v: 'enfermo', l: 'Enf' },
-                        { v: 'medico', l: 'Med' },
-                        { v: 'familia', l: 'Fam' },
-                        { v: 'viaje', l: 'Viaj' },
-                        { v: 'otros', l: 'Otr' }
-                    ].map(opt => `
-                                    <label class="flex-1">
-                                        <input type="radio" name="p_${p.id}" value="${opt.v}" ${status === opt.v ? 'checked' : ''} 
-                                               onclick="window.updateEditCycleStatus(${currentSessionIdx - 1}, '${p.id}', '${opt.v}')" class="hidden peer">
-                                        <div class="py-1.5 text-center text-[7px] font-black uppercase rounded-lg cursor-pointer peer-checked:bg-rose-500 peer-checked:text-white text-rose-400 bg-white/50 hover:bg-rose-100 transition-all">${opt.l}</div>
-                                    </label>
-                                `).join('')}
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            `}).join('');
-
-            // Update count badges
-            const countBadge = document.getElementById('edit-asistencia-count-badge');
-            if (countBadge) countBadge.textContent = `${list.length} CONV.`;
-
-            const editStatusText = document.getElementById('edit-roster-status-text');
-            if (editStatusText) {
-                if (isCiclo) {
-                    editStatusText.textContent = `Sesión ${currentSessionIdx} de 3 - ${sessionDates[currentSessionIdx-1]} (${list.length} Convocados)`;
-                } else {
-                    editStatusText.textContent = `${list.length} Convocados`;
-                }
-            }
-        };
-
-        window.updateEditCycleStatus = (sessionIdx, pid, status) => {
-            sessionData[sessionIdx][pid] = status;
-            const asBtn = document.getElementById(`as-btn-${pid}`);
-            const ausBtn = document.getElementById(`aus-btn-${pid}`);
-            const opts = document.getElementById(`abs-opts-${pid}`);
-            if (status === 'asiste') {
-                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-emerald-500 text-white shadow-lg shadow-emerald-200 transition-all';
-                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-                if (opts) opts.classList.add('hidden');
-            } else {
-                if (asBtn) asBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer text-slate-400 transition-all hover:bg-slate-50';
-                if (ausBtn) ausBtn.className = 'py-2.5 text-center text-[10px] font-black uppercase rounded-xl cursor-pointer bg-rose-500 text-white shadow-lg shadow-rose-200 transition-all';
-                if (opts) opts.classList.remove('hidden');
-            }
-        };
-
-        window.switchEditCycleTab = (idx) => {
-            currentSessionIdx = idx;
-            document.querySelectorAll('.edit-cycle-tab-btn').forEach((btn, i) => {
-                if (i + 1 === idx) {
-                    btn.className = 'edit-cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all';
-                } else {
-                    btn.className = 'edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all';
-                }
-            });
-            const dateInput = document.getElementById('edit-session-date-input');
-            if (dateInput) dateInput.value = sessionDates[idx - 1];
-            renderTable();
-        };
-
-        modalContainer.innerHTML = `
-            <div class="p-8 max-h-[90vh] flex flex-col">
-                <div class="flex justify-between items-center mb-8 shrink-0">
-                    <div>
-                        <div class="flex items-center gap-3">
-                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
-                            <span id="edit-asistencia-count-badge" class="px-3 py-1 bg-blue-50 text-blue-600 rounded-xl font-black text-[10px] border border-blue-100 shadow-sm shadow-blue-50">-- CONV.</span>
-                        </div>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">${a.nombre?.split(' ||| ')[0] || 'Sesión'} - ${a.tipo}</p>
-                    </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-
-                ${isCiclo ? `
-                <div class="flex items-center gap-2 mb-6 p-1 bg-slate-50 rounded-2xl w-fit border border-slate-100 shrink-0">
-                    <button onclick="window.switchEditCycleTab(1)" class="edit-cycle-tab-btn px-6 py-2 bg-blue-600 text-white text-[10px] font-black rounded-xl uppercase tracking-widest shadow-lg shadow-blue-100 transition-all">Sesión 1</button>
-                    <button onclick="window.switchEditCycleTab(2)" class="edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 2</button>
-                    <button onclick="window.switchEditCycleTab(3)" class="edit-cycle-tab-btn px-6 py-2 bg-slate-100 text-slate-400 text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-slate-200 transition-all">Sesión 3</button>
-                </div>
-                ` : ''}
-
-                <div class="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 shrink-0">
-                    <label class="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Fecha de Sesión</label>
-                    <input id="edit-session-date-input" type="date" value="${sessionDates[0]}" 
-                           onchange="sessionDates[currentSessionIdx-1] = this.value; renderTable()"
-                           class="w-full md:w-64 p-3 bg-white border border-slate-100 rounded-xl font-bold outline-none text-xs">
-                </div>
-
-                <div class="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <table class="w-full">
-                        <thead class="sticky top-0 bg-white z-10">
-                            <tr class="border-b border-slate-100">
-                                <th class="text-left py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
-                                <th class="text-center py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="edit-asistencia-tbody" class="divide-y divide-slate-50">
-                            <!-- Content rendered here -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="pt-8 border-t border-slate-100 flex justify-end gap-3 shrink-0">
-                    <button onclick="window.viewAsistenciaDetail('${a.id}')" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
-                    <button id="update-asistencia-btn" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-xl hover:bg-blue-700 transition-all uppercase tracking-widest text-[10px]">Actualizar Registro</button>
-                </div>
-            </div>
-        `;
-
-        renderTable();
-        if (window.lucide) lucide.createIcons();
-
-        document.getElementById('update-asistencia-btn').onclick = async () => {
-            const updatePayload = {
-                ...a,
-                id: Number(a.id),
-                fecha: sessionDates[0],
-                players: sessionData[0],
-                sessions: isCiclo ? sessionData.map((data, i) => ({ fecha: sessionDates[i], players: data })) : null
-            };
-
-            try {
-                await db.update('asistencia', updatePayload);
-                
-                // Sync to players record (Optimized Parallel)
-                try {
-                    const players = await db.getAll('jugadores');
-                    const aid = String(a.id);
-                    const syncPromises = Object.entries(updatePayload.players || {}).map(async ([pid, status]) => {
-                        const p = players.find(pl => String(pl.id) === String(pid));
-                        if (p) {
-                            const currentAsis = p.asistencia || {};
-                            currentAsis[aid] = status;
-                            return db.update('jugadores', { id: p.id, asistencia: currentAsis });
-                        }
-                    });
-                    await Promise.all(syncPromises);
-                } catch (syncErr) {
-                    console.warn("Error syncing attendance update to player records:", syncErr);
-                }
-
-                window.customAlert('¡Éxito!', 'Registro actualizado.', 'success');
-                window.viewAsistenciaDetail(a.id);
-                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
-            } catch (err) {
-                console.error("Update error detailed:", err);
-                window.customAlert('Error', 'No se pudo actualizar el registro.', 'error');
-            }
-        };
-
-        modalOverlay.classList.add('active');
-    };
-
-    window.deleteAsistencia = async (id) => {
-        window.customConfirm('¿Eliminar Registro?', '¿Estás seguro de que quieres borrar este parte de asistencia permanentemente?', async () => {
-            try {
-                await db.delete('asistencia', Number(id) || id);
-                window.customAlert('¡Eliminado!', 'El registro de asistencia ha sido borrado correctamente.', 'success');
-                closeModal();
-                if (window.currentView === 'asistencia') window.renderAsistencia(document.getElementById('content-container'));
-            } catch (err) {
-                console.error("Error al eliminar asistencia:", err);
-                window.customAlert('Error', 'No se pudo eliminar el registro.', 'error');
-            }
-        });
-    };
-
-    window.updateClubShield = async (clubName, file) => {
-        if (!file) return;
-        try {
-            const clubs = await db.getAll('clubes');
-            const club = clubs.find(c => c.nombre === clubName);
-            if (!club) return;
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                club.escudo = e.target.result;
-                await db.update('clubes', club);
-                window.customAlert('Éxito', 'Escudo de club actualizado.', 'success');
-                window.viewClubTeams(clubName);
-                if (currentView === 'clubes') window.renderClubes(document.getElementById('content-container'));
-            };
-            reader.readAsDataURL(file);
-        } catch (err) {
-            console.error(err);
-            window.customAlert('Error', 'No se pudo subir el escudo.', 'error');
-        }
-    };
-
-    window.toggleTeamClubLink = async (teamId, clubName, isChecked) => {
-        try {
-            const team = await db.get('equipos', teamId);
-            if (team) {
-                team.equipoConvenido = isChecked ? clubName : null;
-                await db.update('equipos', team);
-                window.viewClubTeams(clubName);
-                if (currentView === 'clubes') {
-                    const container = document.getElementById('content-container');
-                    if (container) window.renderClubes(container);
-                }
-            }
-        } catch (err) {
-            console.error("Error toggling team-club link:", err);
-            window.customAlert('Error', 'No se pudo actualizar la vinculación.', 'error');
-        }
+    window.filterAsistenciaType = (type) => {
+        window.paginationState.asistencia = 1;
+        window.asistenciaFilters.activeType = type;
+        window.renderAsistencia(document.getElementById('content-container'));
     };
 
     window.renderConvocatoriasPDF = async function (container) {
@@ -12134,7 +10842,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const convocatorias = await db.getAll('convocatorias');
             const teams = window.getSortedTeams(await db.getAll('equipos'));
             const teamsMap = Object.fromEntries(teams.map(t => [t.id, (t.nombre || 'EQUIPO').split(' ||| ')[0]]));
-
             let currentType = 'Sesión';
             let currentPdfComunidad = 'all';
 
@@ -12148,147 +10855,182 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const sortedConvs = [...convocatorias]
                     .filter(c => c.tipo === type)
                     .filter(c => currentPdfComunidad === 'all' || window.getComunidadByLugar(c.lugar, c.nombre) === currentPdfComunidad)
-                    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+                const filteredConvs = convocatorias.filter(c => {
+                    const tMatch = (type === 'Ciclo' ? c.tipo === 'Ciclo' : (type === 'Torneo' ? ['Torneo', 'Partido'].includes(c.tipo) : ['Sesión', 'Sesion'].includes(c.tipo)));
+                    const cMatch = (currentPdfComunidad === 'all' || (c.lugar && c.lugar.toUpperCase().includes(currentPdfComunidad)));
+                    return tMatch && cMatch;
+                }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
                 container.innerHTML = `
-                    <div class="max-w-5xl mx-auto space-y-8 pb-20">
-                        <div class="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden relative">
-                            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 animate-gradient-x"></div>
-                            
-                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
-                                <div class="flex items-center gap-5">
-                                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center shadow-inner">
-                                        <i data-lucide="file-text" class="w-8 h-8"></i>
-                                    </div>
-                                </div>
-                                <button onclick="window.switchView('dashboard')" class="p-4 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 hover:text-slate-600 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
-                            </div>
-
-                            <div class="flex flex-col md:flex-row gap-4 mb-10">
-                                <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] w-fit">
+                    <div class="p-4 md:p-10 max-w-screen-2xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-700">
+                        <div class="mb-12">
+                            <div class="flex flex-col md:flex-row items-center justify-center gap-6 mb-10">
+                                <div class="flex items-center p-1.5 bg-slate-100/80 rounded-[2rem] w-fit shadow-inner border border-slate-200/50 backdrop-blur-sm">
                                     ${['Ciclo', 'Sesión', 'Torneo'].map(t => `
-                                        <button onclick="window.renderConvocatoriasPDFWithType('${t}', '${currentPdfComunidad}')" class="px-8 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentType === t ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                                            ${t}S
+                                        <button onclick="window.updatePdfIndivType('${t}')" class="px-10 py-4 rounded-[1.6rem] font-black text-[11px] uppercase tracking-[0.15em] transition-all duration-300 ${currentType === t ? 'bg-white text-blue-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}">
+                                            ${t === 'Sesión' ? 'Sesiones' : t + 's'}
                                         </button>
                                     `).join('')}
                                 </div>
-
-                                <div class="flex gap-2 p-1.5 bg-slate-100 rounded-[2rem] w-fit">
-                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'all')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                                        TODAS
-                                    </button>
-                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'NAVARRA')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                                        NAVARRA
-                                    </button>
-                                    <button onclick="window.renderConvocatoriasPDFWithType('${currentType}', 'LA RIOJA')" class="px-6 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${currentPdfComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">
-                                        LA RIOJA
-                                    </button>
+                                <div class="flex items-center p-1.5 bg-slate-100/80 rounded-[2rem] w-fit shadow-inner border border-slate-200/50 backdrop-blur-sm">
+                                    <button onclick="window.updatePdfIndivComunidad('all')" class="px-10 py-4 rounded-[1.6rem] font-black text-[11px] uppercase tracking-[0.15em] transition-all duration-300 ${currentPdfComunidad === 'all' ? 'bg-white text-blue-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}">Todas</button>
+                                    <button onclick="window.updatePdfIndivComunidad('NAVARRA')" class="px-10 py-4 rounded-[1.6rem] font-black text-[11px] uppercase tracking-[0.15em] transition-all duration-300 ${currentPdfComunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}">Navarra</button>
+                                    <button onclick="window.updatePdfIndivComunidad('LA RIOJA')" class="px-10 py-4 rounded-[1.6rem] font-black text-[11px] uppercase tracking-[0.15em] transition-all duration-300 ${currentPdfComunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-xl scale-105' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-200/50'}">La Rioja</button>
                                 </div>
                             </div>
 
-                            <form id="convocatoria-pdf-form" class="space-y-10">
-                                <input type="hidden" name="type" value="${type}">
-                                
-                                <div class="space-y-6 p-8 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
-                                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-2">
-                                        <i data-lucide="link" class="w-3.5 h-3.5"></i> Selección y Jugador
-                                    </p>
-                                    
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div class="relative">
-                                            <select id="filter-team-conv" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
-                                                <option value="">TODOS LOS EQUIPOS</option>
-                                                ${window.getSortedTeams(teams).map(t => `<option value="${t.id}">${(t.nombre || 'EQUIPO').split(' ||| ')[0]}</option>`).join('')}
-                                            </select>
-                                            <i data-lucide="users" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
-                                        </div>
-                                        <div class="relative">
-                                            <input type="date" id="filter-date-conv" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:ring-4 ring-blue-50 transition-all">
-                                            <i data-lucide="calendar" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
-                                        </div>
-                                        <div class="relative lg:col-span-2">
-                                            <select id="link-conv-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
-                                                <option value="">-- Vincular con ${type} --</option>
-                                                ${sortedConvs.map(c => `
-                                                    <option value="${c.id}" data-equipoid="${c.equipoid}" data-fecha="${c.fecha}" data-nombre="${(c.nombre || '').replace(/"/g, '&quot;')}" data-lugar="${(c.lugar || '').replace(/"/g, '&quot;')}" data-players='${JSON.stringify(c.playerids || [])}'>
-                                                        [${c.fecha}] ${(c.nombre || 'Sin nombre').toUpperCase()} (${teamsMap[c.equipoid] || 'Múltiples'})
-                                                    </option>
-                                                `).join('')}
-                                            </select>
-                                            <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
-                                        </div>
+                        </div>
+                        <form id="convocatoria-pdf-form" class="bg-white rounded-[3.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                            <div class="p-10 border-b border-slate-50 bg-slate-50/30">
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                                    <div class="space-y-3 relative group">
+                                        <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="users-2" class="w-3 h-3 text-blue-500"></i> Filtrar Equipo
+                                        </label>
+                                        <select id="filter-team-conv" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] text-xs font-bold outline-none appearance-none cursor-pointer focus:border-blue-500 focus:bg-white focus:ring-8 ring-blue-50/50 transition-all group-hover:border-slate-200 shadow-sm">
+                                            <option value="">TODOS LOS EQUIPOS</option>
+                                            ${teams.map(t => `<option value="${t.id}">${t.nombre.toUpperCase()}</option>`).join('')}
+                                        </select>
+                                        <div class="absolute right-6 top-[3.7rem] pointer-events-none text-slate-300"><i data-lucide="chevron-down" class="w-5 h-5"></i></div>
                                     </div>
 
-                                    <div class="relative group">
-                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Jugador a convocar</label>
-                                        <select name="playerid" id="pdf-player-select" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none cursor-pointer">
-                                            <option value="">Selecciona un jugador...</option>
-                                            ${players.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+                                    <div class="space-y-3 relative group">
+                                        <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="calendar-days" class="w-3 h-3 text-blue-500"></i> Filtrar Fecha
+                                        </label>
+                                        <input type="date" id="filter-date-conv" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] text-xs font-bold outline-none focus:border-blue-500 focus:bg-white focus:ring-8 ring-blue-50/50 transition-all group-hover:border-slate-200 shadow-sm">
+                                    </div>
+
+                                    <div class="space-y-3 relative group">
+                                        <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="link-2" class="w-3 h-3 text-blue-600"></i> Vincular Sesión (Carga Datos)
+                                        </label>
+                                        <select id="link-conv-select" class="w-full p-5 bg-blue-50/30 border-2 border-blue-100/50 rounded-[2rem] text-xs font-bold outline-none appearance-none cursor-pointer focus:border-blue-500 focus:bg-white focus:ring-8 ring-blue-50/50 transition-all text-blue-600 group-hover:border-blue-200 shadow-sm shadow-blue-100/20">
+                                            <option value="">-- VINCULAR CON SESIÓN --</option>
+                                            ${filteredConvs.map(c => `
+                                                <option value="${c.id}" data-fecha="${c.fecha}" data-equipoid="${c.equipoid}" data-nombre="${c.nombre}" data-lugar="${c.lugar || ''}" data-players='${JSON.stringify(c.playerids || [])}'>
+                                                    ${c.fecha} - ${c.nombre.toUpperCase()}
+                                                </option>
+                                            `).join('')}
                                         </select>
-                                        <i data-lucide="chevron-down" class="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none"></i>
+                                        <div class="absolute right-6 top-[3.7rem] pointer-events-none text-blue-300"><i data-lucide="chevron-down" class="w-5 h-5"></i></div>
+                                    </div>
+                                    <div class="mt-8 relative group">
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-3 flex items-center gap-2">
+                                            <i data-lucide="user-circle" class="w-3 h-3 text-blue-500"></i> Jugador a convocar
+                                        </label>
+                                        <select name="playerid" id="pdf-player-select" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] text-sm font-bold outline-none focus:border-blue-500 focus:bg-white focus:ring-8 ring-blue-50/50 transition-all appearance-none cursor-pointer shadow-sm group-hover:border-slate-200">
+                                            <option value="">Selecciona un jugador...</option>
+                                            ${players.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => `<option value="${p.id}">${p.nombre.toUpperCase()}</option>`).join('')}
+                                        </select>
+                                        <div class="absolute right-6 top-[3.7rem] pointer-events-none text-slate-300"><i data-lucide="chevron-down" class="w-5 h-5"></i></div>
                                     </div>
                                 </div>
-
+                            
+                            <div class="p-10 space-y-10">
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div class="col-span-2 space-y-3">
-                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título del PDF (Cabecera)</label>
-                                        <input name="evento" id="pdf-titulo" placeholder="Ej: CATEGORIA INFANTIL-ALEVIN FEMENINO" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-3xl text-lg font-black outline-none focus:ring-4 ring-blue-50/50 transition-all uppercase" required>
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="type" class="w-3 h-3 text-blue-500"></i> Título del PDF (Cabecera)
+                                        </label>
+                                        <input name="evento" id="pdf-titulo" placeholder="EJ: CATEGORIA INFANTIL-ALEVIN FEMENINO" class="w-full p-6 bg-slate-50 border-2 border-slate-100 rounded-[2rem] text-lg font-black outline-none focus:ring-8 ring-blue-50/50 focus:bg-white transition-all uppercase" required>
                                     </div>
 
                                     ${type === 'Ciclo' ? `
                                         ${[1, 2, 3].map(i => `
-                                            <div class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-5 bg-blue-50/30 rounded-3xl border border-blue-50">
+                                            <div class="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 p-6 bg-blue-50/20 rounded-[2.5rem] border-2 border-blue-50">
                                                 <div class="space-y-2">
-                                                    <label class="text-[9px] font-black text-blue-600 uppercase tracking-widest">Sesión ${i} - Fecha</label>
-                                                    <input name="fecha_${i}" type="date" class="w-full p-3 bg-white border border-slate-100 rounded-xl font-bold outline-none text-sm">
+                                                    <label class="text-[9px] font-black text-blue-600 uppercase tracking-widest px-2">Sesión ${i} - Fecha</label>
+                                                    <input name="fecha_${i}" type="date" class="w-full p-4 bg-white border-2 border-slate-50 rounded-2xl font-bold outline-none text-sm focus:border-blue-500 transition-all">
                                                 </div>
-                                                <div class="grid grid-cols-3 gap-2">
-                                                    <div><input name="hl_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
-                                                    <div><input name="hi_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
-                                                    <div><input name="hs_${i}" type="time" class="w-full p-2 bg-white border border-slate-100 rounded-lg text-[10px] font-bold outline-none"></div>
+                                                <div class="grid grid-cols-3 gap-3">
+                                                    <div class="space-y-1">
+                                                        <label class="text-[8px] font-bold text-slate-400 uppercase px-1">Llegada</label>
+                                                        <input name="hl_${i}" type="time" class="w-full p-3 bg-white border-2 border-slate-50 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all">
+                                                    </div>
+                                                    <div class="space-y-1">
+                                                        <label class="text-[8px] font-bold text-slate-400 uppercase px-1">Inicio</label>
+                                                        <input name="hi_${i}" type="time" class="w-full p-3 bg-white border-2 border-slate-50 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all">
+                                                    </div>
+                                                    <div class="space-y-1">
+                                                        <label class="text-[8px] font-bold text-slate-400 uppercase px-1">Salida</label>
+                                                        <input name="hs_${i}" type="time" class="w-full p-3 bg-white border-2 border-slate-50 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all">
+                                                    </div>
                                                 </div>
                                             </div>
                                         `).join('')}
                                     ` : `
                                         <div class="space-y-3">
-                                            <input name="fecha" id="pdf-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
+                                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                                <i data-lucide="calendar" class="w-3 h-3 text-blue-500"></i> Fecha del Evento
+                                            </label>
+                                            <input name="fecha" id="pdf-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-bold outline-none focus:bg-white transition-all" required>
                                         </div>
-                                        <div class="grid grid-cols-3 gap-3">
-                                            <input name="hl" id="pdf-hl" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
-                                            <input name="hi" id="pdf-hi" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
-                                            <input name="hs" id="pdf-hs" type="time" class="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none">
+                                        <div class="grid grid-cols-3 gap-4">
+                                            <div class="space-y-2">
+                                                <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Llegada</label>
+                                                <input name="hl" id="pdf-hl" type="time" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:bg-white transition-all">
+                                            </div>
+                                            <div class="space-y-2">
+                                                <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Inicio</label>
+                                                <input name="hi" id="pdf-hi" type="time" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:bg-white transition-all">
+                                            </div>
+                                            <div class="space-y-2">
+                                                <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">Salida</label>
+                                                <input name="hs" id="pdf-hs" type="time" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:bg-white transition-all">
+                                            </div>
                                         </div>
                                     `}
 
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 col-span-2">
                                         <div class="space-y-3">
-                                            <input name="lugar" id="pdf-lugar" placeholder="LUGAR" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                                <i data-lucide="map-pin" class="w-3 h-3 text-blue-500"></i> Lugar / Lekua
+                                            </label>
+                                            <input name="lugar" id="pdf-lugar" placeholder="LUGAR" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-bold outline-none uppercase focus:bg-white transition-all">
                                         </div>
-                                        <div class="space-y-3">
-                                            <select name="superficie" id="pdf-superficie" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none appearance-none cursor-pointer">
+                                        <div class="space-y-3 relative group">
+                                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                                <i data-lucide="info" class="w-3 h-3 text-blue-500"></i> Superficie
+                                            </label>
+                                            <select name="superficie" id="pdf-superficie" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-bold outline-none appearance-none cursor-pointer focus:bg-white transition-all">
                                                 <option value="HIERBA ARTIFICIAL">HIERBA ARTIFICIAL / BELAR ARTIFIZIALA</option>
                                                 <option value="HIERBA NATURAL">HIERBA NATURAL / BELAR NATURALA</option>
-                                                <option value="PABELLÓN / SALA">PABELLÓN / ARETOA</option>
+                                                <option value="PABELLÓN / ARETOA">PABELLÓN / ARETOA</option>
                                             </select>
+                                            <div class="absolute right-6 top-[3.7rem] pointer-events-none text-slate-300"><i data-lucide="chevron-down" class="w-5 h-5"></i></div>
                                         </div>
                                     </div>
-                                    <div class="space-y-3">
-                                        <input name="ubicacion" id="pdf-ubicacion" placeholder="LINK GOOGLE MAPS" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    <div class="space-y-3 col-span-2">
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="navigation" class="w-3 h-3 text-blue-500"></i> Enlace Google Maps
+                                        </label>
+                                        <input name="ubicacion" id="pdf-ubicacion" placeholder="LINK GOOGLE MAPS" class="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-bold outline-none focus:bg-white transition-all">
                                     </div>
                                     <div class="space-y-3 col-span-2">
-                                        <textarea name="extra" id="pdf-extra" rows="4" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-sm outline-none resize-none">Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="message-square" class="w-3 h-3 text-blue-500"></i> Texto de Invitación
+                                        </label>
+                                        <textarea name="extra" id="pdf-extra" rows="4" class="w-full p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-medium text-sm outline-none resize-none focus:bg-white transition-all">Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
 
 EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de la EF Arnedo en Arnedo (La Rioja)</textarea>
                                     </div>
                                     <div class="space-y-3 col-span-2 md:col-span-1">
-                                        <textarea name="notas" id="pdf-notas" rows="6" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-[11px] outline-none resize-none">La sesión de tecnificación será de 1 hora y 15 minutos.
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2">
+                                            <i data-lucide="sticky-note" class="w-3 h-3 text-blue-500"></i> Información Adicional (Notas)
+                                        </label>
+                                        <textarea name="notas" id="pdf-notas" rows="6" class="w-full p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] font-medium text-[11px] outline-none resize-none focus:bg-white transition-all">La sesión de tecnificación será de 1 hora y 15 minutos.
 
 La Real Sociedad facilitará la ropa deportiva para la sesión de tecnificación, tendrán que llevar MEDIAS.
 
 Solo podrán acceder a la instalación de entrenamiento los participantes en la tecnificación.</textarea>
                                     </div>
                                     <div class="space-y-3 col-span-2 md:col-span-1">
-                                        <textarea name="muy_importante" id="pdf-importante" rows="6" class="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] font-medium text-[11px] outline-none resize-none">Se deberán DUCHAR después de cada sesión de entrenamiento, por lo que necesitan material para la ducha.
+                                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 flex items-center gap-2 text-red-500">
+                                            <i data-lucide="alert-circle" class="w-3 h-3 text-red-500"></i> Muy Importante
+                                        </label>
+                                        <textarea name="muy_importante" id="pdf-importante" rows="6" class="w-full p-6 bg-red-50/10 border-2 border-red-50 rounded-[2.5rem] font-medium text-[11px] outline-none resize-none focus:bg-white transition-all">Se deberán DUCHAR después de cada sesión de entrenamiento, por lo que necesitan material para la ducha.
 
 Los jugadores tendrán que llevar su PROPIA BOTELLA DE AGUA.
 
@@ -12306,8 +11048,8 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                         Generar Todas (${type}S)
                                     </button>
                                 </div>
-                            </form>
-                        </div>
+                            </div>
+                        </form>
                         <div id="pdf-preview-status" class="hidden p-8 bg-blue-50 border border-blue-100 rounded-[3rem] flex items-center gap-5 animate-pulse">
                             <div class="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
                                 <div class="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
@@ -12361,10 +11103,12 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         if (btnAll) btnAll.classList.add('hidden');
                         return;
                     }
-                    const pids = JSON.parse(opt.dataset.players || '[]');
+
+                    const conv = convocatorias.find(c => c.id.toString() === opt.value.toString()) || {};
+                    const pids = Array.isArray(conv.playerids) ? conv.playerids : JSON.parse(opt.dataset.players || '[]');
                     const filtered = players.filter(p => pids.includes(p.id) || pids.includes(String(p.id)));
                     playerSelect.innerHTML = `<option value="">Selecciona un jugador...</option>` +
-                        filtered.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+                        filtered.map(p => `<option value="${p.id}">${p.nombre.toUpperCase()}</option>`).join('');
 
                     if (filtered.length > 0 && btnAll) {
                         btnAll.classList.remove('hidden');
@@ -12373,23 +11117,56 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         btnAll.classList.add('hidden');
                     }
 
-                    container.querySelector('#pdf-titulo').value = (opt.dataset.nombre || '').toUpperCase();
-                    const meta = window.parseLugarMetadata(opt.dataset.lugar);
-                    lugarInput.value = meta.base;
+                    container.querySelector('#pdf-titulo').value = (conv.nombre || opt.dataset.nombre || '').toUpperCase();
+                    const meta = window.parseLugarMetadata(conv.lugar || '');
+                    lugarInput.value = meta.base || '';
 
                     // Auto-buscar el link de maps según el lugar
                     await updateMapsFromLugar();
 
+                    let hlVal = meta.extra.hl || '';
+                    let hiVal = meta.extra.hi || conv.hora || '';
+                    let hsVal = meta.extra.hs || '';
+
+                    const allSessions = await db.getAll('sesiones');
+                    const allEventos = await db.getAll('eventos');
+                    const matchingItem = allSessions.find(s => s.fecha === conv.fecha && (s.nombre === conv.nombre || s.equipoid == conv.equipoid))
+                        || allEventos.find(e => e.fecha === conv.fecha && (e.nombre === conv.nombre || e.equipoid == conv.equipoid));
+
+                    if (matchingItem && matchingItem.lugar && matchingItem.lugar.includes('|||')) {
+                        const mMeta = window.parseLugarMetadata(matchingItem.lugar);
+                        if (!hlVal) hlVal = mMeta.extra.hl;
+                        if (!hiVal) hiVal = mMeta.extra.hi || matchingItem.hora || matchingItem.hi;
+                        if (!hsVal) hsVal = mMeta.extra.hs;
+                    }
+
+                    const fallbackHi = conv.hora || (matchingItem ? matchingItem.hora : '');
+
                     if (type === 'Ciclo') {
                         const sessions = [
-                            { f: opt.dataset.fecha, hl: meta.extra.hl, hi: meta.extra.hi, hs: meta.extra.hs },
-                            meta.extra.s2 || {},
-                            meta.extra.s3 || {}
+                            {
+                                f: conv.fecha || opt.dataset.fecha,
+                                hl: hlVal || meta.extra.hl,
+                                hi: hiVal || meta.extra.hi || fallbackHi,
+                                hs: hsVal || meta.extra.hs
+                            },
+                            {
+                                f: meta.extra.s2?.f,
+                                hl: meta.extra.s2?.hl,
+                                hi: meta.extra.s2?.hi || meta.extra.s2?.h,
+                                hs: meta.extra.s2?.hs
+                            },
+                            {
+                                f: meta.extra.s3?.f,
+                                hl: meta.extra.s3?.hl,
+                                hi: meta.extra.s3?.hi || meta.extra.s3?.h,
+                                hs: meta.extra.s3?.hs
+                            }
                         ];
                         sessions.forEach((s, i) => {
                             const idx = i + 1;
                             const fFld = container.querySelector(`[name="fecha_${idx}"]`);
-                            if (fFld) fFld.value = s.f || s.fecha || '';
+                            if (fFld) fFld.value = s.f || '';
                             const hlFld = container.querySelector(`[name="hl_${idx}"]`);
                             if (hlFld) hlFld.value = s.hl || '';
                             const hiFld = container.querySelector(`[name="hi_${idx}"]`);
@@ -12399,14 +11176,15 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         });
                     } else {
                         const fld = container.querySelector('#pdf-fecha');
-                        if (fld) fld.value = opt.dataset.fecha;
+                        if (fld) fld.value = conv.fecha || opt.dataset.fecha || '';
                         const hlFld = container.querySelector('#pdf-hl');
-                        if (hlFld) hlFld.value = meta.extra.hl || '';
+                        if (hlFld) hlFld.value = hlVal || meta.extra.hl || '';
                         const hiFld = container.querySelector('#pdf-hi');
-                        if (hiFld) hiFld.value = meta.extra.hi || '';
+                        if (hiFld) hiFld.value = hiVal || meta.extra.hi || fallbackHi || '';
                         const hsFld = container.querySelector('#pdf-hs');
-                        if (hsFld) hsFld.value = meta.extra.hs || '';
+                        if (hsFld) hsFld.value = hsVal || meta.extra.hs || '';
                     }
+
                 };
 
                 let currentAction = 'single';
@@ -12429,7 +11207,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                 return;
                             }
                             status.classList.remove('hidden');
-                            await generateIndividualConvocatoriaPDF(player, data);
+                            await generateIndividualConvocatoriaPDF(player, data, currentType);
                             window.customAlert('¡PDF Generado!', 'Descarga completada.', 'success');
                         } else {
                             const opt = convSelect.selectedOptions[0];
@@ -12450,7 +11228,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                 const p = filtered[i];
                                 statusText.innerText = `Generando ${i + 1} de ${filtered.length}: ${p.nombre}...`;
                                 try {
-                                    await generateIndividualConvocatoriaPDF(p, data);
+                                    await generateIndividualConvocatoriaPDF(p, data, currentType);
                                 } catch (pdfErr) {
                                     console.error(`Error generating PDF for ${p.nombre}:`, pdfErr);
                                 }
@@ -12461,8 +11239,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         }
                     } catch (err) {
                         console.error("Error general en generación de PDF:", err);
-                        const stackLine = err.stack ? err.stack.split('\n')[1] : 'no stack';
-                        window.customAlert('Error Técnico', `Error: ${err.message}\nUbicación: ${stackLine}`, 'error');
+                        window.customAlert('Error', `Error al generar PDF: ${err.message}`, 'error');
                     } finally {
                         status.classList.add('hidden');
                         statusText.innerText = 'Procesando PDF...';
@@ -12470,240 +11247,178 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 };
             };
 
-            window.renderConvocatoriasPDFWithType = (type) => {
+            window.updatePdfIndivType = (type) => {
                 currentType = type;
                 renderForm(type);
             };
 
+            window.updatePdfIndivComunidad = (com) => {
+                currentPdfComunidad = com;
+                renderForm(currentType);
+            };
+
             renderForm(currentType);
 
-        } catch (err) {
-            console.error("Error rendering PDF generator:", err);
-            if (container) {
-                container.innerHTML = `<div class="p-20 text-center italic text-slate-400">Error al cargar el generador: ${err.message}</div>`;
+            } catch (err) {
+                console.error("Error rendering PDF generator:", err);
+                if (container) {
+                    container.innerHTML = `<div class="p-20 text-center italic text-slate-400">Error al cargar el generador: ${err.message}</div>`;
+                }
             }
-        }
-    };
+        };
 
-
-
-
-
-    async function generateIndividualConvocatoriaPDF(player, info) {
-        console.log("Iniciando generación de PDF para:", player?.nombre);
-
-        if (!window.jspdf || !window.jspdf.jsPDF) {
-            console.error("Librería jsPDF no encontrada");
-            throw new Error("Librería de PDF no cargada correctamente.");
-        }
-
+    async function generateIndividualConvocatoriaPDF(player, info, type) {
+        console.log("Generando PDF Premium para:", player?.nombre);
+        if (!window.jspdf || !window.jspdf.jsPDF) throw new Error("Librería de PDF no cargada.");
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
 
-        if (typeof doc.autoTable !== 'function') {
-            console.error("Plugin autoTable no encontrado");
-            throw new Error("Plugin de tablas no cargado.");
+        // Fuentes (Montserrat)
+        if (window.MONTSERRAT_REG && window.MONTSERRAT_BOLD) {
+            doc.addFileToVFS('Montserrat-Regular.ttf', window.MONTSERRAT_REG);
+            doc.addFileToVFS('Montserrat-Bold.ttf', window.MONTSERRAT_BOLD);
+            doc.addFont('Montserrat-Regular.ttf', 'Montserrat', 'normal');
+            doc.addFont('Montserrat-Bold.ttf', 'Montserrat', 'bold');
+            doc.setFont('Montserrat', 'normal');
+        } else {
+            doc.setFont("helvetica", "normal");
         }
 
         const loadImage = (url) => new Promise((resolve) => {
             if (!url) return resolve(null);
             const img = new Image();
-            const timer = setTimeout(() => resolve(null), 5000);
-
-            img.onload = () => {
-                clearTimeout(timer);
-                if (img.naturalWidth > 0 && img.naturalHeight > 0) resolve(img);
-                else resolve(null);
-            };
-            img.onerror = () => {
-                const img2 = new Image();
-                img2.crossOrigin = "Anonymous";
-                img2.onload = () => {
-                    clearTimeout(timer);
-                    if (img2.naturalWidth > 0 && img2.naturalHeight > 0) resolve(img2);
-                    else resolve(null);
-                };
-                img2.onerror = () => { clearTimeout(timer); resolve(null); };
-                img2.src = url;
-            };
+            img.crossOrigin = "Anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
             img.src = url;
         });
 
-        const normalize = (s) => (s || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const clubes = await db.getAll('clubes');
-
-        // RS Logo (Search for "Real Sociedad" club or fallback to RS.png)
-        const rsClub = clubes.find(c => normalize(c.nombre) === "REAL SOCIEDAD");
-        const rsLogo = await loadImage(rsClub?.escudo || 'RS.png');
-
-        // Player Club Logo
+        // Logo Real Sociedad y Club
+        const rsLogo = await loadImage('Imagenes/RS.png');
         let clubShield = null;
         if (player.equipoConvenido) {
-            const pClubNorm = normalize(player.equipoConvenido);
-            const club = clubes.find(c => normalize(c.nombre) === pClubNorm);
+            const clubes = await db.getAll('clubes');
+            const club = clubes.find(c => (c.nombre || '').toUpperCase().includes(player.equipoConvenido.toUpperCase()));
             if (club && club.escudo) clubShield = await loadImage(club.escudo);
         }
 
-        // --- HEADER ---
-        doc.setTextColor(0, 0, 0);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(18);
-        doc.text(`SESIÓN: ${info.evento || 'CONVOCATORIA'}`.toUpperCase(), 105, 25, { align: "center" });
+        const blueColor = [37, 99, 235];
+        const slateColor = [30, 41, 59];
 
-        // --- LOGOS ---
-        const logoY = 32;
-        const safeAddImage = (img, x, y, w, h) => {
-            if (!img) return;
+        // Cabecera con Logos
+        const maxW = 22;
+        const maxH = 22;
+        let w = maxW;
+        let h = maxH;
+        if (rsLogo && rsLogo.width && rsLogo.height) {
+            const ratio = rsLogo.width / rsLogo.height;
+            if (ratio > 1) h = maxW / ratio;
+            else w = maxH * ratio;
+        }
+
+        let cw = maxW;
+        let ch = maxH;
+        if (clubShield && clubShield.width && clubShield.height) {
+            const ratio = clubShield.width / clubShield.height;
+            if (ratio > 1) ch = maxW / ratio;
+            else cw = maxH * ratio;
+        }
+
+        if (rsLogo) {
             try {
-                doc.addImage(img, 'AUTO', x, y, w, h);
-            } catch (e) {
-                console.warn("Error al añadir imagen al PDF:", e);
-            }
-        };
+                doc.addImage(rsLogo, 'PNG', 192 - cw - w - 4, 12, w, h);
+            } catch(e){}
+        }
+        if (clubShield) {
+            try {
+                doc.addImage(clubShield, 'PNG', 192 - cw, 12, cw, ch);
+            } catch(e){}
+        }
 
-        safeAddImage(rsLogo, 85, logoY, 15, 15);
-        safeAddImage(clubShield, 110, logoY, 15, 15);
+        const teams = await db.getAll('equipos');
+        const playerTeam = teams.find(t => t.id === player.equipoid);
+        let titleText = (info.evento || 'CONVOCATORIA').toUpperCase();
+        if (playerTeam && playerTeam.nombre) {
+            titleText = `ACTIVIDAD ${playerTeam.nombre.toUpperCase()}`;
+        }
 
-        // --- PLAYER NAME ---
-        doc.setFontSize(20);
-        const pName = (player.nombre || 'JUGADOR').toUpperCase();
-        doc.text(pName, 105, 60, { align: "center" });
+        doc.setFontSize(19);
+        doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+        doc.setFont('Montserrat', 'bold');
+        doc.text(titleText, 18, 23);
 
-        // --- INVITATION TEXT ---
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(11);
-        const defaultInvitation = `Nos gustaría ofrecer al jugador perteneciente a su Club la posibilidad de participar en un ciclo de entrenamiento organizado por la Real Sociedad.
+        // Nombre del Jugador
+        doc.setFontSize(22);
+        doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+        doc.text((player.nombre || '').toUpperCase(), 18, 50);
 
-EL CICLO DE ENTRENAMIENTO se llevará a cabo en las instalaciones deportivas de la EF Arnedo en Arnedo (La Rioja)`;
-        const invitation = info.extra && info.extra !== 'Invitación oficial...' ? info.extra : defaultInvitation;
-        const splitInvitation = doc.splitTextToSize(invitation, 170);
-        doc.text(splitInvitation, 20, 75);
+        // Texto de Invitación
+        doc.setFont('Montserrat', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(51, 65, 85);
+        const splitInvitation = doc.splitTextToSize(info.extra || '', 175);
+        doc.text(splitInvitation, 18, 65);
 
-        // --- TABLE ---
+        // Tabla de Sesiones
         const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
         const daysBasque = ['Igandea', 'Astelehena', 'Asteartea', 'Asteazkena', 'Osteguna', 'Ostirala', 'Larunbata'];
-
-        const getSafeDayLabel = (dateStr) => {
-            if (!dateStr) return '--';
-            try {
-                const d = new Date(dateStr);
-                if (isNaN(d.getTime())) return dateStr;
-                const dayIdx = d.getDay();
-                return `${dateStr}\n\n${days[dayIdx]} / ${daysBasque[dayIdx]}`;
-            } catch (e) { return dateStr; }
+        const getDayLabel = (dStr) => {
+            if (!dStr) return '--';
+            const d = new Date(dStr);
+            return isNaN(d.getTime()) ? dStr : `${dStr}\n\n${days[d.getDay()]} / ${daysBasque[d.getDay()]}`;
         };
-
-        let body = [
-            ['Día / Eguna'],
-            ['Lugar / Lekua'],
-            ['Superficie / Gainazala'],
-            ['Hora / Ordua']
-        ];
 
         let head = [['']];
-        let colStyles = { 0: { cellWidth: 40, fontStyle: 'bold', fillColor: [230, 230, 230] } };
+        let body = [['Día / Eguna'], ['Lugar / Lekua'], ['Superficie / Gainazala'], ['Hora / Ordua']];
 
-        if (info.type === 'Ciclo') {
-            [1, 2, 3].forEach(i => {
-                const f = info[`fecha_${i}`];
-                if (f) {
-                    head[0].push(`SESIÓN ${i}`);
-                    body[0].push(getSafeDayLabel(f));
-
-                    body[1].push({
-                        content: `${(info.lugar || '').toUpperCase()}\n\nVER UBICACIÓN EN GOOGLE MAPS`,
-                        data: { url: (info.ubicacion || '').trim() },
-                        styles: { fontStyle: 'bold', textColor: [0, 50, 200], fontSize: 7.5 }
-                    });
-
-                    body[2].push(info.superficie || 'HIERBA ARTIFICIAL');
-
-                    const hl = info[`hl_${i}`] || '--:--';
-                    const hi = info[`hi_${i}`] || '--:--';
-                    const hs = info[`hs_${i}`] || '';
-                    body[3].push(`${hl} (Llegada)\n\n${hi} (Comienzo)\n\n${hs ? `${hs} (Salida)` : ''}`);
-                }
-            });
-        } else {
-            head[0].push('DATOS / DATUAK');
-            body[0].push(getSafeDayLabel(info.fecha));
-            body[1].push({
-                content: `${(info.lugar || '').toUpperCase()}\n\nVER UBICACIÓN EN GOOGLE MAPS`,
-                data: { url: (info.ubicacion || '').trim() },
-                styles: { fontStyle: 'bold', textColor: [0, 50, 200], fontSize: 7.5 }
-            });
-            body[2].push(info.superficie || 'HIERBA ARTIFICIAL');
-            body[3].push(`${info.hl || '--:--'} (Llegada)\n\n${info.hi || '--:--'} (Comienzo)\n\n${info.hs ? `${info.hs} (Salida)` : ''}`);
-        }
-
-        try {
-            doc.autoTable({
-                startY: 100,
-                head: head,
-                body: body,
-                theme: 'grid',
-                styles: { fontSize: 8, cellPadding: 3, lineColor: [180, 180, 180], textColor: [0, 0, 0], halign: 'center', valign: 'middle', overflow: 'linebreak' },
-                headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 10 },
-                columnStyles: colStyles,
-                margin: { left: 20, right: 20 },
-                didDrawCell: (data) => {
-                    // Si la celda tiene una URL en sus datos personalizados, añadimos el enlace manualmente
-                    if (data.cell.raw && data.cell.raw.data && data.cell.raw.data.url) {
-                        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url: data.cell.raw.data.url });
-                    }
-                }
-            });
-        } catch (tableErr) {
-            console.error("Error drawing table:", tableErr);
-            throw new Error("Error técnico al generar la tabla del PDF.");
-        }
-
-        let finalY = (doc.lastAutoTable?.finalY || 140) + 10;
-
-        // --- SECTIONS (NOTAS / IMPORTANTE) ---
-        const drawSection = (title, content, y, fullHighlight = false) => {
-            if (!content || content === 'Notas...' || content === 'Importante...') return y;
-            if (y > 270) doc.addPage();
-
-            const splitContent = doc.splitTextToSize(content, 170);
-
-            if (fullHighlight) {
-                doc.setFillColor(255, 241, 118);
-                doc.rect(20, y - 5, 170, (splitContent.length * 4.5) + 12, 'F');
-            } else {
-                doc.setFillColor(255, 241, 118);
-                const titleWidth = doc.getTextWidth(title + " ") + 4;
-                doc.rect(20, y - 5, titleWidth, 7, 'F');
-            }
-
-            doc.setFont("Montserrat", "bold");
-            doc.setFontSize(11);
-            doc.text(title, 22, y);
-
-            doc.setFont("Montserrat", "bold");
-            doc.setFontSize(8.5);
-            doc.text(splitContent, 20, y + 6);
-
-            return y + (splitContent.length * 4.5) + 10;
+        const addCol = (date, hl, hi, hs, title) => {
+            head[0].push(title.toUpperCase());
+            body[0].push(getDayLabel(date));
+            body[1].push({ content: `${(info.lugar || '').toUpperCase()}\n\nUBICACIÓN GOOGLE MAPS`, data: { url: (info.ubicacion || '').trim() }, styles: { fontStyle: 'bold', textColor: blueColor, fontSize: 7 } });
+            body[2].push((info.superficie || 'HIERBA ARTIFICIAL').toUpperCase());
+            body[3].push(`${hl || '--:--'} (Llegada)\n\n${hi || '--:--'} (Comienzo)${hs ? `\n\n${hs} (Salida)` : ''}`);
         };
 
-        const defaultNotas = `La sesión de tecnificación será de 1 hora y 15 minutos.
+        if (type === 'Ciclo') {
+            [1, 2, 3].forEach(i => {
+                addCol(info[`fecha_${i}`] || '', info[`hl_${i}`] || '', info[`hi_${i}`] || '', info[`hs_${i}`] || '', `Sesión ${i}`);
+            });
+        } else {
+            addCol(info.fecha, info.hl, info.hi, info.hs, 'Datos / Datuak');
+        }
 
-La Real Sociedad facilitará la ropa deportiva para la sesión de tecnificación, tendrán que llevar MEDIAS.
+        doc.autoTable({
+            startY: 88, head, body, theme: 'grid',
+            styles: { fontSize: 7.5, cellPadding: 4, lineColor: [226, 232, 240], textColor: [30, 41, 59], halign: 'center', valign: 'middle', font: 'Montserrat' },
+            headStyles: { fillColor: slateColor, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
+            columnStyles: { 0: { cellWidth: 35, fontStyle: 'bold', fillColor: [248, 250, 252] } },
+            margin: { left: 18, right: 18 },
+            didDrawCell: (d) => { if (d.cell.raw?.data?.url) doc.link(d.cell.x, d.cell.y, d.cell.width, d.cell.height, { url: d.cell.raw.data.url }); }
+        });
 
-Solo podrán acceder a la instalación de entrenamiento los participantes en la tecnificación.`;
-        const defaultImp = `Se deberán DUCHAR después de cada sesión de entrenamiento, por lo que necesitan material para la ducha.
 
-Los jugadores tendrán que llevar su PROPIA BOTELLA DE AGUA.
+        let fy = (doc.lastAutoTable?.finalY || 140) + 12;
+        const drawSection = (title, content, y, color = blueColor) => {
+            if (!content || content.length < 5) return y;
+            const lines = doc.splitTextToSize(content, 160);
+            const rectHeight = 18 + (lines.length * 4.5); // Altura dinámica según las líneas de texto
+            if (y + rectHeight > 278) { doc.addPage(); y = 20; }
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(18, y, 174, rectHeight, 3, 3, 'F');
+            doc.setDrawColor(color[0], color[1], color[2]);
+            doc.setLineWidth(1); doc.line(18, y, 18, y + rectHeight);
+            doc.setFont('Montserrat', 'bold'); doc.setFontSize(8); doc.setTextColor(color[0], color[1], color[2]); doc.text(title.toUpperCase(), 24, y + 8);
+            doc.setFont('Montserrat', 'normal'); doc.setFontSize(8); doc.setTextColor(71, 85, 105);
+            doc.text(lines, 24, y + 14);
+            return y + rectHeight + 6;
+        };
 
-Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo hagáis saber por ESCRITO.`;
+        fy = drawSection('Información Adicional', info.notas, fy);
+        fy = drawSection('Instrucciones Importantes', info.muy_importante, fy, [225, 29, 72]);
 
-        finalY = drawSection("NOTAS:", info.notas || defaultNotas, finalY);
-        finalY = drawSection("MUY IMPORTANTE:", info.muy_importante || defaultImp, finalY);
-
-        doc.save(`${pName}.pdf`);
-        console.log("PDF generado con éxito para:", pName);
+        doc.save(`${(player.nombre || 'CONVOCATORIA').toUpperCase()}.pdf`);
     }
+
 
     window.generateAsistenciaPDF = async (id, download = true) => {
         const a = await db.get('asistencia', Number(id) || id);
@@ -13735,5 +12450,518 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         };
     };
 
+    window.renderPrevisionClubes = async function (container) {
+        try {
+            const [clubes, convocatorias, asistencias, players] = await Promise.all([
+                db.getAll('clubes'),
+                db.getAll('convocatorias'),
+                db.getAll('asistencia'),
+                db.getAll('jugadores')
+            ]);
+
+            // Para PREVISIÓN solo nos interesan las convocatorias (el futuro/planificación)
+            // No mezclamos con asistencia ya que eso es pasado y ensucia el forecast de clubes.
+            const allEvents = convocatorias;
+
+            const filters = window.previsionFilters;
+            let selectedIds = new Set();
+
+            const render = () => {
+                const availableTypes = ['Torneo', 'Ciclo', 'Sesión'];
+                
+                container.innerHTML = `
+                    <div class="max-w-7xl mx-auto space-y-8 pb-20">
+                        <div class="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600"></div>
+                            
+                            <div class="flex flex-col md:flex-row justify-between items-center gap-6 mb-10">
+                                <div class="flex items-center gap-5">
+                                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center shadow-inner">
+                                        <i data-lucide="mail" class="w-8 h-8"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">PREVISIÓN CLUBES</h3>
+                                        <div class="flex gap-2 mt-1">
+                                            ${availableTypes.map(type => `
+                                                <button class="tab-btn px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${filters.activeType === type ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}" data-type="${type}">
+                                                    ${type}S
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button onclick="window.switchView('dashboard')" class="p-4 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 hover:text-slate-600 transition-all">
+                                    <i data-lucide="x" class="w-6 h-6"></i>
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10 p-6 bg-slate-50/50 rounded-[2.5rem] border border-slate-100 items-end">
+                                <div class="space-y-3 lg:col-span-1">
+                                    <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2">
+                                        <i data-lucide="search" class="w-3.5 h-3.5"></i> FILTRAR ${filters.activeType.toUpperCase()}S
+                                    </label>
+                                    <input type="text" id="torneo-search-prevision" placeholder="Buscar..." value="${filters.searchQuery}" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none shadow-sm">
+                                </div>
+                                <div class="space-y-3 lg:col-span-1">
+                                    <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 flex items-center gap-2">
+                                        <i data-lucide="building-2" class="w-3.5 h-3.5"></i> CLUB (OPCIONAL)
+                                    </label>
+                                     <select id="club-selector-prevision" class="w-full p-4 bg-white border border-slate-200 rounded-2xl text-xs font-bold outline-none appearance-none cursor-pointer shadow-sm">
+                                        <option value="">-- SELECCIONA CLUB --</option>
+                                        ${clubes.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(c => `
+                                            <option value="${c.id}" ${String(c.id) === String(filters.selectedClubId) ? 'selected' : ''}>${c.nombre}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <button id="btn-pdf-indiv" disabled class="w-full py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-30 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[9px]">
+                                        <i data-lucide="file-text" class="w-4 h-4"></i> PDF INDIVIDUAL
+                                    </button>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <button id="btn-pdf-all" disabled class="w-full py-4 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-slate-800 disabled:opacity-30 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[9px]">
+                                        <i data-lucide="layers" class="w-4 h-4"></i> PDF TODOS CLUBES
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="prevision-results" class="space-y-8 min-h-[400px]"></div>
+                        </div>
+                    </div>
+                `;
+
+                const results = container.querySelector('#prevision-results');
+                const searchInput = container.querySelector('#torneo-search-prevision');
+                const selector = container.querySelector('#club-selector-prevision');
+                const btnIndiv = container.querySelector('#btn-pdf-indiv');
+                const btnAll = container.querySelector('#btn-pdf-all');
+
+                 const updateButtons = () => {
+                    const hasSelection = selectedIds.size > 0;
+                    btnIndiv.disabled = !hasSelection || !filters.selectedClubId;
+                    btnAll.disabled = !hasSelection;
+                };
+
+                const showTorneoPlayersPreview = (tid) => {
+                    const t = allEvents.find(tor => String(tor.id) === String(tid));
+                    if (!t) return;
+                    
+                    const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : (t.players ? Object.keys(t.players).map(String) : []);
+                    let pInT = players.filter(p => tPids.includes(String(p.id)));
+
+                    let title = t.nombre;
+                    let clubInfo = 'Todos los clubes';
+                    
+                     if (filters.selectedClubId) {
+                        const club = clubes.find(c => String(c.id) === String(filters.selectedClubId));
+                        pInT = pInT.filter(p => 
+                            (p.club && (p.club === club.nombre || p.club.includes(club.nombre))) || 
+                            (p.equipoConvenido && (p.equipoConvenido === club.nombre || p.equipoConvenido.includes(club.nombre)))
+                        );
+                        clubInfo = `Solo ${club.nombre}`;
+                    }
+
+                    const modal = document.createElement('div');
+                    modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300';
+                    modal.innerHTML = `
+                        <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                            <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 bg-slate-900 text-white rounded-2xl flex flex-col items-center justify-center shadow-lg">
+                                        <span class="text-[6px] font-black uppercase opacity-60">${t.fecha.split('-')[1]}</span>
+                                        <span class="text-sm font-black">${t.fecha.split('-')[2]}</span>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-black text-slate-800 uppercase text-xs tracking-tight">${title}</h4>
+                                        <p class="text-[9px] text-blue-600 font-black uppercase tracking-widest">${clubInfo} • ${pInT.length} JUGADORES</p>
+                                    </div>
+                                </div>
+                                <button class="close-preview-btn p-3 bg-white text-slate-400 rounded-full hover:text-slate-600 shadow-sm transition-all">
+                                    <i data-lucide="x" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+                            <div class="p-8 max-h-[60vh] overflow-y-auto">
+                                ${pInT.length > 0 ? `
+                                    <div class="grid grid-cols-1 gap-2">
+                                        ${pInT.sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `
+                                            <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-blue-100 transition-all">
+                                                <div class="w-8 h-8 rounded-full bg-slate-200 overflow-hidden flex-shrink-0">
+                                                    ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-[8px] font-black text-slate-400">${p.nombre.substring(0, 2).toUpperCase()}</div>`}
+                                                </div>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-[10px] font-bold text-slate-800 uppercase truncate">${p.nombre}</p>
+                                                    <p class="text-[8px] text-slate-400 font-black uppercase tracking-tighter">${p.posicion || 'SIN POS.'} • ${p.club || p.equipoConvenido || 'S.C.'}</p>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : `
+                                    <div class="py-10 text-center space-y-4 opacity-30">
+                                        <i data-lucide="user-minus" class="w-10 h-10 mx-auto"></i>
+                                        <p class="text-[10px] font-black uppercase">No hay jugadores de este club</p>
+                                    </div>
+                                `}
+                            </div>
+                            <div class="p-6 bg-slate-50/50 border-t border-slate-50">
+                                <button class="close-preview-btn w-full py-4 bg-slate-900 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-900/10">CERRAR VISTA</button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.body.appendChild(modal);
+                    if (window.lucide) lucide.createIcons();
+                    
+                    const closeModal = () => {
+                        modal.classList.add('fade-out');
+                        modal.firstElementChild.classList.add('zoom-out-95');
+                        setTimeout(() => modal.remove(), 250);
+                    };
+                    
+                    modal.querySelectorAll('.close-preview-btn').forEach(b => b.onclick = closeModal);
+                    modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+                };
+
+                const updatePrevision = () => {
+                    const val = searchInput.value.toLowerCase().trim();
+                    const filtered = window.applyGlobalFilters(allEvents.filter(c => {
+                        if (!c.tipo) return false;
+                        const t = c.tipo.toLowerCase().trim();
+                        const active = filters.activeType.toLowerCase();
+                        
+                        // Filtrado por tipo
+                        if (active === 'torneo') {
+                            return t === 'torneo' || t === 'partido' || t === 'campeonato' || t === 'triangular';
+                        }
+                        if (active === 'sesión') {
+                            return t === 'sesión' || t === 'sesion' || t === 'entrenamiento' || t === 'tecnificación';
+                        }
+                        if (active === 'ciclo') {
+                            return t === 'ciclo' || t === 'etapa';
+                        }
+                        return t === active;
+                    }))
+                        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+                    // Aplicar búsqueda antes de paginar
+                    if (val) {
+                        filtered = filtered.filter(t => 
+                            (t.nombre || '').toLowerCase().includes(val) || 
+                            window.cleanLugar(t.lugar).toLowerCase().includes(val)
+                        );
+                    }
+
+                    const pageSize = 10;
+                    const currentPage = window.paginationState.prevision || 1;
+                    const totalItems = filtered.length;
+                    const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+                     if (filtered.length === 0) {
+                        results.innerHTML = `<div class="py-20 text-center text-slate-300 font-black uppercase text-[10px]">No hay ${filters.activeType}s próximos</div>`;
+                        return;
+                    }
+
+                    const groups = {};
+                    paginated.forEach(t => {
+                        const date = new Date(t.fecha);
+                        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                        const label = date.toLocaleString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase();
+                        if (!groups[key]) groups[key] = { label, items: [] };
+                        groups[key].items.push(t);
+                    });
+
+                    results.innerHTML = `
+                        ${Object.keys(groups).sort((a, b) => b.localeCompare(a)).map(key => {
+                            const { label, items } = groups[key];
+                            return `
+                                <div class="space-y-6">
+                                    <div class="flex items-center gap-4 px-2">
+                                        <div class="w-1 h-5 bg-blue-600 rounded-full"></div>
+                                        <h4 class="text-[10px] font-black text-slate-800 uppercase tracking-[0.2em]">${label}</h4>
+                                        <div class="flex-1 h-px bg-slate-100"></div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        ${items.map(t => {
+                                            const isChecked = selectedIds.has(t.id) || selectedIds.has(String(t.id));
+                                            const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : (t.players ? Object.keys(t.players).map(String) : []);
+                                            const pInT = players.filter(p => tPids.includes(String(p.id)));
+                                            
+                                             let clubTag = '';
+                                            if (filters.selectedClubId) {
+                                                const club = clubes.find(c => String(c.id) === String(filters.selectedClubId));
+                                                if (club) {
+                                                    const clubP = pInT.filter(p => 
+                                                        (p.club && (p.club === club.nombre || p.club.includes(club.nombre))) || 
+                                                        (p.equipoConvenido && (p.equipoConvenido === club.nombre || p.equipoConvenido.includes(club.nombre)))
+                                                    );
+                                                    if (clubP.length > 0) {
+                                                        clubTag = `<span class="px-2 py-0.5 bg-blue-600 text-white rounded-full text-[9px] font-black shadow-lg shadow-blue-500/20">${clubP.length}</span>`;
+                                                    }
+                                                }
+                                            }
+
+                                            return `
+                                                <div class="bg-white p-4 rounded-3xl border ${isChecked ? 'border-blue-500 ring-4 ring-blue-50 shadow-lg' : 'border-slate-100'} flex items-center gap-4 transition-all hover:border-slate-200 cursor-pointer" onclick="this.querySelector('input').click()">
+                                                    <input type="checkbox" class="torneo-cb w-5 h-5 rounded-lg border-2 border-slate-200" data-id="${t.id}" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation()">
+                                                    <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center flex-shrink-0 shadow-md">
+                                                        <span class="text-[7px] font-black uppercase opacity-60">${t.fecha.split('-')[1]}</span>
+                                                        <span class="text-sm font-black">${t.fecha.split('-')[2]}</span>
+                                                    </div>
+                                                    <div class="flex-1 min-w-0">
+                                                        <h5 class="font-bold text-slate-800 uppercase text-[11px] leading-tight truncate">${t.nombre}</h5>
+                                                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-tighter truncate">${window.cleanLugar(t.lugar)}</p>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md text-[9px] font-black">${pInT.length}</span>
+                                                        ${clubTag}
+                                                        <button class="view-players-btn p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" data-id="${t.id}">
+                                                            <i data-lucide="eye" class="w-4 h-4"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+
+                        ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPrevisionPage')}
+                    `;
+
+                    results.querySelectorAll('.torneo-cb').forEach(cb => {
+                        cb.onchange = (e) => {
+                            const id = e.target.dataset.id;
+                            if (e.target.checked) selectedIds.add(id);
+                            else selectedIds.delete(id);
+                            updateButtons();
+                            updatePrevision();
+                        };
+                    });
+
+                    results.querySelectorAll('.view-players-btn').forEach(btn => {
+                        btn.onclick = (e) => {
+                            e.stopPropagation();
+                            const tid = btn.dataset.id;
+                            showTorneoPlayersPreview(tid);
+                        };
+                    });
+
+                    if (window.lucide) lucide.createIcons();
+                };
+
+                 container.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        filters.activeType = btn.dataset.type;
+                        selectedIds.clear();
+                        window.paginationState.prevision = 1; // Reset pagination on tab change
+                        render();
+                    };
+                });
+
+                 selector.onchange = (e) => {
+                    filters.selectedClubId = e.target.value;
+                    updateButtons();
+                    updatePrevision();
+                };
+
+                 searchInput.oninput = (e) => {
+                    filters.searchQuery = e.target.value;
+                    updatePrevision();
+                };
+
+                // Inicializar datos
+                updateButtons();
+                updatePrevision();
+                if (window.lucide) lucide.createIcons();
+
+                 btnIndiv.onclick = async () => {
+                    const club = clubes.find(c => String(c.id) === String(filters.selectedClubId));
+                    const selEvents = allEvents.filter(t => selectedIds.has(t.id) || selectedIds.has(String(t.id)));
+                    const clubPlayers = players.filter(p => 
+                        (p.club && (p.club === club.nombre || p.club.includes(club.nombre))) || 
+                        (p.equipoConvenido && (p.equipoConvenido === club.nombre || p.equipoConvenido.includes(club.nombre)))
+                    );
+
+                    btnIndiv.disabled = true;
+                    btnIndiv.innerHTML = 'GENERANDO...';
+                    await window.generateClubPrevisionPDF(club, selEvents, clubPlayers);
+                    btnIndiv.disabled = false;
+                    btnIndiv.innerHTML = '<i data-lucide="file-text" class="w-4 h-4"></i> PDF INDIVIDUAL';
+                    if (window.lucide) lucide.createIcons();
+                };
+
+                btnAll.onclick = async () => {
+                    const selEvents = allEvents.filter(t => selectedIds.has(t.id) || selectedIds.has(String(t.id)));
+                    btnAll.disabled = true;
+                    btnAll.innerHTML = 'GENERANDO MASIVO...';
+
+                    let count = 0;
+                    for (const club of clubes) {
+                        const clubPlayers = players.filter(p => 
+                            (p.club && (p.club === club.nombre || p.club.includes(club.nombre))) || 
+                            (p.equipoConvenido && (p.equipoConvenido === club.nombre || p.equipoConvenido.includes(club.nombre)))
+                        );
+                        
+                        const hasConv = selEvents.some(t => {
+                            const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : [];
+                            return clubPlayers.some(p => tPids.includes(String(p.id)));
+                        });
+
+                        if (hasConv) {
+                            await window.generateClubPrevisionPDF(club, selEvents, clubPlayers);
+                            await new Promise(r => setTimeout(r, 250));
+                            count++;
+                        }
+                    }
+                    window.customAlert('Completado', `Se han generado ${count} PDFs.`, 'success');
+                    btnAll.disabled = false;
+                    btnAll.innerHTML = '<i data-lucide="layers" class="w-4 h-4"></i> PDF TODOS CLUBES';
+                    if (window.lucide) lucide.createIcons();
+                };
+
+                updatePrevision();
+                if (window.lucide) lucide.createIcons();
+            };
+
+            render();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    window.setPrevisionPage = (page) => {
+        window.paginationState.prevision = page;
+        const container = document.getElementById('content-container') || document.getElementById('main-content-wrapper') || document.getElementById('content-wrapper') || document.querySelector('main');
+        if (container) window.renderPrevisionClubes(container);
+    };
+
+    window.generateClubPrevisionPDF = async function (club, torneos, clubPlayers) {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        
+        // Load Custom Fonts
+        if (window.MONTSERRAT_REG && window.MONTSERRAT_BOLD) {
+            doc.addFileToVFS('Montserrat-Regular.ttf', window.MONTSERRAT_REG);
+            doc.addFileToVFS('Montserrat-Bold.ttf', window.MONTSERRAT_BOLD);
+            doc.addFont('Montserrat-Regular.ttf', 'Montserrat', 'normal');
+            doc.addFont('Montserrat-Bold.ttf', 'Montserrat', 'bold');
+            doc.setFont('Montserrat', 'normal');
+        } else {
+            doc.setFont('helvetica', 'normal');
+        }
+
+        const loadImage = (url) => new Promise((resolve) => {
+            if (!url) return resolve(null);
+            const img = new Image();
+            img.crossOrigin = "Anonymous";
+            img.onload = () => resolve(img);
+            img.onerror = () => resolve(null);
+            img.src = url;
+        });
+
+        const rsLogo = await loadImage('Imagenes/RS.png');
+        const clubLogo = await loadImage(club.escudo);
+
+        const sorted = [...torneos].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+        // Header
+        doc.setFillColor(15, 23, 42); // Slate 900
+        doc.rect(0, 0, 210, 45, 'F');
+        
+        if (rsLogo) {
+            const r = rsLogo.width / rsLogo.height;
+            const w = 20; const h = w / r;
+            doc.addImage(rsLogo, 'PNG', 15, 12 + (20 - h) / 2, w, h);
+        }
+        
+        if (clubLogo) {
+            const r = clubLogo.width / clubLogo.height;
+            const w = 20; const h = w / r;
+            doc.addImage(clubLogo, 'AUTO', 175, 12 + (20 - h) / 2, w, h);
+        }
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('Montserrat', 'bold');
+        doc.setFontSize(18);
+        doc.text("PREVISIÓN DE CONVOCATORIAS", 105, 25, { align: "center" });
+        doc.setFontSize(10); doc.setFont('Montserrat', 'normal');
+        doc.text(club.nombre.toUpperCase(), 105, 33, { align: "center" });
+
+        let y = 60;
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(16); doc.setFont('Montserrat', 'bold');
+        doc.text("PREVISIÓN CONVOCADOS TORNEOS REAL SOCIEDAD", 15, y);
+        y += 12;
+        
+        doc.setFontSize(11); doc.setFont('Montserrat', 'normal');
+        const introText = [
+            "Os paso la relación de jugadores que quiero convocar para los diferentes torneos señalados en el documento.",
+            "",
+            "Por favor, hablar con las familias para ver si estan disponibles y CONFIRMARME que pueden.",
+            "",
+            "En caso de que haya algun problema con algún torneo por coincidir con alguno con vuestro club, eventos familiares y demas, por favor comunicaros conmigo a la mayor brevedad."
+        ];
+        
+        introText.forEach(line => {
+            if (line === "") {
+                y += 5;
+            } else {
+                const splitLine = doc.splitTextToSize(line, 180);
+                doc.text(splitLine, 15, y);
+                y += (splitLine.length * 6);
+            }
+        });
+        
+        y += 12;
+
+        for (const t of sorted) {
+            const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : [];
+            const pInT = clubPlayers.filter(p => tPids.includes(String(p.id)));
+            if (pInT.length === 0) continue;
+
+            // Calculate height (Header info + names)
+            const h = 20 + (pInT.length * 8);
+            
+            // Check if card fits in page
+            if (y + h > 270) {
+                doc.addPage();
+                y = 20;
+            }
+
+            // Tournament Box
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(15, y, 180, h, 6, 6, 'F');
+            
+            const dateObj = new Date(t.fecha);
+            const days = ["DOMINGO", "LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO"];
+            const dayName = days[dateObj.getDay()];
+            const genMatch = t.nombre.match(/20\d{2}/);
+            const genText = genMatch ? ` - GENERACION ${genMatch[0]}` : "";
+            const tTitle = `${t.fecha} (${dayName}) - ${t.nombre.toUpperCase()}${genText}`;
+
+            doc.setFont('Montserrat', 'bold'); doc.setFontSize(11);
+            doc.text(tTitle, 22, y + 10);
+            doc.setFont('Montserrat', 'normal'); doc.setFontSize(10); doc.setTextColor(100, 116, 139);
+            doc.text(window.cleanLugar(t.lugar).toUpperCase(), 22, y + 16);
+            
+            y += 22;
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(11);
+            for (const p of pInT) {
+                doc.text(`• ${p.nombre.toUpperCase()}`, 28, y);
+                y += 8;
+            }
+            y += 12;
+        }
+
+        const pages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+            doc.text(`Generado el ${new Date().toLocaleDateString()} - Real Sociedad RS Centro`, 105, 285, { align: "center" });
+            doc.text(`Pág ${i}/${pages}`, 190, 285, { align: "right" });
+        }
+        doc.save(`Prevision_${club.nombre.replace(/\s+/g, '_')}.pdf`);
+    };
     initNotifications();
-});
+});;
