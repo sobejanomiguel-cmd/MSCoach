@@ -7014,34 +7014,46 @@ document.addEventListener('DOMContentLoaded', async () => {
             doc.text("EXPLICACIÓN TÉCNICA", 110, taskBoxY + 10);
             doc.setFont("Montserrat", "bold");
             doc.setTextColor(slate[0], slate[1], slate[2]);
+
             const splitDesc = doc.splitTextToSize(t.description || 'Sin descripción.', 80);
+            
+            // Adjust font size dynamically to prevent overlapping
+            if (splitDesc.length > 12) {
+                doc.setFontSize(7);
+            } else {
+                doc.setFontSize(7.5);
+            }
+
+            // Truncate to maximum of 12 lines if too long
+            if (splitDesc.length > 12) {
+                splitDesc.length = 12;
+                splitDesc[11] = splitDesc[11].trim() + "...";
+            }
+
             doc.text(splitDesc, 110, taskBoxY + 18);
 
-            // Video Button (Interactive)
+            // Sleeker Video Button & QR (Interactive)
             if (t.video) {
                 const videoUrl = t.video.startsWith('http') ? t.video : `https://drive.google.com/open?id=${t.video}`;
                 const vidX = 110;
-                const vidY = taskBoxY + 45;
-
-                doc.setFillColor(239, 246, 255);
-                doc.roundedRect(vidX - 2, vidY - 2, 75, 18, 3, 3, 'F');
+                const vidY = taskBoxY + 52; // Place it lower to leave maximum space above for description
 
                 doc.setFillColor(blue[0], blue[1], blue[2]);
-                doc.roundedRect(vidX, vidY, 12, 12, 2, 2, 'F');
+                doc.roundedRect(vidX, vidY, 8, 8, 2, 2, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.setFontSize(10);
-                doc.text(">", vidX + 6, vidY + 8.5, { align: 'center' });
+                doc.setFontSize(8.5);
+                doc.text(">", vidX + 4, vidY + 5.5, { align: 'center' });
 
                 doc.setTextColor(blue[0], blue[1], blue[2]);
                 doc.setFontSize(7);
                 doc.setFont("Montserrat", "bold");
-                doc.text("VER VIDEO INTERACTIVO", vidX + 16, vidY + 7);
+                doc.text("VER VÍDEO", vidX + 11, vidY + 5.5);
 
-                doc.link(vidX, vidY, 75, 18, { url: videoUrl });
+                doc.link(vidX, vidY, 35, 8, { url: videoUrl });
 
                 try {
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(videoUrl)}`;
-                    doc.addImage(qrUrl, 'PNG', vidX + 60, vidY - 2, 14, 14);
+                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(videoUrl)}`;
+                    doc.addImage(qrUrl, 'PNG', vidX + 65, vidY - 0.5, 9, 9);
                 } catch (e) { }
             }
 
@@ -10781,6 +10793,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <tbody class="divide-y divide-slate-50">
                                 ${paginatedAttendance.length > 0 ? paginatedAttendance.map(a => {
                                     const team = teams.find(t => t.id?.toString() === a.equipoid?.toString());
+                                    if (a.tipo === 'Ciclo' && (!Array.isArray(a.sessions) || a.sessions.length === 0)) {
+                                        const pls = a.players || a.data || {};
+                                        a.sessions = [
+                                            { fecha: a.fecha, players: { ...pls } },
+                                            { fecha: a.fecha, players: { ...pls } },
+                                            { fecha: a.fecha, players: { ...pls } }
+                                        ];
+                                    }
                                     let total = 0, present = 0;
                                     if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
                                         a.sessions.forEach(s => {
@@ -10828,6 +10848,581 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.setAsistenciaPage = (page) => {
         window.paginationState.asistencia = page;
         window.renderAsistencia(document.getElementById('content-container'));
+    };
+
+    window.viewAsistenciaDetail = async (id) => {
+        const a = await db.get('asistencia', Number(id) || id);
+        if (!a) return window.customAlert('Error', 'No se encontró la asistencia.', 'error');
+
+        if (a.tipo === 'Ciclo' && (!Array.isArray(a.sessions) || a.sessions.length === 0)) {
+            const conv = await db.get('convocatorias', a.convocatoriaid);
+            if (conv) {
+                const meta = window.parseLugarMetadata(conv.lugar || '');
+                const pls = a.players || a.data || {};
+                a.sessions = [
+                    { fecha: conv.fecha || a.fecha, players: { ...pls } },
+                    { fecha: meta.extra?.s2?.f || conv.fecha || a.fecha, players: { ...pls } },
+                    { fecha: meta.extra?.s3?.f || conv.fecha || a.fecha, players: { ...pls } }
+                ];
+            } else {
+                const pls = a.players || a.data || {};
+                a.sessions = [
+                    { fecha: a.fecha, players: { ...pls } },
+                    { fecha: a.fecha, players: { ...pls } },
+                    { fecha: a.fecha, players: { ...pls } }
+                ];
+            }
+        }
+
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => String(t.id) === String(a.equipoid));
+        const players = await db.getAll('jugadores');
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        const statusLabels = {
+            'asiste': 'Presente',
+            'falta': 'Sin Motivo',
+            'zubieta': 'Zubieta',
+            'estudios': 'Estudios',
+            'lesion': 'Lesionado',
+            'enfermo': 'Enfermo',
+            'seleccion': 'Selección',
+            'viaje': 'Viaje Colegio',
+            'vacaciones': 'Vacaciones'
+        };
+
+        const statusColors = {
+            'asiste': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+            'falta': 'bg-rose-50 text-rose-600 border-rose-100',
+            'zubieta': 'bg-blue-50 text-blue-600 border-blue-100',
+            'estudios': 'bg-amber-50 text-amber-600 border-amber-100',
+            'lesion': 'bg-orange-50 text-orange-600 border-orange-100',
+            'enfermo': 'bg-orange-50 text-orange-600 border-orange-100',
+            'seleccion': 'bg-indigo-50 text-indigo-600 border-indigo-100',
+            'viaje': 'bg-purple-50 text-purple-600 border-purple-100',
+            'vacaciones': 'bg-teal-50 text-teal-600 border-teal-100'
+        };
+
+        let contentHtml = '';
+
+        if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+            contentHtml = `
+                <div class="space-y-8">
+                    ${a.sessions.map((sess, index) => {
+                        const sessPlayers = sess.players || {};
+                        const relevantPlayers = players.filter(p => Object.keys(sessPlayers).map(String).includes(p.id.toString()));
+                        return `
+                            <div class="bg-slate-50/50 border border-slate-100 p-6 rounded-[2rem] space-y-4">
+                                <div class="flex items-center justify-between border-b border-slate-100/80 pb-3">
+                                    <div>
+                                        <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest">Sesión ${index + 1}</h4>
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase mt-0.5">${sess.fecha || 'Fecha no definida'}</p>
+                                    </div>
+                                    <span class="px-3 py-1.5 bg-blue-50 text-blue-600 text-[9px] font-black uppercase rounded-xl border border-blue-100">${relevantPlayers.length} Jugadores</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                    ${relevantPlayers.length > 0 ? relevantPlayers.map(p => {
+                                        const rawStatus = sessPlayers[p.id]?.status || sessPlayers[p.id] || 'N/A';
+                                        const label = statusLabels[rawStatus] || rawStatus;
+                                        const badgeClass = statusColors[rawStatus] || 'bg-slate-50 text-slate-400 border-slate-100';
+                                        return `
+                                            <div class="flex items-center justify-between p-3.5 bg-white border border-slate-100 rounded-2xl">
+                                                <div class="min-w-0">
+                                                    <p class="text-[11px] font-bold text-slate-700 truncate">${p.nombre} ${p.apellidos || ''}</p>
+                                                    <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                                </div>
+                                                <span class="px-2.5 py-1 text-[9px] font-black uppercase rounded-lg border ${badgeClass}">${label}</span>
+                                            </div>
+                                        `;
+                                    }).join('') : `<p class="text-[10px] text-slate-400 font-bold italic py-4">No hay jugadores registrados en esta sesión.</p>`}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        } else {
+            const pls = a.players || a.data || {};
+            const relevantPlayers = players.filter(p => Object.keys(pls).map(String).includes(p.id.toString()));
+            contentHtml = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    ${relevantPlayers.length > 0 ? relevantPlayers.map(p => {
+                        const rawStatus = pls[p.id]?.status || pls[p.id] || 'N/A';
+                        const label = statusLabels[rawStatus] || rawStatus;
+                        const badgeClass = statusColors[rawStatus] || 'bg-slate-50 text-slate-400 border-slate-100';
+                        return `
+                            <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100/50 rounded-2xl">
+                                <div class="min-w-0">
+                                    <p class="text-[11px] font-bold text-slate-700 truncate">${p.nombre} ${p.apellidos || ''}</p>
+                                    <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                </div>
+                                <span class="px-2.5 py-1 text-[9px] font-black uppercase rounded-lg border ${badgeClass}">${label}</span>
+                            </div>
+                        `;
+                    }).join('') : `<p class="col-span-2 text-[10px] text-slate-400 font-bold italic text-center py-12">No hay jugadores registrados.</p>`}
+                </div>
+            `;
+        }
+
+        modalContainer.className = "bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-5">
+                    <div>
+                        <span class="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100">${a.tipo || 'Sesión'}</span>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight mt-3">${a.nombre?.split(' ||| ')[0] || 'Entrenamiento'}</h3>
+                        <div class="flex items-center gap-4 mt-1">
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest"><i data-lucide="calendar" class="w-3.5 h-3.5 inline-block mr-1"></i> ${a.fecha}</p>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest"><i data-lucide="users" class="w-3.5 h-3.5 inline-block mr-1"></i> ${team ? team.nombre.split(' ||| ')[0] : 'General'}</p>
+                        </div>
+                    </div>
+                    <button onclick="window.closeModal()" class="p-3 bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                ${contentHtml}
+
+                <div class="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                    <button onclick="window.closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-slate-200">Cerrar</button>
+                    <button onclick="window.generateAsistenciaPDF('${String(a.id)}')" class="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-blue-700 shadow-xl shadow-blue-500/20 flex items-center gap-2"><i data-lucide="download" class="w-4 h-4"></i> Descargar PDF</button>
+                </div>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.editAsistencia = async (id) => {
+        const a = await db.get('asistencia', Number(id) || id);
+        if (!a) return window.customAlert('Error', 'No se encontró la asistencia.', 'error');
+
+        if (a.tipo === 'Ciclo' && (!Array.isArray(a.sessions) || a.sessions.length === 0)) {
+            const conv = await db.get('convocatorias', a.convocatoriaid);
+            if (conv) {
+                const meta = window.parseLugarMetadata(conv.lugar || '');
+                const pls = a.players || a.data || {};
+                a.sessions = [
+                    { fecha: conv.fecha || a.fecha, players: { ...pls } },
+                    { fecha: meta.extra?.s2?.f || conv.fecha || a.fecha, players: { ...pls } },
+                    { fecha: meta.extra?.s3?.f || conv.fecha || a.fecha, players: { ...pls } }
+                ];
+            } else {
+                const pls = a.players || a.data || {};
+                a.sessions = [
+                    { fecha: a.fecha, players: { ...pls } },
+                    { fecha: a.fecha, players: { ...pls } },
+                    { fecha: a.fecha, players: { ...pls } }
+                ];
+            }
+        }
+
+        const teams = await db.getAll('equipos');
+        const team = teams.find(t => String(t.id) === String(a.equipoid));
+        const players = await db.getAll('jugadores');
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        const statusOptions = [
+            { id: 'asiste', label: 'Presente' },
+            { id: 'falta', label: 'Sin Motivo' },
+            { id: 'zubieta', label: 'Zubieta' },
+            { id: 'estudios', label: 'Estudios' },
+            { id: 'lesion', label: 'Lesionado' },
+            { id: 'enfermo', label: 'Enfermo' },
+            { id: 'seleccion', label: 'Selección' },
+            { id: 'viaje', label: 'Viaje Colegio' },
+            { id: 'vacaciones', label: 'Vacaciones' }
+        ];
+
+        let summonedPlayerIds = [];
+        if (a.convocatoriaid) {
+            const conv = await db.get('convocatorias', a.convocatoriaid);
+            if (conv && Array.isArray(conv.playerids)) {
+                summonedPlayerIds = conv.playerids.map(String);
+            }
+        }
+        
+        if (summonedPlayerIds.length === 0) {
+            if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+                a.sessions.forEach(sess => {
+                    if (sess.players) {
+                        Object.keys(sess.players).forEach(pid => summonedPlayerIds.push(pid.toString()));
+                    }
+                });
+            } else {
+                const pls = a.players || a.data || {};
+                Object.keys(pls).forEach(pid => summonedPlayerIds.push(pid.toString()));
+            }
+        }
+
+        summonedPlayerIds = [...new Set(summonedPlayerIds)];
+        const relevantPlayers = players.filter(p => summonedPlayerIds.includes(p.id.toString()));
+
+        let formHtml = '';
+
+        if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+            formHtml = `
+                <form id="edit-asistencia-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título de la Asistencia</label>
+                            <input name="nombre" type="text" value="${a.nombre || ''}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                            <input name="fecha" type="date" value="${a.fecha || ''}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                    </div>
+
+                    <div class="space-y-8 mt-6">
+                        ${a.sessions.map((sess, sIdx) => {
+                            const sessPlayers = sess.players || {};
+                            return `
+                                <div class="p-6 bg-slate-50/50 border border-slate-100 rounded-[2rem] space-y-4">
+                                    <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                        <h4 class="text-xs font-black text-slate-800 uppercase tracking-widest">Sesión ${sIdx + 1}</h4>
+                                        <div class="flex items-center gap-2">
+                                            <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha Sesión</label>
+                                            <input name="session_date_${sIdx}" type="date" value="${sess.fecha || ''}" class="p-2.5 bg-white border border-slate-100 rounded-xl font-bold text-xs outline-none">
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                        ${relevantPlayers.length > 0 ? relevantPlayers.map(p => {
+                                            const statusObj = sessPlayers[p.id];
+                                            const rawStatus = typeof statusObj === 'object' ? statusObj.status : statusObj || 'asiste';
+                                            return `
+                                                <div class="flex items-center justify-between p-3.5 bg-white border border-slate-100 rounded-2xl">
+                                                    <div class="min-w-0">
+                                                        <p class="text-[11px] font-bold text-slate-700 truncate">${p.nombre} ${p.apellidos || ''}</p>
+                                                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                                    </div>
+                                                    <select name="status_${sIdx}_${p.id}" class="p-2 bg-slate-50 border border-slate-100 text-[10px] font-bold rounded-xl outline-none">
+                                                        ${statusOptions.map(opt => `<option value="${opt.id}" ${opt.id === rawStatus ? 'selected' : ''}>${opt.label}</option>`).join('')}
+                                                    </select>
+                                                </div>
+                                            `;
+                                        }).join('') : `<p class="col-span-2 text-[10px] text-slate-400 font-bold italic py-4">No hay jugadores convocados.</p>`}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                        <button type="button" onclick="window.closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-slate-200">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-blue-700 shadow-xl shadow-blue-500/20">Guardar Cambios</button>
+                    </div>
+                </form>
+            `;
+        } else {
+            const pls = a.players || a.data || {};
+            formHtml = `
+                <form id="edit-asistencia-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título de la Asistencia</label>
+                            <input name="nombre" type="text" value="${a.nombre || ''}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                            <input name="fecha" type="date" value="${a.fecha || ''}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Control de Jugadores Convocados</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                            ${relevantPlayers.length > 0 ? relevantPlayers.map(p => {
+                                const statusObj = pls[p.id];
+                                const rawStatus = typeof statusObj === 'object' ? statusObj.status : statusObj || 'asiste';
+                                return `
+                                    <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100/50 rounded-2xl">
+                                        <div class="min-w-0">
+                                            <p class="text-[11px] font-bold text-slate-700 truncate">${p.nombre} ${p.apellidos || ''}</p>
+                                            <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                                        </div>
+                                        <select name="status_${p.id}" class="p-2 bg-white border border-slate-100 text-[10px] font-bold rounded-xl outline-none">
+                                            ${statusOptions.map(opt => `<option value="${opt.id}" ${opt.id === rawStatus ? 'selected' : ''}>${opt.label}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                `;
+                            }).join('') : `<p class="col-span-2 text-[10px] text-slate-400 font-bold italic text-center py-8">No hay jugadores convocados.</p>`}
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                        <button type="button" onclick="window.closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-slate-200">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-blue-700 shadow-xl shadow-blue-500/20">Guardar Cambios</button>
+                    </div>
+                </form>
+            `;
+        }
+
+        modalContainer.className = "bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Editar Asistencia</h3>
+                    <button onclick="window.closeModal()" class="p-3 bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                ${formHtml}
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('edit-asistencia-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            
+            try {
+                if (a.tipo === 'Ciclo' && Array.isArray(a.sessions)) {
+                    const updatedSessions = a.sessions.map((sess, sIdx) => {
+                        const sessPlayers = {};
+                        relevantPlayers.forEach(p => {
+                            const sVal = data[`status_${sIdx}_${p.id}`];
+                            if (sVal) {
+                                sessPlayers[p.id] = { status: sVal };
+                            }
+                        });
+                        return {
+                            fecha: data[`session_date_${sIdx}`] || sess.fecha,
+                            players: sessPlayers
+                        };
+                    });
+
+                    await db.update('asistencia', {
+                        id: a.id,
+                        nombre: data.nombre,
+                        fecha: data.fecha,
+                        sessions: updatedSessions
+                    });
+                } else {
+                    const updatedPlayers = {};
+                    relevantPlayers.forEach(p => {
+                        const sVal = data[`status_${p.id}`];
+                        if (sVal) {
+                            updatedPlayers[p.id] = { status: sVal };
+                        }
+                    });
+
+                    await db.update('asistencia', {
+                        id: a.id,
+                        nombre: data.nombre,
+                        fecha: data.fecha,
+                        players: updatedPlayers
+                    });
+                }
+
+                window.customAlert('¡Hecho!', 'Los cambios se han guardado correctamente.', 'success');
+                window.closeModal();
+                window.renderAsistencia(document.getElementById('content-container'));
+            } catch (err) {
+                console.error("Error saving attendance changes:", err);
+                window.customAlert('Error', 'No se pudieron guardar los cambios: ' + err.message, 'error');
+            }
+        };
+    };
+
+    window.deleteAsistencia = async (id) => {
+        window.customConfirm(
+            '¿Eliminar Asistencia?', 
+            '¿Estás seguro de que quieres borrar este registro de asistencia permanentemente?', 
+            async () => {
+                try {
+                    await db.delete('asistencia', Number(id) || id);
+                    window.customAlert('¡Eliminado!', 'El registro de asistencia ha sido eliminado correctamente.', 'success');
+                    window.renderAsistencia(document.getElementById('content-container'));
+                } catch (err) {
+                    console.error("Error deleting attendance:", err);
+                    window.customAlert('Error', 'No se pudo eliminar: ' + err.message, 'error');
+                }
+            }
+        );
+    };
+
+    window.showNewAsistenciaModal = async () => {
+        const teams = await db.getAll('equipos');
+        const players = await db.getAll('jugadores');
+        const convocatorias = await db.getAll('convocatorias');
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        const statusOptions = [
+            { id: 'asiste', label: 'Presente' },
+            { id: 'falta', label: 'Sin Motivo' },
+            { id: 'zubieta', label: 'Zubieta' },
+            { id: 'estudios', label: 'Estudios' },
+            { id: 'lesion', label: 'Lesionado' },
+            { id: 'enfermo', label: 'Enfermo' },
+            { id: 'seleccion', label: 'Selección' },
+            { id: 'viaje', label: 'Viaje Colegio' },
+            { id: 'vacaciones', label: 'Vacaciones' }
+        ];
+
+        modalContainer.className = "bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform transition-all duration-300 custom-scrollbar";
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Nueva Asistencia</h3>
+                    <button onclick="window.closeModal()" class="p-3 bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 rounded-full transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                <form id="new-asistencia-form" class="space-y-6">
+                    <div class="grid grid-cols-1 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Vincular con Convocatoria</label>
+                            <select id="new-asist-convocatoriaid" name="convocatoriaid" class="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl font-black outline-none uppercase text-blue-800 text-xs">
+                                <option value="">-- SELECCIONA UNA CONVOCATORIA (OBLIGATORIO) --</option>
+                                ${convocatorias.map(c => `
+                                    <option value="${c.id}" data-equipoid="${c.equipoid}" data-fecha="${c.fecha}" data-tipo="${c.tipo}" data-nombre="${c.nombre}" data-playerids='${JSON.stringify(c.playerids || [])}'>
+                                        ${c.fecha} - ${c.nombre.split(' ||| ')[0]} (${c.tipo || 'Sesión'})
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Título de la Asistencia</label>
+                            <input id="new-asist-nombre" name="nombre" type="text" placeholder="EJ: CONTROL ENTRENAMIENTO" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none uppercase">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Fecha</label>
+                            <input id="new-asist-fecha" name="fecha" type="date" value="${new Date().toISOString().split('T')[0]}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Tipo</label>
+                            <select id="new-asist-tipo" name="tipo" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                <option value="Sesión" selected>Sesión / Entrenamiento</option>
+                                <option value="Torneo">Torneo / Partido</option>
+                                <option value="Zubieta">Zubieta</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2 relative">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Plantilla / Equipo</label>
+                            <select id="new-asist-equipoid" name="equipoid" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none bg-slate-100" readonly>
+                                <option value="">-- AUTO-SELECCIÓN --</option>
+                                ${teams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Control de Jugadores Convocados</label>
+                        <div id="new-asist-players-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                            <p class="col-span-2 text-[10px] text-slate-400 font-bold italic text-center py-8">Selecciona una convocatoria para cargar a sus jugadores convocados</p>
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-100 flex justify-end gap-3 mt-8">
+                        <button type="button" onclick="window.closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-slate-200">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-[10px] transition-all hover:bg-blue-700 shadow-xl shadow-blue-500/20">Registrar Asistencia</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        const convSelect = document.getElementById('new-asist-convocatoriaid');
+        const teamSelect = document.getElementById('new-asist-equipoid');
+        const nameInput = document.getElementById('new-asist-nombre');
+        const dateInput = document.getElementById('new-asist-fecha');
+        const typeSelect = document.getElementById('new-asist-tipo');
+        const playersListContainer = document.getElementById('new-asist-players-list');
+
+        convSelect.addEventListener('change', (e) => {
+            const selectedOption = convSelect.options[convSelect.selectedIndex];
+            if (!selectedOption.value) {
+                playersListContainer.innerHTML = `<p class="col-span-2 text-[10px] text-slate-400 font-bold italic text-center py-8">Selecciona una convocatoria para cargar a sus jugadores convocados</p>`;
+                teamSelect.value = "";
+                return;
+            }
+
+            const eId = selectedOption.getAttribute('data-equipoid');
+            const fecha = selectedOption.getAttribute('data-fecha');
+            const tipo = selectedOption.getAttribute('data-tipo');
+            const nombre = selectedOption.getAttribute('data-nombre');
+            let playerIds = [];
+            try {
+                playerIds = JSON.parse(selectedOption.getAttribute('data-playerids') || '[]');
+            } catch(ex) {}
+
+            teamSelect.value = eId || "";
+            nameInput.value = nombre ? "ASISTENCIA " + nombre.split(' ||| ')[0] : "";
+            dateInput.value = fecha || dateInput.value;
+            typeSelect.value = tipo || "Sesión";
+
+            const relevantPlayers = players.filter(p => playerIds.map(String).includes(p.id.toString()));
+            if (relevantPlayers.length === 0) {
+                playersListContainer.innerHTML = `<p class="col-span-2 text-[10px] text-slate-400 font-bold italic text-center py-8">No hay jugadores convocados en esta convocatoria.</p>`;
+                return;
+            }
+
+            playersListContainer.innerHTML = relevantPlayers.map(p => `
+                <div class="flex items-center justify-between p-4 bg-slate-50 border border-slate-100/50 rounded-2xl">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold text-slate-700 truncate">${p.nombre} ${p.apellidos || ''}</p>
+                        <p class="text-[8px] font-black text-slate-400 uppercase tracking-widest">${p.equipoConvenido || 'Sin Club'}</p>
+                    </div>
+                    <select name="status_${p.id}" class="p-2 bg-white border border-slate-100 text-[10px] font-bold rounded-xl outline-none">
+                        ${statusOptions.map(opt => `<option value="${opt.id}">${opt.label}</option>`).join('')}
+                    </select>
+                </div>
+            `).join('');
+        });
+
+        document.getElementById('new-asistencia-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target));
+            
+            try {
+                const convSelect = document.getElementById('new-asist-convocatoriaid');
+                const selectedOption = convSelect.options[convSelect.selectedIndex];
+                
+                let playerIds = [];
+                try {
+                    playerIds = JSON.parse(selectedOption.getAttribute('data-playerids') || '[]');
+                } catch(ex) {}
+
+                const updatedPlayers = {};
+                playerIds.forEach(pId => {
+                    const sVal = data[`status_${pId}`];
+                    if (sVal) {
+                        updatedPlayers[pId] = { status: sVal };
+                    }
+                });
+
+                const newItem = {
+                    nombre: data.nombre,
+                    fecha: data.fecha,
+                    tipo: data.tipo,
+                    equipoid: parseInt(data.equipoid),
+                    convocatoriaid: parseInt(data.convocatoriaid),
+                    players: updatedPlayers
+                };
+
+                await db.add('asistencia', newItem);
+                window.customAlert('¡Hecho!', 'La asistencia ha sido creada correctamente.', 'success');
+                window.closeModal();
+                window.renderAsistencia(document.getElementById('content-container'));
+            } catch (err) {
+                console.error("Error creating attendance:", err);
+                window.customAlert('Error', 'No se pudo crear la asistencia: ' + err.message, 'error');
+            }
+        };
     };
 
     window.filterAsistenciaType = (type) => {
