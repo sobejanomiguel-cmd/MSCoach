@@ -3060,8 +3060,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         ${window.cleanLugar(evento.lugar) || 'Ubicación no definida'}
                                     </div>
                                 </div>
-                            </div>
                             <div class="flex items-center gap-3 w-full md:w-auto">
+                                <button onclick="window.showGeneralCalendarExportModal(\`${evento.nombre ? evento.nombre.replace(/'/g, "\\'") : 'Evento'}\`, '${evento.fecha}', '${evento.hora}', \`${window.cleanLugar(evento.lugar).replace(/'/g, "\\'")}\`, '${id}', 'evento')" class="flex-1 md:flex-none p-4 bg-emerald-50 text-emerald-600 rounded-2xl hover:bg-emerald-100 transition-all flex items-center justify-center gap-2 px-6">
+                                    <i data-lucide="calendar" class="w-5 h-5"></i>
+                                    <span class="text-[11px] font-black uppercase tracking-widest">Móvil / Calendario</span>
+                                </button>
                                 <button onclick="window.viewEvento('${id}')" class="flex-1 md:flex-none p-4 bg-white border-2 border-slate-100 text-slate-800 rounded-2xl hover:border-blue-600 hover:text-blue-600 transition-all flex items-center justify-center gap-3 px-8 shadow-sm">
                                     <i data-lucide="edit-3" class="w-5 h-5"></i>
                                     <span class="text-[11px] font-black uppercase tracking-widest">Editar Registro</span>
@@ -3154,11 +3157,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         modalContainer.innerHTML = `
             <div class="p-8 md:p-12 animate-in fade-in duration-500">
-                <div class="flex flex-col md:flex-row justify-between items-start gap-6 mb-12">
-                    <div class="flex-1">
-                        <div class="flex items-center gap-3 mb-4">
-                            <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
-                            ${(() => {
+                <div class="flex flex-col gap-6 mb-12">
+                    <div class="flex flex-col md:flex-row justify-between items-start gap-6">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-[0.2em]">SESIÓN DE TRABAJO</span>
+                                ${(() => {
                 let teamIds = [session.equipoid];
                 const { extra } = window.parseLugarMetadata(session.lugar);
                 if (extra.eids) teamIds = [...new Set([...teamIds.map(String), ...extra.eids.map(String)])];
@@ -3166,24 +3170,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[10px] font-black uppercase tracking-widest">${teams.find(t => t.id == id).nombre.split(' ||| ')[0]}</span>
                                 `).join('');
             })()}
+                            </div>
+                            <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-none mb-4">${session.titulo || 'Sesión sin título'}</h2>
+                            <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="calendar" class="w-4 h-4 text-blue-500"></i>
+                                    ${session.fecha}
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
+                                    ${session.hora || '--:--'}
+                                </div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-300"></i>
+                                    ${window.cleanLugar(session.lugar) || 'No especificado'}
+                                </div>
+                            </div>
                         </div>
-                        <h2 class="text-4xl font-black text-slate-800 uppercase tracking-tight leading-none mb-4">${session.titulo || 'Sesión sin título'}</h2>
-                        <div class="flex flex-wrap items-center gap-6 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="calendar" class="w-4 h-4 text-blue-500"></i>
-                                ${session.fecha}
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <i data-lucide="clock" class="w-4 h-4 text-blue-500"></i>
-                                ${session.hora || '--:--'}
-                            </div>
-                            <div class="flex items-center gap-2 mt-1">
-                                <i data-lucide="map-pin" class="w-3.5 h-3.5 text-slate-300"></i>
-                                ${window.cleanLugar(session.lugar) || 'No especificado'}
-                            </div>
-                        </div>
+                        <button onclick="closeModal()" class="p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 hover:text-slate-900 transition-all flex items-center justify-center w-14 h-14" title="Cerrar">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
                     </div>
-                    <div class="flex gap-3 w-full md:w-auto">
+
+                    <div class="flex flex-wrap gap-2.5 items-center w-full">
+                        <button onclick="window.showGeneralCalendarExportModal(\`${session.titulo ? session.titulo.replace(/'/g, "\\'") : 'Sesion'}\`, '${session.fecha}', '${session.hora}', \`${window.cleanLugar(session.lugar).replace(/'/g, "\\'")}\`, '${id}', 'sesion')" class="flex-1 md:flex-none p-4 bg-emerald-50 text-emerald-600 rounded-2xl hover:bg-emerald-100 transition-all flex items-center justify-center gap-2 px-6">
+                            <i data-lucide="calendar" class="w-5 h-5"></i>
+                            <span class="text-[10px] font-black uppercase tracking-widest">Móvil / Calendario</span>
+                        </button>
                         <button onclick="window.previewSessionPDF('${id}')" class="flex-1 md:flex-none p-4 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-all flex items-center justify-center gap-2 px-6" title="Previsualizar PDF">
                             <i data-lucide="eye" class="w-5 h-5"></i>
                             <span class="text-[10px] font-black uppercase tracking-widest">Previsualizar</span>
@@ -3199,9 +3212,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <button onclick="window.viewSession('${id}')" class="flex-1 md:flex-none p-4 bg-blue-600 text-white rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 px-6">
                             <i data-lucide="edit-3" class="w-5 h-5"></i>
                             <span class="text-[10px] font-black uppercase tracking-widest">Editar Sesión</span>
-                        </button>
-                        <button onclick="closeModal()" class="p-4 bg-slate-900 text-white rounded-2xl hover:bg-black transition-all flex items-center justify-center w-14 h-14">
-                            <i data-lucide="x" class="w-6 h-6"></i>
                         </button>
                     </div>
                 </div>
@@ -6061,6 +6071,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>
                     <div class="flex items-center gap-3">
+                        <button onclick="window.showCalendarExportModal(${conv.id})" class="px-6 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-500/10 flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-4 h-4 text-white"></i>
+                            Móvil / Calendario
+                        </button>
                         <button onclick="window.exportConvocatoria(${conv.id})" class="px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2">
                             <i data-lucide="file-down" class="w-4 h-4 text-blue-400"></i>
                             Generar PDF
@@ -6561,6 +6575,166 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error("Delete error:", err);
             window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
         }
+    };
+    window.showCalendarExportModal = async (id) => {
+        try {
+            const { data: conv, error } = await supabaseClient.from('convocatorias').select('*').eq('id', id).single();
+            if (error || !conv) {
+                window.customAlert('Error', 'No se pudo obtener el evento', 'error');
+                return;
+            }
+            
+            const title = (conv.nombre || 'Evento RS Centro').toUpperCase();
+            const { base: cleanLugar } = window.parseLugarMetadata(conv.lugar);
+            
+            let dateStr = conv.fecha; 
+            if (!dateStr) dateStr = new Date().toISOString().split('T')[0];
+            
+            let timeStr = conv.hora || '12:00';
+            if (conv.lugar && conv.lugar.includes(' ||| ')) {
+                try {
+                    const meta = JSON.parse(conv.lugar.split(' ||| ')[1]);
+                    if (meta.hi) timeStr = meta.hi;
+                } catch (e) {}
+            }
+            
+            const startTime = new Date(`${dateStr}T${timeStr}`);
+            const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
+            
+            const formatGCalDate = (date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const gCalUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${formatGCalDate(startTime)}/${formatGCalDate(endTime)}&details=${encodeURIComponent('Evento gestionado por RS Centro.')}&location=${encodeURIComponent(cleanLugar || '')}`;
+
+            const formatICSDate = (date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const icsContent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//RS Centro//Calendar Sync//ES',
+                'BEGIN:VEVENT',
+                `UID:rs-centro-${conv.id}@rscentro.com`,
+                `DTSTAMP:${formatICSDate(new Date())}`,
+                `DTSTART:${formatICSDate(startTime)}`,
+                `DTEND:${formatICSDate(endTime)}`,
+                `SUMMARY:${title}`,
+                `LOCATION:${cleanLugar || 'Sin lugar'}`,
+                `DESCRIPTION:Evento gestionado por RS Centro.`,
+                'END:VEVENT',
+                'END:VCALENDAR'
+            ].join('\r\n');
+            
+            window.currentIcsContent = icsContent;
+
+            const calModal = document.createElement('div');
+            calModal.id = 'calendar-export-modal';
+            calModal.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300';
+            calModal.innerHTML = `
+                <div class="bg-white max-w-sm w-full p-8 rounded-[3rem] shadow-2xl border border-slate-100 flex flex-col items-center text-center relative animate-in scale-in duration-300">
+                    <button onclick="document.getElementById('calendar-export-modal').remove()" class="absolute top-6 right-6 p-2 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                    
+                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-blue-100/50">
+                        <i data-lucide="calendar" class="w-8 h-8"></i>
+                    </div>
+                    <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">Notificaciones en tu Teléfono</h4>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Elige tu calendario preferido para recibir avisos</p>
+                    
+                    <div class="w-full space-y-3">
+                        <a href="${gCalUrl}" target="_blank" onclick="document.getElementById('calendar-export-modal').remove()" class="w-full flex items-center justify-center gap-3 py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-2xl transition-all shadow-sm">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none"><path d="M19 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM11 11H7V9H11V11ZM11 15H7V13H11V15ZM17 15H13V13H17V15ZM17 11H13V9H17V11Z" fill="#4285F4"/></svg>
+                            Google Calendar (Android / Gmail)
+                        </a>
+                        <button onclick="window.downloadICS('${title}', window.currentIcsContent); document.getElementById('calendar-export-modal').remove()" class="w-full flex items-center justify-center gap-3 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl transition-all shadow-lg shadow-blue-500/20">
+                            <i data-lucide="smartphone" class="w-5 h-5"></i>
+                            Apple Calendar / iCal (iPhone)
+                        </button>
+                    </div>
+                    <p class="text-[9px] font-bold text-slate-400 mt-6 leading-relaxed">Al añadir el evento a tu calendario, tu teléfono te enviará notificaciones automáticamente.</p>
+                </div>
+            `;
+            document.body.appendChild(calModal);
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    window.showGeneralCalendarExportModal = (title, dateStr, timeStr, cleanLugar, id, type) => {
+        try {
+            const cleanTitle = (title || 'Evento RS Centro').toUpperCase();
+            
+            let dStr = dateStr; 
+            if (!dStr) dStr = new Date().toISOString().split('T')[0];
+            
+            let tStr = timeStr || '12:00';
+            
+            const startTime = new Date(`${dStr}T${tStr}`);
+            const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
+            
+            const formatGCalDate = (date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const gCalUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(cleanTitle)}&dates=${formatGCalDate(startTime)}/${formatGCalDate(endTime)}&details=${encodeURIComponent('Evento/Sesión gestionado por RS Centro.')}&location=${encodeURIComponent(cleanLugar || '')}`;
+
+            const formatICSDate = (date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const icsContent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//RS Centro//Calendar Sync//ES',
+                'BEGIN:VEVENT',
+                `UID:rs-centro-${type}-${id}@rscentro.com`,
+                `DTSTAMP:${formatICSDate(new Date())}`,
+                `DTSTART:${formatICSDate(startTime)}`,
+                `DTEND:${formatICSDate(endTime)}`,
+                `SUMMARY:${cleanTitle}`,
+                `LOCATION:${cleanLugar || 'Sin lugar'}`,
+                `DESCRIPTION:Evento/Sesión gestionado por RS Centro.`,
+                'END:VEVENT',
+                'END:VCALENDAR'
+            ].join('\r\n');
+            
+            window.currentIcsContent = icsContent;
+
+            const calModal = document.createElement('div');
+            calModal.id = 'calendar-export-modal';
+            calModal.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300';
+            calModal.innerHTML = `
+                <div class="bg-white max-w-sm w-full p-8 rounded-[3rem] shadow-2xl border border-slate-100 flex flex-col items-center text-center relative animate-in scale-in duration-300">
+                    <button onclick="document.getElementById('calendar-export-modal').remove()" class="absolute top-6 right-6 p-2 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                    
+                    <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mb-6 shadow-sm border border-blue-100/50">
+                        <i data-lucide="calendar" class="w-8 h-8"></i>
+                    </div>
+                    <h4 class="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">Notificaciones en tu Teléfono</h4>
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Elige tu calendario preferido para recibir avisos</p>
+                    
+                    <div class="w-full space-y-3">
+                        <a href="${gCalUrl}" target="_blank" onclick="document.getElementById('calendar-export-modal').remove()" class="w-full flex items-center justify-center gap-3 py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold text-xs rounded-2xl transition-all shadow-sm">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none"><path d="M19 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM11 11H7V9H11V11ZM11 15H7V13H11V15ZM17 15H13V13H17V15ZM17 11H13V9H17V11Z" fill="#4285F4"/></svg>
+                            Google Calendar (Android / Gmail)
+                        </a>
+                        <button onclick="window.downloadICS('${cleanTitle}', window.currentIcsContent); document.getElementById('calendar-export-modal').remove()" class="w-full flex items-center justify-center gap-3 py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-2xl transition-all shadow-lg shadow-blue-500/20">
+                            <i data-lucide="smartphone" class="w-5 h-5"></i>
+                            Apple Calendar / iCal (iPhone)
+                        </button>
+                    </div>
+                    <p class="text-[9px] font-bold text-slate-400 mt-6 leading-relaxed">Al añadir el evento a tu calendario, tu teléfono te enviará notificaciones automáticamente.</p>
+                </div>
+            `;
+            document.body.appendChild(calModal);
+            if (window.lucide) lucide.createIcons();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+    
+    window.downloadICS = (title, content) => {
+        const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     window.exportConvocatoria = async (id, mode = 'download') => {
@@ -9056,6 +9230,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         const totalItems = filtered.length;
         const paginatedItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
+        const tbodyHtml = paginatedItems.map(p => {
+            const playerTeam = teams.find(t => t.id?.toString() === p.equipoid?.toString());
+            const playerTeamName = playerTeam ? playerTeam.nombre.split(' ||| ')[0] : '';
+            return `
+                                        <tr class="hover:bg-blue-50/30 transition-all group">
+                                            <td class="px-8 py-4">
+                                                <div class="flex items-center gap-4">
+                                                    <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
+                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : `<i data-lucide="user" class="w-4 h-4 text-slate-300"></i>`}
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[11px] font-black text-slate-800 uppercase">${p.nombre}</p>
+                                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 text-[10px] font-black text-blue-600 uppercase tracking-widest">${window.parsePosition(p.posicion).join(', ') || '--'}</td>
+                                            <td class="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">${p.anionacimiento || '--'}</td>
+                                            <td class="px-6 py-4 text-center">
+                                                <div class="inline-flex gap-0.5">
+                                                    ${Array.from({ length: 5 }).map((_, i) => `
+                                                        <i data-lucide="star" class="w-2.5 h-2.5 ${i < (p.nivel || 3) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}"></i>
+                                                    `).join('')}
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 text-right">
+                                                <div class="flex justify-end gap-2">
+                                                    <button onclick="window.viewPlayerProfile('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><i data-lucide="user" class="w-4 h-4"></i></button>
+                                                    <button onclick="window.editPlayer('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+        }).join('') || `<tr><td colspan="5" class="py-20 text-center text-slate-300 italic text-xs">No hay jugadores</td></tr>`;
+
+        const existingSearch = document.getElementById('jugadores-search-input');
+        if (existingSearch) {
+            const tbody = document.getElementById('jugadores-tbody');
+            if (tbody) tbody.innerHTML = tbodyHtml;
+            const paginationContainer = document.getElementById('jugadores-pagination-container');
+            if (paginationContainer) {
+                paginationContainer.innerHTML = window.renderPagination(totalItems, pageSize, currentPage, 'window.setJugadoresPage');
+            }
+            if (window.lucide) lucide.createIcons();
+            return;
+        }
+
         container.innerHTML = `
             <div class="space-y-8 animate-in fade-in duration-500">
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -9119,46 +9340,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-50">
-                                ${paginatedItems.map(p => {
-            const playerTeam = teams.find(t => t.id?.toString() === p.equipoid?.toString());
-            const playerTeamName = playerTeam ? playerTeam.nombre.split(' ||| ')[0] : '';
-            return `
-                                        <tr class="hover:bg-blue-50/30 transition-all group">
-                                            <td class="px-8 py-4">
-                                                <div class="flex items-center gap-4">
-                                                    <div class="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden">
-                                                        ${p.foto ? `<img src="${p.foto}" class="w-full h-full object-cover">` : `<i data-lucide="user" class="w-4 h-4 text-slate-300"></i>`}
-                                                    </div>
-                                                    <div>
-                                                        <p class="text-[11px] font-black text-slate-800 uppercase">${p.nombre}</p>
-                                                        <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${p.equipoConvenido || 'SIN CLUB'}</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 text-[10px] font-black text-blue-600 uppercase tracking-widest">${window.parsePosition(p.posicion).join(', ') || '--'}</td>
-                                            <td class="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">${p.anionacimiento || '--'}</td>
-                                            <td class="px-6 py-4 text-center">
-                                                <div class="inline-flex gap-0.5">
-                                                    ${Array.from({ length: 5 }).map((_, i) => `
-                                                        <i data-lucide="star" class="w-2.5 h-2.5 ${i < (p.nivel || 3) ? 'fill-amber-400 text-amber-400' : 'text-slate-200'}"></i>
-                                                    `).join('')}
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 text-right">
-                                                <div class="flex justify-end gap-2">
-                                                    <button onclick="window.viewPlayerProfile('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all"><i data-lucide="user" class="w-4 h-4"></i></button>
-                                                    <button onclick="window.editPlayer('${p.id}')" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-amber-500 hover:text-white rounded-xl transition-all"><i data-lucide="edit-3" class="w-4 h-4"></i></button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-        }).join('') || `<tr><td colspan="5" class="py-20 text-center text-slate-300 italic text-xs">No hay jugadores</td></tr>`}
+                            <tbody id="jugadores-tbody" class="divide-y divide-slate-50">
+                                ${tbodyHtml}
                             </tbody>
                         </table>
                     </div>
                 </div>
-                ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setJugadoresPage')}
+                <div id="jugadores-pagination-container">
+                    ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setJugadoresPage')}
+                </div>
             </div>
         `;
         if (window.lucide) lucide.createIcons();
@@ -9179,7 +9369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.paginationState.jugadores = 1;
         window.jugadoresSearchTerm = val;
         window.renderJugadores(document.getElementById('content-container'));
-    }, 300);
+    }, 150);
 
     window.switchJugadoresAno = (val) => {
         window.paginationState.jugadores = 1;
@@ -13559,4 +13749,4 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         doc.save(`Prevision_${club.nombre.replace(/\s+/g, '_')}.pdf`);
     };
     initNotifications();
-});;
+});
