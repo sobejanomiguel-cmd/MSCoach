@@ -1953,20 +1953,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const type = String(t.type || 'Fútbol').toUpperCase();
                 taskTypeCounts[type] = (taskTypeCounts[type] || 0) + 1;
             });
-            const sortedTaskTypes = Object.entries(taskTypeCounts).sort((a, b) => b[1] - a[1]).slice(0, 9);
+            const sortedTaskTypes = Object.entries(taskTypeCounts).sort((a, b) => b[1] - a[1]);
 
             // Session counts by team
             const sessionTeamCounts = {};
+            let sessionsWithoutTeam = 0;
             sessions.forEach(s => {
                 const team = teamMap.get(String(s.equipoid));
                 if (team && team.nombre) {
                     const name = String(team.nombre).split(' ||| ')[0].toUpperCase();
                     sessionTeamCounts[name] = (sessionTeamCounts[name] || 0) + 1;
+                } else {
+                    sessionsWithoutTeam++;
                 }
             });
 
             // Order sessions teams like attendance (using teamsToRender order)
-            const sortedSessionTeams = teamsToRender
+            let sortedSessionTeams = teamsToRender
                 .filter(t => {
                     const name = String(t.nombre || '').split(' ||| ')[0].toUpperCase();
                     return sessionTeamCounts[name] > 0;
@@ -1974,8 +1977,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 .map(t => {
                     const name = String(t.nombre || '').split(' ||| ')[0].toUpperCase();
                     return [name, sessionTeamCounts[name]];
-                })
-                .slice(0, 6);
+                });
+            
+            // Add other sessions to breakdown to ensure total matches sum
+            if (sessionsWithoutTeam > 0) {
+                sortedSessionTeams.push(['OTRAS SESIONES', sessionsWithoutTeam]);
+            }
 
             // Team counts by gender
             const teamsFemaleCount = teams.filter(t => {
@@ -1987,17 +1994,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Torneos counts by team (using String keys for safety)
             const torneoTeamCounts = {};
+            let torneosWithoutTeam = 0;
             torneos.forEach(t => {
                 if (t.equipoid) {
                     const key = String(t.equipoid);
                     torneoTeamCounts[key] = (torneoTeamCounts[key] || 0) + 1;
+                } else {
+                    torneosWithoutTeam++;
                 }
             });
 
             // Sort chronologically using global utility and map to counts
-            const sortedTorneoTeams = window.getSortedTeams(teams)
+            let sortedTorneoTeams = window.getSortedTeams(teams)
                 .filter(t => torneoTeamCounts[String(t.id)])
                 .map(t => [String(t.nombre).split(' ||| ')[0].toUpperCase(), torneoTeamCounts[String(t.id)]]);
+            
+            if (torneosWithoutTeam > 0) {
+                sortedTorneoTeams.push(['OTROS TORNEOS', torneosWithoutTeam]);
+            }
 
             container.innerHTML = `
                 <!-- Line 1: Sesiones (Full Width) -->
@@ -2195,7 +2209,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><i data-lucide="trending-up" class="w-7 h-7"></i></div>
                                 Rendimiento Asistencia
                             </h3>
-                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">Media Global: ${teamsToRender.length > 0 ? Math.round(teamsToRender.reduce((acc, t) => acc + (t.computedAsistencia || 0), 0) / teamsToRender.length) : 0}%</span>
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] bg-slate-50 px-4 py-2 rounded-full">Media Global: ${(() => {
+                                const activeTeams = teamsToRender.filter(t => (attendanceByTeam[String(t.id)] || []).length > 0);
+                                return activeTeams.length > 0 ? Math.round(activeTeams.reduce((acc, t) => acc + (t.computedAsistencia || 0), 0) / activeTeams.length) : 0;
+                            })()}%</span>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                             ${teamsToRender.map(e => `
@@ -2250,6 +2267,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-3xl font-bold uppercase tracking-widest text-xs border border-red-100">Error al cargar el panel de control: ${err.message}</div>`;
         }
     }
+
+    // Auto-refresh dashboard when data syncs in background
+    window.addEventListener('db-sync-complete', (e) => {
+        const currentViewId = document.querySelector('.nav-link.active')?.dataset.view;
+        if (currentViewId === 'dashboard') {
+            console.log(`[Dashboard] Auto-refreshing due to ${e.detail.storeName} sync`);
+            renderDashboard(document.querySelector('.view'));
+        }
+    });
 
     let currentCalendarDate = new Date();
     let selectedCalendarDate = new Date();
