@@ -4925,7 +4925,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             </div>
                         ` : `
                             ${activeTab === 'Torneo' ? `
-                                <div class="col-span-2 grid grid-cols-2 gap-4">
+                                <div class="col-span-2 grid grid-cols-3 gap-4">
                                     <div>
                                          <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha Inicio</label>
                                          <input name="fecha" value="${conv.fecha || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" required>
@@ -4933,6 +4933,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     <div>
                                          <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Fecha Final</label>
                                          <input name="fecha_fin" value="${meta.fecha_fin || ''}" type="date" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
+                                    </div>
+                                    <div>
+                                         <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Días Duración</label>
+                                         <input name="duracion_dias" value="${meta.duracion_dias || ''}" type="number" placeholder="Ej: 3" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none">
                                     </div>
                                 </div>
                             ` : `
@@ -5147,7 +5151,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     hl: data.hl,
                     hi: data.hi,
                     hs: data.hs,
-                    fecha_fin: data.fecha_fin || null
+                    fecha_fin: data.fecha_fin || null,
+                    duracion_dias: data.duracion_dias || null
                 };
 
                 if (activeTab === 'Ciclo') {
@@ -5172,7 +5177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 data.equipoid = checkedTeamIds[0] || null;
                 data.sharedWith = formData.getAll('sharedWith');
                 data.lugar = `${(data.lugar || '').toUpperCase().trim()} ||| ${JSON.stringify(extra)}`;
-                ['hl', 'hi', 'hs', 'id', 'fecha_fin'].forEach(f => delete data[f]);
+                ['hl', 'hi', 'hs', 'id', 'fecha_fin', 'duracion_dias'].forEach(f => delete data[f]);
 
                 const currentUserRes = await supabaseClient.auth.getUser();
                 const currentUser = currentUserRes.data.user;
@@ -7310,6 +7315,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 { pos: 'MBD', x: 55, y: 85 }, { pos: 'MCD', x: 55, y: 60 }, { pos: 'MCZ', x: 55, y: 40 }, { pos: 'MBZ', x: 55, y: 15 }, { pos: 'ACD', x: 90, y: 60 }, { pos: 'ACZ', x: 90, y: 40 }
             ]
         },
+        'F11_442_ROMBO': {
+            name: '4-4-2 Rombo (F11)', positions: [
+                { pos: 'PO', x: 8, y: 50 }, 
+                { pos: 'DBD', x: 28, y: 85 }, { pos: 'DCD', x: 28, y: 65 }, { pos: 'DCZ', x: 28, y: 35 }, { pos: 'DBZ', x: 28, y: 15 },
+                { pos: 'MCD', x: 48, y: 50 }, 
+                { pos: 'MVD', x: 65, y: 75 }, { pos: 'MVZ', x: 65, y: 25 }, 
+                { pos: 'MPZ', x: 80, y: 50 }, 
+                { pos: 'ACD', x: 92, y: 60 }, { pos: 'ACZ', x: 92, y: 40 }
+            ]
+        },
         'F11_4231': {
             name: '4-2-3-1 (F11)', positions: [
                 { pos: 'PO', x: 8, y: 50 }, { pos: 'DBD', x: 25, y: 85 }, { pos: 'DCD', x: 25, y: 65 }, { pos: 'DCZ', x: 25, y: 35 }, { pos: 'DBZ', x: 25, y: 15 },
@@ -8338,6 +8353,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                         if (error) throw error;
                         
+                        // Actualizar localmente para evitar refresco
+                        await db.saveLocal('convocatorias', { ...conv, playerids: newPids });
+
                         // Actualizar contador inmediatamente en la UI
                         const bubble = document.getElementById(`torneo-count-bubble-${tid}`);
                         if (bubble) bubble.innerText = newPids.length;
@@ -8474,6 +8492,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
                         if (error) throw error;
                         
+                        // Actualizar localmente para evitar refresco
+                        await db.saveLocal('convocatorias', { ...conv, playerids: [...new Set(newPids)] });
+
                         // Actualizar contador inmediatamente en la UI
                         const bubble = document.getElementById(`torneo-count-bubble-${id}`);
                         const finalCount = [...new Set(newPids)].length;
@@ -8496,6 +8517,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                     if (error) throw error;
+
+                    // Actualizar localmente para evitar refresco
+                    await db.saveLocal('convocatorias', { ...conv, playerids: newPids });
 
                     // Actualizar contador inmediatamente en la UI
                     const bubble = document.getElementById(`torneo-count-bubble-${tid}`);
@@ -13819,7 +13843,10 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             const dayName = days[dateObj.getDay()];
             const genMatch = t.nombre.match(/20\d{2}/);
             const genText = genMatch ? ` - GENERACION ${genMatch[0]}` : "";
-            const tTitle = `${t.fecha} (${dayName}) - ${t.nombre.toUpperCase()}${genText}`;
+            
+            const meta = window.getConvMetadata(t);
+            const durText = meta.duracion_dias ? ` [${meta.duracion_dias} DÍAS]` : "";
+            const tTitle = `${t.fecha} (${dayName}) - ${t.nombre.toUpperCase()}${genText}${durText}`;
 
             doc.setFont('Montserrat', 'bold'); doc.setFontSize(11);
             doc.text(tTitle, 22, y + 10);
