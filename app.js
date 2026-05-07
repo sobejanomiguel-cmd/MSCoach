@@ -8024,7 +8024,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return matchesTeam && matchesLugar && matchesStatus && matchesSearch;
         }).sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-        const pageSize = 10;
+        const pageSize = 12;
         const currentPage = window.paginationState.torneos || 1;
         const totalItems = filtered.length;
         const paginatedTorneos = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
