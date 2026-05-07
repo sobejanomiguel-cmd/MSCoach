@@ -27,7 +27,8 @@ window.paginationState = {
 window.previsionFilters = {
     activeType: 'Torneo',
     selectedClubId: '',
-    searchQuery: ''
+    searchQuery: '',
+    selectedIds: new Set()
 };
 
 window.setPage = (view, page) => {
@@ -5325,6 +5326,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Persistir en localStorage
         localStorage.setItem('ms_coach_formation_state', JSON.stringify(window.formationsState));
 
+        // Persistir en Supabase para que sea compartido
+        if (id) {
+            try {
+                await window.saveConvMetadata(id, 'sistema', formationId);
+            } catch (err) {
+                console.error("Error saving formation to Supabase:", err);
+            }
+        }
+
         if (type === 'Torneo') {
             window.viewTorneoRendimiento(id);
         } else {
@@ -8011,7 +8021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all cursor-pointer">
                     <div class="flex justify-between items-start">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg shadow-blue-500/20 flex-shrink-0" title="${playerCount} convocados">${playerCount}</div>
+                            <div id="torneo-count-bubble-${c.id}" class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg shadow-blue-500/20 flex-shrink-0" title="${playerCount} convocados">${playerCount}</div>
                             <div>
                                 <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
                                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">${c.fecha}</p>
@@ -8213,7 +8223,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                                     <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Evaluados</p>
                                     <h4 class="text-4xl font-black text-slate-800">
-                                        ${Object.values(rendimiento).filter(v => v.score).length} <span class="text-xs uppercase text-slate-300">/ ${convocados.length}</span>
+                                        <span id="eval-count">${Object.values(rendimiento).filter(v => v.score).length}</span> <span class="text-xs uppercase text-slate-300">/ <span id="total-count-modal">${convocados.length}</span></span>
                                     </h4>
                                 </div>
                              </div>
@@ -8227,18 +8237,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                                      <div class="flex items-center gap-2">
                                          <select onchange="window.updateModalPitch(this.value, '${conv.id}', 'Torneo')" class="p-2 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-black uppercase text-white outline-none shadow-sm cursor-pointer">
                                              ${Object.entries(FORMATIONS).map(([fid, f]) => {
-                const current = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
+                const current = (window.getConvMetadata(conv).sistema) || (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
                 return `<option value="${fid}" ${fid === current ? 'selected' : ''}>${f.name}</option>`;
             }).join('')}
                                          </select>
-                                         <button onclick="window.openFullScreenPitch('torneo', '${conv.id}', '${(window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
+                                         <button onclick="window.openFullScreenPitch('torneo', '${conv.id}', '${(window.getConvMetadata(conv).sistema) || (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433'}')" class="p-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-white/60 uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2">
                                             <i data-lucide="maximize" class="w-4 h-4"></i>
                                             Panorámica
                                          </button>
                                      </div>
                                  </div>
                                  <div id="pitch-display-area" class="relative">
-                                     ${renderTacticalPitchHtml(convocados, (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433', 'horizontal')}
+                                     ${renderTacticalPitchHtml(convocados, (window.getConvMetadata(conv).sistema) || (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433', 'horizontal')}
                                  </div>
                              </div>
 
@@ -8296,14 +8306,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             modalOverlay.classList.add('active');
             if (window.lucide) lucide.createIcons();
 
-            window.updateLocalPlayerPos = (pid, newPos) => {
-                const p = convocados.find(player => player.id == pid);
-                if (p) {
-                    p.posicion = newPos;
-                    const pitchArea = document.getElementById('pitch-display-area');
-                    const currentFormation = (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
+            window.updateLocalPlayerPos = async (pid, newPos) => {
+                const pitchArea = document.getElementById('pitch-display-area');
+                if (!pitchArea) return;
+                
+                // Update in memory for immediate reflection
+                const player = convocados.find(p => p.id == pid);
+                if (player) {
+                    player.posicion = newPos;
+                    const currentFormation = (window.getConvMetadata(conv).sistema) || (window.formationsState && window.formationsState.torneos && window.formationsState.torneos[conv.id]) || 'F11_433';
                     pitchArea.innerHTML = renderTacticalPitchHtml(convocados, currentFormation, 'horizontal');
-                    if (window.lucide) lucide.createIcons();
+                    
+                    // Persistir posición inmediatamente en el rendimiento de la convocatoria
+                    try {
+                        const updatedRendimiento = { ...(conv.rendimiento || {}) };
+                        if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
+                        updatedRendimiento[pid].pos = newPos;
+                        
+                        await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', id);
+                        conv.rendimiento = updatedRendimiento; // Mantener local actualizado
+                    } catch (err) {
+                        console.error("Error saving position to Supabase:", err);
+                    }
                 }
             };
 
@@ -8313,6 +8337,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                         if (error) throw error;
+                        
+                        // Actualizar contador inmediatamente en la UI
+                        const bubble = document.getElementById(`torneo-count-bubble-${tid}`);
+                        if (bubble) bubble.innerText = newPids.length;
+                        const modalTotal = document.getElementById('total-count-modal');
+                        if (modalTotal) modalTotal.innerText = newPids.length;
+
                         if (document.getElementById('content-container')) {
                             window.renderTorneos(document.getElementById('content-container'));
                         }
@@ -8442,6 +8473,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     try {
                         const { error } = await supabaseClient.from('convocatorias').update({ playerids: [...new Set(newPids)] }).eq('id', id);
                         if (error) throw error;
+                        
+                        // Actualizar contador inmediatamente en la UI
+                        const bubble = document.getElementById(`torneo-count-bubble-${id}`);
+                        const finalCount = [...new Set(newPids)].length;
+                        if (bubble) bubble.innerText = finalCount;
+                        const modalTotal = document.getElementById('total-count-modal');
+                        if (modalTotal) modalTotal.innerText = finalCount;
+
                         if (document.getElementById('content-container')) {
                             window.renderTorneos(document.getElementById('content-container'));
                         }
@@ -8457,6 +8496,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     const { error } = await supabaseClient.from('convocatorias').update({ playerids: newPids }).eq('id', tid);
                     if (error) throw error;
+
+                    // Actualizar contador inmediatamente en la UI
+                    const bubble = document.getElementById(`torneo-count-bubble-${tid}`);
+                    if (bubble) bubble.innerText = newPids.length;
+                    const modalTotal = document.getElementById('total-count-modal');
+                    if (modalTotal) modalTotal.innerText = newPids.length;
+
                     if (document.getElementById('content-container')) {
                         window.renderTorneos(document.getElementById('content-container'));
                     }
@@ -13275,7 +13321,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             const allEvents = convocatorias;
 
             const filters = window.previsionFilters;
-            let selectedIds = new Set();
+            const selectedIds = filters.selectedIds;
 
             const render = () => {
                 const availableTypes = ['Torneo', 'Ciclo', 'Sesión'];
@@ -13326,12 +13372,17 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                 </div>
                                 <div class="flex flex-col gap-2">
                                     <button id="btn-pdf-indiv" disabled class="w-full py-4 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-30 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[9px]">
-                                        <i data-lucide="file-text" class="w-4 h-4"></i> PDF INDIVIDUAL
+                                        <i data-lucide="file-text" class="w-4 h-4"></i> PDF INDIVIDUAL <span id="selection-count-indiv" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-md"></span>
                                     </button>
                                 </div>
                                 <div class="flex flex-col gap-2">
                                     <button id="btn-pdf-all" disabled class="w-full py-4 bg-slate-900 text-white font-black rounded-xl shadow-lg hover:bg-slate-800 disabled:opacity-30 transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-[9px]">
-                                        <i data-lucide="layers" class="w-4 h-4"></i> PDF TODOS CLUBES
+                                        <i data-lucide="layers" class="w-4 h-4"></i> PDF TODOS CLUBES <span id="selection-count-all" class="ml-1 px-1.5 py-0.5 bg-white/20 rounded-md"></span>
+                                    </button>
+                                </div>
+                                <div class="lg:col-span-4 flex justify-end">
+                                    <button id="btn-clear-selection" class="${selectedIds.size > 0 ? '' : 'hidden'} text-[9px] font-black text-red-500 uppercase tracking-widest hover:text-red-600 transition-all flex items-center gap-2">
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> LIMPIAR SELECCIÓN (${selectedIds.size})
                                     </button>
                                 </div>
                             </div>
@@ -13351,6 +13402,18 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     const hasSelection = selectedIds.size > 0;
                     btnIndiv.disabled = !hasSelection || !filters.selectedClubId;
                     btnAll.disabled = !hasSelection;
+                    
+                    const countIndiv = container.querySelector('#selection-count-indiv');
+                    const countAll = container.querySelector('#selection-count-all');
+                    const btnClear = container.querySelector('#btn-clear-selection');
+                    
+                    if (countIndiv) countIndiv.innerText = hasSelection ? `(${selectedIds.size})` : '';
+                    if (countAll) countAll.innerText = hasSelection ? `(${selectedIds.size})` : '';
+                    if (btnClear) {
+                        btnClear.classList.toggle('hidden', !hasSelection);
+                        btnClear.innerHTML = `<i data-lucide="trash-2" class="w-3.5 h-3.5"></i> LIMPIAR SELECCIÓN (${selectedIds.size})`;
+                        if (window.lucide) lucide.createIcons();
+                    }
                 };
 
                 const showTorneoPlayersPreview = (tid) => {
@@ -13563,11 +13626,19 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                  container.querySelectorAll('.tab-btn').forEach(btn => {
                     btn.onclick = () => {
                         filters.activeType = btn.dataset.type;
-                        selectedIds.clear();
                         window.paginationState.prevision = 1; // Reset pagination on tab change
                         render();
                     };
                 });
+
+                const btnClear = container.querySelector('#btn-clear-selection');
+                if (btnClear) {
+                    btnClear.onclick = () => {
+                        selectedIds.clear();
+                        updateButtons();
+                        updatePrevision();
+                    };
+                }
 
                  selector.onchange = (e) => {
                     filters.selectedClubId = e.target.value;
