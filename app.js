@@ -4807,7 +4807,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${isEdit ? 'Editar' : 'Nueva'} <span class="text-blue-600">${activeTab}</span></h3>
                         <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Gestión de convocatoria y planificación</p>
                     </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    <div class="flex items-center gap-3">
+                        <button type="submit" form="convocatoria-unified-form" class="px-8 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-95">${isEdit ? 'Guardar Cambios' : 'Crear'}</button>
+                        <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
                 </div>
 
                 <form id="convocatoria-unified-form" class="space-y-6">
@@ -6848,9 +6851,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
         doc.setFontSize(9);
         doc.setFont('Montserrat', 'bold');
-        doc.text("FECHA PRINCIPAL:", 15, 45);
+        const dateRange = (meta.fecha_fin && meta.fecha_fin !== conv.fecha) ? `${conv.fecha} AL ${meta.fecha_fin}` : conv.fecha;
+        doc.text("FECHAS:", 15, 45);
         doc.setFont('Montserrat', 'normal');
-        doc.text(conv.fecha, 50, 45);
+        doc.text(dateRange, 50, 45);
 
         doc.setFont('Montserrat', 'bold');
         doc.text("HORA:", 15, 50);
@@ -8039,7 +8043,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div id="torneo-count-bubble-${c.id}" class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg shadow-blue-500/20 flex-shrink-0" title="${playerCount} convocados">${playerCount}</div>
                             <div>
                                 <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
-                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">${c.fecha}</p>
+                                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">${(window.getConvMetadata(c).fecha_fin && window.getConvMetadata(c).fecha_fin !== c.fecha) ? `${c.fecha} - ${window.getConvMetadata(c).fecha_fin}` : c.fecha}</p>
                             </div>
                         </div>
                         <span class="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-widest max-w-[120px] text-center leading-normal break-words">${teamName}</span>
@@ -8128,12 +8132,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <span class="text-slate-400 font-bold text-xs">Torneo • ${conv.fecha}</span>
                             </div>
                         </div>
-                        <div class="flex gap-2">
-                             <button onclick="window.previewTorneoPDF(${conv.id})" class="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all shadow-lg" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
-                             <button onclick="window.exportConvocatoria(${conv.id})" class="p-2 bg-slate-900 text-white rounded-full hover:bg-black transition-all shadow-lg" title="Descargar PDF"><i data-lucide="file-down" class="w-5 h-5"></i></button>
-                             <button onclick="window.viewTorneoRendimiento(${conv.id})" class="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-all"><i data-lucide="refresh-cw" class="w-5 h-5"></i></button>
-                             <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
-                        </div>
+                         <div class="flex gap-2">
+                              <button onclick="window.openConvocatoriaForm(${JSON.stringify(conv).replace(/"/g, '&quot;')}, 'Torneo')" class="p-2 bg-amber-500 text-white rounded-full hover:bg-amber-600 transition-all shadow-lg" title="Editar Torneo"><i data-lucide="edit-3" class="w-5 h-5"></i></button>
+                              <button onclick="window.previewTorneoPDF(${conv.id})" class="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all shadow-lg" title="Previsualizar PDF"><i data-lucide="eye" class="w-5 h-5"></i></button>
+                              <button onclick="window.exportConvocatoria(${conv.id})" class="p-2 bg-slate-900 text-white rounded-full hover:bg-black transition-all shadow-lg" title="Descargar PDF"><i data-lucide="file-down" class="w-5 h-5"></i></button>
+                              <button onclick="window.viewTorneoRendimiento(${conv.id})" class="p-2 bg-blue-50 text-blue-600 rounded-full hover:bg-blue-100 transition-all"><i data-lucide="refresh-cw" class="w-5 h-5"></i></button>
+                              <button onclick="closeModal()" class="p-2 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
+                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -13691,6 +13696,14 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     btnIndiv.disabled = true;
                     btnIndiv.innerHTML = 'GENERANDO...';
                     await window.generateClubPrevisionPDF(club, selEvents, clubPlayers);
+                    
+                    // Limpiar selección tras generar
+                    selectedIds.clear();
+                    filters.selectedClubId = "";
+                    if (selector) selector.value = "";
+                    updateButtons();
+                    updatePrevision();
+
                     btnIndiv.disabled = false;
                     btnIndiv.innerHTML = '<i data-lucide="file-text" class="w-4 h-4"></i> PDF INDIVIDUAL';
                     if (window.lucide) lucide.createIcons();
@@ -13720,6 +13733,14 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         }
                     }
                     window.customAlert('Completado', `Se han generado ${count} PDFs.`, 'success');
+                    
+                    // Limpiar selección tras generar
+                    selectedIds.clear();
+                    filters.selectedClubId = "";
+                    if (selector) selector.value = "";
+                    updateButtons();
+                    updatePrevision();
+
                     btnAll.disabled = false;
                     btnAll.innerHTML = '<i data-lucide="layers" class="w-4 h-4"></i> PDF TODOS CLUBES';
                     if (window.lucide) lucide.createIcons();
@@ -13846,7 +13867,8 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             
             const meta = window.getConvMetadata(t);
             const durText = meta.duracion_dias ? ` [${meta.duracion_dias} DÍAS]` : "";
-            const tTitle = `${t.fecha} (${dayName}) - ${t.nombre.toUpperCase()}${genText}${durText}`;
+            const dateDisplay = (meta.fecha_fin && meta.fecha_fin !== t.fecha) ? `${t.fecha} AL ${meta.fecha_fin}` : t.fecha;
+            const tTitle = `${dateDisplay} (${dayName}) - ${t.nombre.toUpperCase()}${genText}${durText}`;
 
             doc.setFont('Montserrat', 'bold'); doc.setFontSize(11);
             doc.text(tTitle, 22, y + 10);
