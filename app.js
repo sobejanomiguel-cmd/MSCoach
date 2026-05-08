@@ -1,4 +1,5 @@
 // --- GLOBAL UTILITIES ---
+console.log("RS CENTRO APP LOADED - v1.3");
 window.debounce = (fn, delay) => {
     let timeout;
     return (...args) => {
@@ -41,6 +42,51 @@ window.updatePlayerAsistencia = (pid, status, tournamentId) => {
             btn.className = "p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-all";
         }
     });
+
+    // Actualizar la tarjeta del torneo en tiempo real
+    const bubble = document.getElementById(`torneo-count-bubble-${tournamentId}`);
+    const card = document.getElementById(`torneo-card-${tournamentId}`);
+    const attendanceText = document.getElementById(`torneo-attendance-text-${tournamentId}`);
+    
+    if (bubble && card && attendanceText) {
+        // Buscar solo dentro del modal para contar correctamente los jugadores de ESTE torneo
+        const modal = document.getElementById('modal-container');
+        const allStatusInputs = modal ? modal.querySelectorAll('input[id^="status-input-"]') : document.querySelectorAll('input[id^="status-input-"]');
+        
+        const totalPlayers = allStatusInputs.length;
+        let confirmedCount = 0;
+        allStatusInputs.forEach(inp => {
+            if (inp.value === 'Confirmado') confirmedCount++;
+        });
+
+        const missing = totalPlayers - confirmedCount;
+        bubble.innerText = totalPlayers; 
+        attendanceText.innerText = `${confirmedCount}/${totalPlayers} CONFIRMADOS`;
+        
+        bubble.classList.remove('bg-emerald-500', 'bg-amber-500', 'bg-red-500', 'bg-blue-600');
+        card.classList.remove('border-emerald-200', 'border-amber-200', 'border-red-200', 'border-slate-100');
+        attendanceText.classList.remove('text-emerald-600', 'text-amber-600', 'text-red-600', 'text-slate-500');
+
+        if (totalPlayers > 0) {
+            if (missing === 0) {
+                bubble.classList.add('bg-emerald-500');
+                card.classList.add('border-emerald-200');
+                attendanceText.classList.add('text-emerald-600');
+            } else if (missing < 5) {
+                bubble.classList.add('bg-amber-500');
+                card.classList.add('border-amber-200');
+                attendanceText.classList.add('text-amber-600');
+            } else {
+                bubble.classList.add('bg-red-500');
+                card.classList.add('border-red-200');
+                attendanceText.classList.add('text-red-600');
+            }
+        } else {
+            bubble.classList.add('bg-blue-600');
+            card.classList.add('border-slate-100');
+            attendanceText.classList.add('text-slate-500');
+        }
+    }
 
     // Persistencia inmediata
     const tId = isNaN(tournamentId) ? tournamentId : Number(tournamentId);
@@ -8078,13 +8124,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         const renderTorneoCard = (c) => {
             const teamName = teamsMap[c.equipoid] || 'Múltiples / Gen.';
             const playerCount = Array.isArray(c.playerids) ? c.playerids.length : 0;
+            
+            // Contar jugadores con status "Confirmado"
+            const rend = c.rendimiento || {};
+            const confirmedCount = Array.isArray(c.playerids) 
+                ? c.playerids.filter(pid => rend[pid] && rend[pid].status === 'Confirmado').length 
+                : 0;
+            
+            const missing = playerCount - confirmedCount;
+            let statusColorClass = 'bg-blue-600';
+            let statusTextColorClass = 'text-slate-500';
+            let cardBorderClass = 'border-slate-100';
+            
+            if (playerCount > 0) {
+                if (missing === 0) {
+                    statusColorClass = 'bg-emerald-500';
+                    statusTextColorClass = 'text-emerald-600';
+                    cardBorderClass = 'border-emerald-200';
+                } else if (missing < 5) {
+                    statusColorClass = 'bg-amber-500';
+                    statusTextColorClass = 'text-amber-600';
+                    cardBorderClass = 'border-amber-200';
+                } else {
+                    statusColorClass = 'bg-red-500';
+                    statusTextColorClass = 'text-red-600';
+                    cardBorderClass = 'border-red-200';
+                }
+            }
+
             return `
-                <div onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm active:scale-[0.98] transition-all cursor-pointer">
+                <div id="torneo-card-${c.id}" onclick="window.viewTorneoRendimiento(${c.id})" class="bg-white p-6 rounded-[2rem] border-2 ${cardBorderClass} shadow-sm active:scale-[0.98] transition-all cursor-pointer">
                     <div class="flex justify-between items-start">
                         <div class="flex items-center gap-3">
-                            <div id="torneo-count-bubble-${c.id}" class="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg shadow-blue-500/20 flex-shrink-0" title="${playerCount} convocados">${playerCount}</div>
+                            <div id="torneo-count-bubble-${c.id}" class="w-10 h-10 ${statusColorClass} text-white rounded-xl flex items-center justify-center font-black text-sm shadow-lg flex-shrink-0" title="${playerCount} convocados">
+                                ${playerCount}
+                            </div>
                             <div>
                                 <h4 class="font-bold text-slate-800 text-sm uppercase">${c.nombre}</h4>
+                                <p id="torneo-attendance-text-${c.id}" class="text-[9px] font-bold ${statusTextColorClass} uppercase tracking-tight mt-0.5">${confirmedCount}/${playerCount} CONFIRMADOS</p>
                                 <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-0.5">${(window.getConvMetadata(c).fecha_fin && window.getConvMetadata(c).fecha_fin !== c.fecha) ? `${c.fecha} - ${window.getConvMetadata(c).fecha_fin}` : c.fecha}</p>
                             </div>
                         </div>
@@ -8232,13 +8309,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                             <td class="p-4">
                                                                 <div class="flex items-center justify-center gap-1 bg-slate-100/30 p-1 rounded-xl w-fit mx-auto">
                                                                     <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
-                                                                    <button type="button" data-status-btn="Confirmado" onclick="window.updatePlayerAsistencia('${p.id}', 'Confirmado', '${conv.id}')" class="${status === 'Confirmado' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Confirmado">
+                                                                    <button type="button" data-status-btn="Confirmado" onclick="event.stopPropagation(); window.updatePlayerAsistencia('${p.id}', 'Confirmado', '${conv.id}')" class="${status === 'Confirmado' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Confirmado">
                                                                         <i data-lucide="check-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" data-status-btn="Duda" onclick="window.updatePlayerAsistencia('${p.id}', 'Duda', '${conv.id}')" class="${status === 'Duda' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Duda">
+                                                                    <button type="button" data-status-btn="Duda" onclick="event.stopPropagation(); window.updatePlayerAsistencia('${p.id}', 'Duda', '${conv.id}')" class="${status === 'Duda' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Duda">
                                                                         <i data-lucide="help-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" data-status-btn="Baja" onclick="window.updatePlayerAsistencia('${p.id}', 'Baja', '${conv.id}')" class="${status === 'Baja' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Baja">
+                                                                    <button type="button" data-status-btn="Baja" onclick="event.stopPropagation(); window.updatePlayerAsistencia('${p.id}', 'Baja', '${conv.id}')" class="${status === 'Baja' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Baja">
                                                                         <i data-lucide="x-circle" class="w-4 h-4"></i>
                                                                     </button>
                                                                 </div>
