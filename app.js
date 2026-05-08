@@ -14,6 +14,61 @@ window.toggleNavSection = (btn) => {
     }
 };
 
+window.setPlayerTorneoStatus = (pid, newStatus, tournamentId) => {
+    console.log("Updating status:", { pid, newStatus, tournamentId });
+    const row = document.getElementById(`player-row-${pid}`);
+    const input = document.getElementById(`status-input-${pid}`);
+    
+    if (!row || !input) {
+        console.error("Critical: Row or Input not found for player", pid);
+        return;
+    }
+
+    // 1. Immediate UI Feedback
+    input.value = newStatus;
+    
+    // Row style
+    row.classList.remove('bg-red-50/50');
+    const nameP = row.querySelector('p.text-[11px]');
+    if (nameP) nameP.classList.remove('opacity-40', 'line-through');
+
+    if (newStatus === 'declined') {
+        row.classList.add('bg-red-50/50');
+        if (nameP) nameP.classList.add('opacity-40', 'line-through');
+    }
+
+    // Buttons style
+    const buttons = row.querySelectorAll('button[data-status-btn]');
+    buttons.forEach(btn => {
+        const btnStatus = btn.getAttribute('data-status-btn');
+        btn.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500', 'text-white', 'shadow-md');
+        btn.classList.add('text-slate-400', 'hover:bg-white');
+
+        if (btnStatus === newStatus) {
+            if (newStatus === 'confirmed') btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
+            else if (newStatus === 'declined') btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
+            else if (newStatus === 'pending') btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
+            btn.classList.remove('text-slate-400', 'hover:bg-white');
+        }
+    });
+
+    // 2. Background Persistence
+    (async () => {
+        try {
+            // Obtener datos actuales para no machacar otros campos de rendimiento
+            const { data: currentConv } = await supabaseClient.from('convocatorias').select('rendimiento').eq('id', tournamentId).single();
+            const updatedRendimiento = { ...(currentConv?.rendimiento || {}) };
+            if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
+            updatedRendimiento[pid].status = newStatus;
+            
+            await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', tournamentId);
+            console.log("Status persisted successfully");
+        } catch (err) {
+            console.error("Error persisting status:", err);
+        }
+    })();
+};
+
 window.paginationState = {
     convocatorias: 1,
     asistencia: 1,
@@ -8176,13 +8231,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                             <td class="p-4">
                                                                 <div class="flex items-center justify-center gap-1 bg-slate-100/50 p-1 rounded-xl w-fit mx-auto">
                                                                     <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
-                                                                    <button type="button" data-status-btn="confirmed" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'confirmed')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
+                                                                    <button type="button" data-status-btn="confirmed" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'confirmed', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
                                                                         <i data-lucide="check-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" data-status-btn="declined" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'declined')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
+                                                                    <button type="button" data-status-btn="declined" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'declined', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
                                                                         <i data-lucide="x-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" data-status-btn="pending" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'pending')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
+                                                                    <button type="button" data-status-btn="pending" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'pending', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
                                                                         <i data-lucide="clock" class="w-4 h-4"></i>
                                                                     </button>
                                                                 </div>
@@ -8367,60 +8422,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             };
 
-            window.setPlayerTorneoStatus = (pid, newStatus) => {
-                const row = document.getElementById(`player-row-${pid}`);
-                const input = document.getElementById(`status-input-${pid}`);
-                if (!row || !input) return;
-
-                // Actualizar valor del input oculto para el formulario
-                input.value = newStatus;
-                
-                // 1. Feedback Visual Inmediato en la fila
-                row.classList.remove('bg-red-50/50');
-                const nameP = row.querySelector('p.text-[11px]');
-                if (nameP) nameP.classList.remove('opacity-40', 'line-through');
-
-                if (newStatus === 'declined') {
-                    row.classList.add('bg-red-50/50');
-                    if (nameP) nameP.classList.add('opacity-40', 'line-through');
-                }
-
-                // 2. Actualizar botones de estado solamente
-                const buttons = row.querySelectorAll('button[data-status-btn]');
-                buttons.forEach(btn => {
-                    const btnStatus = btn.getAttribute('data-status-btn');
-                    
-                    // Resetear clases por defecto
-                    btn.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500', 'text-white', 'shadow-md');
-                    btn.classList.add('text-slate-400', 'hover:bg-white');
-
-                    // Aplicar clase activa según el nuevo estado
-                    if (btnStatus === newStatus) {
-                        if (newStatus === 'confirmed') btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
-                        else if (newStatus === 'declined') btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
-                        else if (newStatus === 'pending') btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
-                        
-                        btn.classList.remove('text-slate-400', 'hover:bg-white');
-                    }
-                });
-
-                // 3. Persistencia en segundo plano (no bloquea la UI)
-                (async () => {
-                    try {
-                        const updatedRendimiento = { ...(conv.rendimiento || {}) };
-                        if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
-                        updatedRendimiento[pid].status = newStatus;
-                        
-                        // Actualizar en el objeto local conv para que persista durante la sesión del modal
-                        conv.rendimiento = updatedRendimiento;
-
-                        const { error } = await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', id);
-                        if (error) throw error;
-                    } catch (err) {
-                        console.error("Error al guardar estado de asistencia:", err);
-                    }
-                })();
-            };
 
             window.removePlayerFromTorneo = async (tid, pid) => {
                 window.customConfirm('QUITAR JUGADOR', '¿Seguro que quieres quitar a este futbolista del torneo?', async () => {
