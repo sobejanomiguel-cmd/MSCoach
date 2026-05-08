@@ -14,61 +14,47 @@ window.toggleNavSection = (btn) => {
     }
 };
 
-window.setPlayerTorneoStatus = (pid, newStatus, tournamentId) => {
-    console.log("Updating status:", { pid, newStatus, tournamentId });
+window.updatePlayerAsistencia = (pid, status, tournamentId) => {
     const row = document.getElementById(`player-row-${pid}`);
     const input = document.getElementById(`status-input-${pid}`);
-    
-    if (!row || !input) {
-        console.error("Critical: Row or Input not found for player", pid);
-        return;
-    }
+    if (!row || !input) return;
 
-    // 1. Immediate UI Feedback
+    // Toggle: si ya estaba seleccionado, lo quitamos
+    const newStatus = (input.value === status) ? '' : status;
     input.value = newStatus;
-    
-    // Row style
-    row.classList.remove('bg-red-50/50');
-    const nameP = row.querySelector('p.text-[11px]');
-    if (nameP) nameP.classList.remove('opacity-40', 'line-through');
 
-    if (newStatus === 'declined') {
-        row.classList.add('bg-red-50/50');
-        if (nameP) nameP.classList.add('opacity-40', 'line-through');
-    }
+    // Actualizar colores de la fila
+    row.classList.remove('bg-emerald-500/10', 'bg-amber-500/10', 'bg-red-500/10');
+    if (newStatus === 'Confirmado') row.classList.add('bg-emerald-500/10');
+    else if (newStatus === 'Duda') row.classList.add('bg-amber-500/10');
+    else if (newStatus === 'Baja') row.classList.add('bg-red-500/10');
 
-    // Buttons style
+    // Actualizar estado visual de los botones
     const buttons = row.querySelectorAll('button[data-status-btn]');
     buttons.forEach(btn => {
-        const btnStatus = btn.getAttribute('data-status-btn');
-        btn.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500', 'text-white', 'shadow-md');
-        btn.classList.add('text-slate-400', 'hover:bg-white');
-
-        if (btnStatus === newStatus) {
-            if (newStatus === 'confirmed') btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
-            else if (newStatus === 'declined') btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
-            else if (newStatus === 'pending') btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
-            btn.classList.remove('text-slate-400', 'hover:bg-white');
+        const bStatus = btn.getAttribute('data-status-btn');
+        if (bStatus === newStatus) {
+            if (newStatus === 'Confirmado') btn.className = "p-2 rounded-lg bg-emerald-500 text-white shadow-sm transition-all";
+            else if (newStatus === 'Duda') btn.className = "p-2 rounded-lg bg-amber-500 text-white shadow-sm transition-all";
+            else if (newStatus === 'Baja') btn.className = "p-2 rounded-lg bg-red-500 text-white shadow-sm transition-all";
+        } else {
+            btn.className = "p-2 rounded-lg text-slate-400 hover:bg-slate-100 transition-all";
         }
     });
 
-    // 2. Background Persistence
+    // Persistencia inmediata
+    const tId = isNaN(tournamentId) ? tournamentId : Number(tournamentId);
     (async () => {
         try {
-            // Obtener datos actuales para no machacar otros campos de rendimiento
-            const { data: currentConv } = await supabaseClient.from('convocatorias').select('rendimiento').eq('id', tournamentId).single();
-            const updatedRendimiento = { ...(currentConv?.rendimiento || {}) };
-            if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
-            updatedRendimiento[pid].status = newStatus;
-            
-            const tId = isNaN(tournamentId) ? tournamentId : Number(tournamentId);
-            await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', tId);
-            console.log("Status persisted successfully");
-        } catch (err) {
-            console.error("Error persisting status:", err);
-        }
+            const { data: conv } = await supabaseClient.from('convocatorias').select('rendimiento').eq('id', tId).single();
+            const rend = { ...(conv?.rendimiento || {}) };
+            if (!rend[pid]) rend[pid] = {};
+            rend[pid].status = newStatus;
+            await supabaseClient.from('convocatorias').update({ rendimiento: rend }).eq('id', tId);
+        } catch (e) { console.error("Error guardando asistencia:", e); }
     })();
 };
+
 
 window.paginationState = {
     convocatorias: 1,
@@ -8206,42 +8192,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <table class="w-full text-left border-collapse">
                                             <thead>
                                                 <tr class="bg-slate-50/50 border-b border-slate-100">
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%]">Jugador</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[12%]">Posición</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[18%] text-center">Asistencia</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[10%]">Nota</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[35%]">Observaciones</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[18%]">Jugador</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[10%]">Posición</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[8%]">Nota</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[34%]">Observaciones</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[25%]">Asistencia</th>
                                                     <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[5%] text-center"><i data-lucide="trash-2" class="w-3 h-3 mx-auto"></i></th>
                                                 </tr>
                                             </thead>
                                             <tbody id="torneo-table-body">
                                                 ${convocados.map(p => {
-                const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '', status: 'pending' };
-                const status = evalData.status || 'pending';
+                const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '', status: '' };
+                const status = evalData.status || '';
+                let rowColorClass = '';
+                if (status === 'Confirmado') rowColorClass = 'bg-emerald-500/10';
+                else if (status === 'Duda') rowColorClass = 'bg-amber-500/10';
+                else if (status === 'Baja') rowColorClass = 'bg-red-500/10';
+
                 return `
-                                                        <tr id="player-row-${p.id}" class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group ${status === 'declined' ? 'bg-red-50/50' : ''}">
+                                                        <tr id="player-row-${p.id}" class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group ${rowColorClass}">
                                                             <td class="p-4">
-                                                                <p class="text-[11px] font-black text-slate-800 uppercase truncate ${status === 'declined' ? 'opacity-40 line-through' : ''}">${p.nombre}</p>
+                                                                <p class="text-[11px] font-black text-slate-800 uppercase truncate">${p.nombre}</p>
                                                                 <p class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</p>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
                                                                     ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${(evalData.pos || window.parsePosition(p.posicion)[0]) === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                                                                 </select>
-                                                            </td>
-                                                            <td class="p-4">
-                                                                <div class="flex items-center justify-center gap-1 bg-slate-100/50 p-1 rounded-xl w-fit mx-auto">
-                                                                    <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
-                                                                    <button type="button" data-status-btn="confirmed" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'confirmed', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
-                                                                        <i data-lucide="check-circle" class="w-4 h-4"></i>
-                                                                    </button>
-                                                                    <button type="button" data-status-btn="declined" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'declined', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
-                                                                        <i data-lucide="x-circle" class="w-4 h-4"></i>
-                                                                    </button>
-                                                                    <button type="button" data-status-btn="pending" onclick="event.stopPropagation(); window.setPlayerTorneoStatus('${p.id}', 'pending', '${conv.id}')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
-                                                                        <i data-lucide="clock" class="w-4 h-4"></i>
-                                                                    </button>
-                                                                </div>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="score_${p.id}" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50 text-blue-600">
@@ -8251,6 +8228,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                             </td>
                                                             <td class="p-4">
                                                                 <textarea name="comment_${p.id}" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50 h-8 resize-none scrollbar-hide focus:h-20 transition-all" placeholder="Nota...">${evalData.comment || ''}</textarea>
+                                                            </td>
+                                                            <td class="p-4">
+                                                                <div class="flex items-center justify-center gap-1 bg-slate-100/30 p-1 rounded-xl w-fit mx-auto">
+                                                                    <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
+                                                                    <button type="button" data-status-btn="Confirmado" onclick="window.updatePlayerAsistencia('${p.id}', 'Confirmado', '${conv.id}')" class="${status === 'Confirmado' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Confirmado">
+                                                                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                    <button type="button" data-status-btn="Duda" onclick="window.updatePlayerAsistencia('${p.id}', 'Duda', '${conv.id}')" class="${status === 'Duda' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Duda">
+                                                                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                    <button type="button" data-status-btn="Baja" onclick="window.updatePlayerAsistencia('${p.id}', 'Baja', '${conv.id}')" class="${status === 'Baja' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'} p-2 rounded-lg transition-all" title="Baja">
+                                                                        <i data-lucide="x-circle" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                             <td class="p-4 text-center">
                                                                 <button type="button" onclick="window.removePlayerFromTorneo(${conv.id}, ${p.id})" class="text-slate-300 hover:text-red-500 transition-colors">
