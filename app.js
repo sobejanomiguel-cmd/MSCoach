@@ -8150,26 +8150,42 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         <table class="w-full text-left border-collapse">
                                             <thead>
                                                 <tr class="bg-slate-50/50 border-b border-slate-100">
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[25%]">Jugador</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[15%]">Posición</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[20%]">Jugador</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[12%]">Posición</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[18%] text-center">Asistencia</th>
                                                     <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[10%]">Nota</th>
-                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[45%]">Observaciones</th>
+                                                    <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[35%]">Observaciones</th>
                                                     <th class="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest w-[5%] text-center"><i data-lucide="trash-2" class="w-3 h-3 mx-auto"></i></th>
                                                 </tr>
                                             </thead>
                                             <tbody id="torneo-table-body">
                                                 ${convocados.map(p => {
-                const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '' };
+                const evalData = (conv.rendimiento && conv.rendimiento[p.id]) || { score: '', comment: '', status: 'pending' };
+                const status = evalData.status || 'pending';
                 return `
-                                                        <tr class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group">
+                                                        <tr id="player-row-${p.id}" class="border-b border-slate-50 hover:bg-slate-50/30 transition-colors group ${status === 'declined' ? 'bg-red-50/50' : ''}">
                                                             <td class="p-4">
-                                                                <p class="text-[11px] font-black text-slate-800 uppercase truncate">${p.nombre}</p>
+                                                                <p class="text-[11px] font-black text-slate-800 uppercase truncate ${status === 'declined' ? 'opacity-40 line-through' : ''}">${p.nombre}</p>
                                                                 <p class="text-[9px] font-black text-blue-500 uppercase tracking-tighter">${p.equipoConvenido || 'Sin Club'}</p>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="pos_${p.id}" onchange="window.updateLocalPlayerPos(${p.id}, this.value)" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50">
                                                                     ${PLAYER_POSITIONS.map(pos => `<option value="${pos}" ${(evalData.pos || window.parsePosition(p.posicion)[0]) === pos ? 'selected' : ''}>${pos}</option>`).join('')}
                                                                 </select>
+                                                            </td>
+                                                            <td class="p-4">
+                                                                <div class="flex items-center justify-center gap-1 bg-slate-100/50 p-1 rounded-xl">
+                                                                    <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
+                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'confirmed')" class="p-1.5 rounded-lg transition-all ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
+                                                                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'declined')" class="p-1.5 rounded-lg transition-all ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
+                                                                        <i data-lucide="x-circle" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'pending')" class="p-1.5 rounded-lg transition-all ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
+                                                                        <i data-lucide="clock" class="w-4 h-4"></i>
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                             <td class="p-4">
                                                                 <select name="score_${p.id}" class="w-full bg-slate-100/50 border-none rounded-lg text-[10px] font-bold p-2 outline-none focus:ring-2 ring-blue-50 text-blue-600">
@@ -8348,6 +8364,59 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } catch (err) {
                         console.error("Error saving position to Supabase:", err);
                     }
+                }
+            };
+
+            window.setPlayerTorneoStatus = async (pid, newStatus) => {
+                const row = document.getElementById(`player-row-${pid}`);
+                const input = document.getElementById(`status-input-${pid}`);
+                if (!row || !input) return;
+
+                input.value = newStatus;
+                
+                // Actualizar UI de la fila
+                row.classList.remove('bg-red-50/50');
+                const nameP = row.querySelector('p.text-[11px]');
+                if (nameP) nameP.classList.remove('opacity-40', 'line-through');
+
+                if (newStatus === 'declined') {
+                    row.classList.add('bg-red-50/50');
+                    if (nameP) nameP.classList.add('opacity-40', 'line-through');
+                }
+
+                // Actualizar botones
+                const buttons = row.querySelectorAll('button[type="button"]');
+                buttons.forEach(btn => {
+                    const title = btn.getAttribute('title');
+                    const isConfirmed = title === 'Confirmado' && newStatus === 'confirmed';
+                    const isDeclined = title === 'No puede venir' && newStatus === 'declined';
+                    const isPending = title === 'Pendiente' && newStatus === 'pending';
+
+                    btn.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500', 'text-white', 'shadow-md');
+                    btn.classList.add('text-slate-400', 'hover:bg-white');
+
+                    if (isConfirmed) {
+                        btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
+                        btn.classList.remove('text-slate-400', 'hover:bg-white');
+                    } else if (isDeclined) {
+                        btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
+                        btn.classList.remove('text-slate-400', 'hover:bg-white');
+                    } else if (isPending) {
+                        btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
+                        btn.classList.remove('text-slate-400', 'hover:bg-white');
+                    }
+                });
+
+                // Persistencia inmediata opcional o solo visual hasta guardar
+                // He decidido persistirlo inmediatamente como la posición para mejor UX
+                try {
+                    const updatedRendimiento = { ...(conv.rendimiento || {}) };
+                    if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
+                    updatedRendimiento[pid].status = newStatus;
+                    await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', id);
+                    conv.rendimiento = updatedRendimiento;
+                } catch (err) {
+                    console.error("Error saving status to Supabase:", err);
                 }
             };
 
@@ -8567,8 +8636,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const score = formData.get(`score_${p.id}`);
                     const comment = formData.get(`comment_${p.id}`);
                     const pos = formData.get(`pos_${p.id}`);
-                    if (score || comment || pos) {
-                        newRendimiento[p.id] = { score, comment, pos };
+                    const status = formData.get(`status_${p.id}`);
+                    if (score || comment || pos || status) {
+                        newRendimiento[p.id] = { score, comment, pos, status };
                     }
                 });
 
