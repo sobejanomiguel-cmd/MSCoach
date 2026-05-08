@@ -8174,15 +8174,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                                 </select>
                                                             </td>
                                                             <td class="p-4">
-                                                                <div class="flex items-center justify-center gap-1 bg-slate-100/50 p-1 rounded-xl">
+                                                                <div class="flex items-center justify-center gap-1 bg-slate-100/50 p-1 rounded-xl w-fit mx-auto">
                                                                     <input type="hidden" name="status_${p.id}" id="status-input-${p.id}" value="${status}">
-                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'confirmed')" class="p-1.5 rounded-lg transition-all ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
+                                                                    <button type="button" data-status-btn="confirmed" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'confirmed')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'confirmed' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Confirmado">
                                                                         <i data-lucide="check-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'declined')" class="p-1.5 rounded-lg transition-all ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
+                                                                    <button type="button" data-status-btn="declined" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'declined')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'declined' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="No puede venir">
                                                                         <i data-lucide="x-circle" class="w-4 h-4"></i>
                                                                     </button>
-                                                                    <button type="button" onclick="window.setPlayerTorneoStatus(${p.id}, 'pending')" class="p-1.5 rounded-lg transition-all ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
+                                                                    <button type="button" data-status-btn="pending" onclick="event.stopPropagation(); window.setPlayerTorneoStatus(${p.id}, 'pending')" class="p-2 rounded-lg transition-all cursor-pointer ${status === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:bg-white'}" title="Pendiente">
                                                                         <i data-lucide="clock" class="w-4 h-4"></i>
                                                                     </button>
                                                                 </div>
@@ -8367,14 +8367,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             };
 
-            window.setPlayerTorneoStatus = async (pid, newStatus) => {
+            window.setPlayerTorneoStatus = (pid, newStatus) => {
                 const row = document.getElementById(`player-row-${pid}`);
                 const input = document.getElementById(`status-input-${pid}`);
                 if (!row || !input) return;
 
+                // Actualizar valor del input oculto para el formulario
                 input.value = newStatus;
                 
-                // Actualizar UI de la fila
+                // 1. Feedback Visual Inmediato en la fila
                 row.classList.remove('bg-red-50/50');
                 const nameP = row.querySelector('p.text-[11px]');
                 if (nameP) nameP.classList.remove('opacity-40', 'line-through');
@@ -8384,40 +8385,41 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (nameP) nameP.classList.add('opacity-40', 'line-through');
                 }
 
-                // Actualizar botones
-                const buttons = row.querySelectorAll('button[type="button"]');
+                // 2. Actualizar botones de estado solamente
+                const buttons = row.querySelectorAll('button[data-status-btn]');
                 buttons.forEach(btn => {
-                    const title = btn.getAttribute('title');
-                    const isConfirmed = title === 'Confirmado' && newStatus === 'confirmed';
-                    const isDeclined = title === 'No puede venir' && newStatus === 'declined';
-                    const isPending = title === 'Pendiente' && newStatus === 'pending';
-
+                    const btnStatus = btn.getAttribute('data-status-btn');
+                    
+                    // Resetear clases por defecto
                     btn.classList.remove('bg-emerald-500', 'bg-red-500', 'bg-amber-500', 'text-white', 'shadow-md');
                     btn.classList.add('text-slate-400', 'hover:bg-white');
 
-                    if (isConfirmed) {
-                        btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
-                        btn.classList.remove('text-slate-400', 'hover:bg-white');
-                    } else if (isDeclined) {
-                        btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
-                        btn.classList.remove('text-slate-400', 'hover:bg-white');
-                    } else if (isPending) {
-                        btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
+                    // Aplicar clase activa según el nuevo estado
+                    if (btnStatus === newStatus) {
+                        if (newStatus === 'confirmed') btn.classList.add('bg-emerald-500', 'text-white', 'shadow-md');
+                        else if (newStatus === 'declined') btn.classList.add('bg-red-500', 'text-white', 'shadow-md');
+                        else if (newStatus === 'pending') btn.classList.add('bg-amber-500', 'text-white', 'shadow-md');
+                        
                         btn.classList.remove('text-slate-400', 'hover:bg-white');
                     }
                 });
 
-                // Persistencia inmediata opcional o solo visual hasta guardar
-                // He decidido persistirlo inmediatamente como la posición para mejor UX
-                try {
-                    const updatedRendimiento = { ...(conv.rendimiento || {}) };
-                    if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
-                    updatedRendimiento[pid].status = newStatus;
-                    await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', id);
-                    conv.rendimiento = updatedRendimiento;
-                } catch (err) {
-                    console.error("Error saving status to Supabase:", err);
-                }
+                // 3. Persistencia en segundo plano (no bloquea la UI)
+                (async () => {
+                    try {
+                        const updatedRendimiento = { ...(conv.rendimiento || {}) };
+                        if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
+                        updatedRendimiento[pid].status = newStatus;
+                        
+                        // Actualizar en el objeto local conv para que persista durante la sesión del modal
+                        conv.rendimiento = updatedRendimiento;
+
+                        const { error } = await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', id);
+                        if (error) throw error;
+                    } catch (err) {
+                        console.error("Error al guardar estado de asistencia:", err);
+                    }
+                })();
             };
 
             window.removePlayerFromTorneo = async (tid, pid) => {
