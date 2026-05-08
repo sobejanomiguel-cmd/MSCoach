@@ -61,7 +61,8 @@ window.setPlayerTorneoStatus = (pid, newStatus, tournamentId) => {
             if (!updatedRendimiento[pid]) updatedRendimiento[pid] = {};
             updatedRendimiento[pid].status = newStatus;
             
-            await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', tournamentId);
+            const tId = isNaN(tournamentId) ? tournamentId : Number(tournamentId);
+            await supabaseClient.from('convocatorias').update({ rendimiento: updatedRendimiento }).eq('id', tId);
             console.log("Status persisted successfully");
         } catch (err) {
             console.error("Error persisting status:", err);
