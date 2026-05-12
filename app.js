@@ -9490,7 +9490,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 </div>
                                             </td>
                                             <td class="px-6 py-4 text-[10px] font-black text-blue-600 uppercase tracking-widest">${window.parsePosition(p.posicion).join(', ') || '--'}</td>
-                                            <td class="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">${p.anionacimiento || '--'}</td>
+                                            <td class="px-6 py-4 text-center">
+                                                <input type="text" value="${p.fechanacimiento || p.anionacimiento || ''}" 
+                                                    onchange="window.updatePlayerBirthDate('${p.id}', this.value)"
+                                                    class="w-24 bg-transparent border-none text-center text-[10px] font-black text-slate-500 uppercase focus:ring-1 ring-blue-200 rounded-lg hover:bg-slate-50 transition-all">
+                                            </td>
                                             <td class="px-6 py-4 text-center">
                                                 <div class="inline-flex gap-0.5">
                                                     ${Array.from({ length: 5 }).map((_, i) => `
@@ -9585,7 +9589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <tr class="bg-slate-50/50 border-b border-slate-100">
                                     <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Jugador</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Posición</th>
-                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Año</th>
+                                    <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nacimiento</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Nivel</th>
                                     <th class="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Acciones</th>
                                 </tr>
@@ -9643,6 +9647,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.paginationState.jugadores = 1;
         window.currentJugadoresClub = val;
         window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.updatePlayerBirthDate = async (id, val) => {
+        try {
+            const player = await db.get('jugadores', id);
+            if (!player) return;
+            
+            // Si es solo un año (4 dígitos)
+            if (/^\d{4}$/.test(val)) {
+                player.anionacimiento = val;
+                player.fechanacimiento = null;
+            } else {
+                player.fechanacimiento = val;
+                const yearMatch = val.match(/\d{4}/);
+                if (yearMatch) player.anionacimiento = yearMatch[0];
+            }
+            
+            await db.update('jugadores', player);
+            // No refrescamos toda la vista para no perder el foco si hay múltiples ediciones
+            // Pero invalidamos caché para que se vea bien al navegar
+            delete db.cache['jugadores'];
+        } catch (err) {
+            console.error(err);
+            window.customAlert('Error', 'No se pudo actualizar la fecha', 'error');
+        }
     };
 
     window.setPage = (page, view = window.currentView) => {
