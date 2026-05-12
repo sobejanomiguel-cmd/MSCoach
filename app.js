@@ -2262,14 +2262,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <div class="flex flex-wrap gap-3">
                                 <div class="flex flex-col gap-1">
                                     <label class="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtrar por Equipo</label>
-                                    <select onchange="window.dashboardRaeTeam = this.value; window.renderDashboard(document.querySelector('.view'))" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
+                                    <select onchange="window.dashboardRaeTeam = this.value; window.renderView('dashboard')" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
                                         <option value="ALL" ${window.dashboardRaeTeam === 'ALL' ? 'selected' : ''}>TODOS LOS EQUIPOS</option>
                                         ${teamsToRender.map(t => `<option value="${t.id}" ${String(window.dashboardRaeTeam) === String(t.id) ? 'selected' : ''}>${t.nombre.split(' ||| ')[0].toUpperCase()}</option>`).join('')}
                                     </select>
                                 </div>
                                 <div class="flex flex-col gap-1">
                                     <label class="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtrar por Año</label>
-                                    <select onchange="window.dashboardRaeYear = this.value; window.renderDashboard(document.querySelector('.view'))" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
+                                    <select onchange="window.dashboardRaeYear = this.value; window.renderView('dashboard')" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
                                         <option value="ALL" ${window.dashboardRaeYear === 'ALL' ? 'selected' : ''}>TODOS LOS AÑOS</option>
                                         ${availableBirthYears.map(y => `<option value="${y}" ${String(window.dashboardRaeYear) === String(y) ? 'selected' : ''}>AÑO ${y}</option>`).join('')}
                                     </select>
