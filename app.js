@@ -9656,18 +9656,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Si es solo un año (4 dígitos)
             if (/^\d{4}$/.test(val)) {
-                player.anionacimiento = val;
+                player.anionacimiento = parseInt(val);
                 player.fechanacimiento = null;
             } else {
-                player.fechanacimiento = val;
-                const yearMatch = val.match(/\d{4}/);
-                if (yearMatch) player.anionacimiento = yearMatch[0];
+                // Intentar detectar formato DD/MM/YYYY y convertir a YYYY-MM-DD para consistencia con inputs tipo date
+                let finalVal = val;
+                if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val)) {
+                    const parts = val.split('/');
+                    finalVal = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+                
+                player.fechanacimiento = finalVal;
+                const yearMatch = finalVal.match(/\d{4}/);
+                if (yearMatch) player.anionacimiento = parseInt(yearMatch[0]);
             }
             
             await db.update('jugadores', player);
-            // No refrescamos toda la vista para no perder el foco si hay múltiples ediciones
-            // Pero invalidamos caché para que se vea bien al navegar
+            
+            // Invalidamos caché
             delete db.cache['jugadores'];
+
+            // Si la ficha (perfil) está abierta, la refrescamos
+            const profileHeader = document.querySelector('h3.text-3xl.font-black');
+            if (profileHeader && (profileHeader.innerText.includes(player.nombre?.toUpperCase() || '') || document.getElementById('modal-overlay').classList.contains('active'))) {
+                // Refrescamos si el ID coincide o el nombre coincide
+                // Para estar seguros, solo si el ID es el mismo
+                if (window.currentViewedPlayerId === id) {
+                    window.viewPlayerProfile(id);
+                }
+            }
         } catch (err) {
             console.error(err);
             window.customAlert('Error', 'No se pudo actualizar la fecha', 'error');
@@ -9857,6 +9874,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.viewPlayerProfile = async (playerId, selectedSeason = window.currentSeason) => {
+        window.currentViewedPlayerId = playerId;
         const player = await db.get('jugadores', playerId);
         if (!player) return;
 
@@ -10013,7 +10031,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                                 <div class="flex justify-between items-center py-2 border-b border-slate-200/50">
                                     <span class="text-[10px] font-bold text-slate-500">Lateralidad</span>
-                                    <span class="text-[11px] font-black text-slate-800 uppercase">${player.pie || 'Diestro'}</span>
+                                    <span class="text-[11px] font-black text-slate-800 uppercase">${player.lateralidad || player.pie || 'Derecho'}</span>
                                 </div>
                             </div>
                         </div>
