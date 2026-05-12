@@ -2036,17 +2036,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             const totalFemale = players.filter(p => (p.sexo || '').toLowerCase().startsWith('f')).length;
             const totalOther = players.length - (totalMale + totalFemale);
 
-            // Distribución por trimestres de nacimiento (Efecto RAE)
+            // Distribución por trimestres de nacimiento (Efecto RAE) con filtros
+            window.dashboardRaeTeam = window.dashboardRaeTeam || 'ALL';
+            window.dashboardRaeYear = window.dashboardRaeYear || 'ALL';
+
+            const filteredPlayersForRae = players.filter(p => {
+                const matchTeam = window.dashboardRaeTeam === 'ALL' || String(p.equipoid) === String(window.dashboardRaeTeam);
+                const matchYear = window.dashboardRaeYear === 'ALL' || String(p.anionacimiento) === String(window.dashboardRaeYear);
+                return matchTeam && matchYear;
+            });
+
             const birthQuarters = [0, 0, 0, 0];
-            players.forEach(p => {
+            filteredPlayersForRae.forEach(p => {
                 let month = -1;
                 if (p.fechanacimiento) {
                     if (p.fechanacimiento.includes('-')) {
-                        // Formato ISO YYYY-MM-DD
                         const d = new Date(p.fechanacimiento);
                         if (!isNaN(d.getTime())) month = d.getMonth();
                     } else if (p.fechanacimiento.includes('/')) {
-                        // Formato DD/MM/YYYY
                         const parts = p.fechanacimiento.split('/');
                         if (parts.length === 3) month = parseInt(parts[1]) - 1;
                     }
@@ -2055,6 +2062,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     birthQuarters[Math.floor(month / 3)]++;
                 }
             });
+
+            const availableBirthYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort().reverse();
+
 
             // Task counts by type
             const taskTypeCounts = {};
@@ -2240,33 +2250,53 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <!-- Line 2.5: Distribución por Trimestres -->
                 <div class="grid grid-cols-1 mb-8">
                     <div class="stat-card bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm transition-all hover:shadow-xl group">
-                        <div class="flex items-center gap-5 mb-8">
-                            <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm"><i data-lucide="pie-chart" class="w-7 h-7"></i></div>
-                            <div>
-                                <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Distribución por Trimestre de Nacimiento (Efecto RAE)</h3>
-                                <p class="text-3xl font-black text-slate-800 uppercase">Análisis Cronológico</p>
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                            <div class="flex items-center gap-5">
+                                <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm"><i data-lucide="pie-chart" class="w-7 h-7"></i></div>
+                                <div>
+                                    <h3 class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Efecto RAE (Relative Age Effect)</h3>
+                                    <p class="text-3xl font-black text-slate-800 uppercase">Análisis Cronológico</p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex flex-wrap gap-3">
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtrar por Equipo</label>
+                                    <select onchange="window.dashboardRaeTeam = this.value; window.renderDashboard(document.querySelector('.view'))" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
+                                        <option value="ALL" ${window.dashboardRaeTeam === 'ALL' ? 'selected' : ''}>TODOS LOS EQUIPOS</option>
+                                        ${teamsToRender.map(t => `<option value="${t.id}" ${String(window.dashboardRaeTeam) === String(t.id) ? 'selected' : ''}>${t.nombre.split(' ||| ')[0].toUpperCase()}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Filtrar por Año</label>
+                                    <select onchange="window.dashboardRaeYear = this.value; window.renderDashboard(document.querySelector('.view'))" class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none focus:ring-4 ring-indigo-50 transition-all appearance-none cursor-pointer pr-10 text-slate-600">
+                                        <option value="ALL" ${window.dashboardRaeYear === 'ALL' ? 'selected' : ''}>TODOS LOS AÑOS</option>
+                                        ${availableBirthYears.map(y => `<option value="${y}" ${String(window.dashboardRaeYear) === String(y) ? 'selected' : ''}>AÑO ${y}</option>`).join('')}
+                                    </select>
+                                </div>
                             </div>
                         </div>
+                        
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 border-t border-slate-50 pt-8">
                             <div class="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-lg group/q">
                                 <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-2">1er Trimestre (ENE-MAR)</p>
                                 <p class="text-4xl font-black text-blue-700 font-outfit">${birthQuarters[0]}</p>
-                                <div class="mt-2 text-[8px] font-bold text-blue-400 uppercase tracking-tighter">${players.length > 0 ? Math.round((birthQuarters[0] / players.length) * 100) : 0}% DEL TOTAL</div>
+                                <div class="mt-2 text-[8px] font-bold text-blue-400 uppercase tracking-tighter">${filteredPlayersForRae.length > 0 ? Math.round((birthQuarters[0] / filteredPlayersForRae.length) * 100) : 0}% DEL FILTRO</div>
                             </div>
                             <div class="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100 flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-lg group/q">
                                 <p class="text-[9px] font-black text-emerald-600 uppercase tracking-widest mb-2">2º Trimestre (ABR-JUN)</p>
                                 <p class="text-4xl font-black text-emerald-700 font-outfit">${birthQuarters[1]}</p>
-                                <div class="mt-2 text-[8px] font-bold text-emerald-400 uppercase tracking-tighter">${players.length > 0 ? Math.round((birthQuarters[1] / players.length) * 100) : 0}% DEL TOTAL</div>
+                                <div class="mt-2 text-[8px] font-bold text-emerald-400 uppercase tracking-tighter">${filteredPlayersForRae.length > 0 ? Math.round((birthQuarters[1] / filteredPlayersForRae.length) * 100) : 0}% DEL FILTRO</div>
                             </div>
                             <div class="bg-amber-50/50 p-6 rounded-3xl border border-amber-100 flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-lg group/q">
                                 <p class="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-2">3er Trimestre (JUL-SEP)</p>
                                 <p class="text-4xl font-black text-amber-700 font-outfit">${birthQuarters[2]}</p>
-                                <div class="mt-2 text-[8px] font-bold text-amber-400 uppercase tracking-tighter">${players.length > 0 ? Math.round((birthQuarters[2] / players.length) * 100) : 0}% DEL TOTAL</div>
+                                <div class="mt-2 text-[8px] font-bold text-amber-400 uppercase tracking-tighter">${filteredPlayersForRae.length > 0 ? Math.round((birthQuarters[2] / filteredPlayersForRae.length) * 100) : 0}% DEL FILTRO</div>
                             </div>
                             <div class="bg-rose-50/50 p-6 rounded-3xl border border-rose-100 flex flex-col items-center justify-center transition-all hover:bg-white hover:shadow-lg group/q">
                                 <p class="text-[9px] font-black text-rose-600 uppercase tracking-widest mb-2">4º Trimestre (OCT-DIC)</p>
                                 <p class="text-4xl font-black text-rose-700 font-outfit">${birthQuarters[3]}</p>
-                                <div class="mt-2 text-[8px] font-bold text-rose-400 uppercase tracking-tighter">${players.length > 0 ? Math.round((birthQuarters[3] / players.length) * 100) : 0}% DEL TOTAL</div>
+                                <div class="mt-2 text-[8px] font-bold text-rose-400 uppercase tracking-tighter">${filteredPlayersForRae.length > 0 ? Math.round((birthQuarters[3] / filteredPlayersForRae.length) * 100) : 0}% DEL FILTRO</div>
                             </div>
                         </div>
                     </div>
