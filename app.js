@@ -9492,7 +9492,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                             <td class="px-6 py-4 text-[10px] font-black text-blue-600 uppercase tracking-widest">${window.parsePosition(p.posicion).join(', ') || '--'}</td>
                                             <td class="px-6 py-4 text-center">
                                                 <input type="text" value="${p.fechanacimiento || p.anionacimiento || ''}" 
-                                                    onchange="window.updatePlayerBirthDate('${p.id}', this.value)"
+                                                    onchange="window.updatePlayerBirthDate('${p.id}', this.value, this)"
                                                     class="w-24 bg-transparent border-none text-center text-[10px] font-black text-slate-500 uppercase focus:ring-1 ring-blue-200 rounded-lg hover:bg-slate-50 transition-all">
                                             </td>
                                             <td class="px-6 py-4 text-center">
@@ -9649,20 +9649,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.renderJugadores(document.getElementById('content-container'));
     };
 
-    window.updatePlayerBirthDate = async (id, val) => {
+    window.updatePlayerBirthDate = async (id, val, inputElement) => {
+        if (inputElement) inputElement.style.backgroundColor = '#fef3c7'; // Amber 100 (saving)
         try {
             const player = await db.get('jugadores', id);
             if (!player) return;
             
-            // Si es solo un año (4 dígitos)
-            if (/^\d{4}$/.test(val)) {
+            // Limpiar el valor
+            val = val.trim();
+            if (!val) {
+                player.anionacimiento = null;
+                player.fechanacimiento = null;
+            } else if (/^\d{4}$/.test(val)) {
+                // Si es solo un año (4 dígitos)
                 player.anionacimiento = parseInt(val);
                 player.fechanacimiento = null;
             } else {
-                // Intentar detectar formato DD/MM/YYYY y convertir a YYYY-MM-DD para consistencia con inputs tipo date
+                // Intentar detectar formato DD/MM/YYYY y convertir a YYYY-MM-DD para consistencia
                 let finalVal = val;
-                if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val)) {
-                    const parts = val.split('/');
+                if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(val)) {
+                    const parts = val.split(/[\/\-]/);
                     finalVal = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                 }
                 
@@ -9672,22 +9678,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             await db.update('jugadores', player);
-            
-            // Invalidamos caché
             delete db.cache['jugadores'];
 
+            if (inputElement) {
+                inputElement.style.backgroundColor = '#ecfdf5'; // Emerald 50 (success)
+                setTimeout(() => { inputElement.style.backgroundColor = ''; }, 1000);
+            }
+
             // Si la ficha (perfil) está abierta, la refrescamos
-            const profileHeader = document.querySelector('h3.text-3xl.font-black');
-            if (profileHeader && (profileHeader.innerText.includes(player.nombre?.toUpperCase() || '') || document.getElementById('modal-overlay').classList.contains('active'))) {
-                // Refrescamos si el ID coincide o el nombre coincide
-                // Para estar seguros, solo si el ID es el mismo
-                if (window.currentViewedPlayerId === id) {
-                    window.viewPlayerProfile(id);
-                }
+            // Usamos == para permitir comparación string/number
+            if (window.currentViewedPlayerId == id) {
+                window.viewPlayerProfile(id);
             }
         } catch (err) {
             console.error(err);
-            window.customAlert('Error', 'No se pudo actualizar la fecha', 'error');
+            if (inputElement) inputElement.style.backgroundColor = '#fef2f2'; // Red 50 (error)
+            window.customAlert('Error', 'No se pudo guardar: ' + err.message, 'error');
         }
     };
 
