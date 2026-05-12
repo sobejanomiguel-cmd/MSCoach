@@ -9547,6 +9547,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                             <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 pointer-events-none"></i>
                         </div>
                         <div class="relative flex-1 lg:min-w-[140px]">
+                            <select onchange="window.switchJugadoresClub(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentClub === 'all' ? 'selected' : ''}>CLUBS: TODOS</option>
+                                ${uniqueClubs.map(c => `<option value="${c}" ${currentClub === c ? 'selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                        </div>
+                        <div class="relative flex-1 lg:min-w-[140px]">
                             <select onchange="window.switchJugadoresAno(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
                                 <option value="all" ${currentAno === 'all' ? 'selected' : ''}>AÑOS: TODOS</option>
                                 ${uniqueYears.map(y => `<option value="${y}" ${currentAno.toString() === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
