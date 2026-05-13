@@ -189,7 +189,7 @@ class CoachDB {
                 const playerFields = [
                     'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                     'lateralidad', 'nivel', 'sexo', 'notas', 
-                    'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia'
+                    'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia', 'baja'
                 ];
                 
                 const asistenciaFields = [
@@ -256,7 +256,7 @@ class CoachDB {
             const playerFields = [
                 'nombre', 'equipoid', 'posicion', 'anionacimiento', 
                 'lateralidad', 'nivel', 'sexo', 'notas', 
-                'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia'
+                'equipoConvenido', 'foto', 'foto_blob', 'fechanacimiento', 'club', 'escudo', 'categoria', 'asistencia', 'baja'
             ];
             
             const asistenciaFields = [

@@ -5596,7 +5596,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Ensure teamIds is an array of strings
         const selectedTeamIds = Array.isArray(teamIds) ? teamIds.map(String) : [String(teamIds)];
 
-        const filteredPlayers = allPlayers.filter(p => selectedTeamIds.includes(String(p.equipoid)));
+        const filteredPlayers = allPlayers.filter(p => {
+            const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
+            return selectedTeamIds.includes(String(p.equipoid)) && (window.currentSeason === 'ALL' || !isBaja);
+        });
 
         if (filteredPlayers.length === 0) {
             container.innerHTML = `
@@ -5937,9 +5940,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
 
             // If no teams selected, show all players initially in mgmt list
-            const teamPlayers = selectedTeamIds.length > 0
+            const teamPlayers = (selectedTeamIds.length > 0
                 ? players.filter(p => selectedTeamIds.includes(p.equipoid?.toString()))
-                : players;
+                : players).filter(p => {
+                    const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
+                    return window.currentSeason === 'ALL' || !isBaja || pids.includes(p.id.toString());
+                });
 
             modalContainer.className = "bg-white w-full h-full rounded-none shadow-none overflow-y-auto transform transition-all duration-300 custom-scrollbar";
             modalContainer.innerHTML = `
@@ -9548,7 +9554,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     (p.sexo || '').toLowerCase().startsWith(currentSexo.toLowerCase().substring(0, 1)));
             const matchesPosicion = currentPosicion === 'all' || window.parsePosition(p.posicion).includes(currentPosicion);
             const matchesClub = currentClub === 'all' || p.equipoConvenido === currentClub;
-            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub;
+            const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
+            const matchesBaja = window.currentSeason === 'ALL' || !isBaja;
+            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub && matchesBaja;
         }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         window.currentFilteredPlayers = filtered;
@@ -10067,7 +10075,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <div class="flex-1 pt-14">
                             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div>
-                                    <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">${player.nombre}</h3>
+                                    <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-4">
+                                        ${player.nombre}
+                                        ${(player.baja || '').split(',').map(s => s.trim()).includes(selectedSeason) ? `
+                                            <span class="px-4 py-1.5 bg-rose-500 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-rose-500/20 animate-pulse">BAJA</span>
+                                        ` : ''}
+                                    </h3>
                                     <div class="flex flex-wrap items-center gap-3 mt-2">
                                         <div class="flex gap-1">
                                             ${window.parsePosition(player.posicion).length > 0 ? window.parsePosition(player.posicion).map(pos => `
@@ -10463,6 +10476,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <div id="star-rating-edit"></div>
                             </div>
 
+                            <div class="space-y-2 md:col-span-2">
+                                <label class="flex items-center gap-4 p-4 bg-rose-50 border border-rose-100 rounded-2xl cursor-pointer hover:bg-rose-100 transition-all group">
+                                    <input type="checkbox" name="is_baja" ${ (player.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason) ? 'checked' : ''} class="w-5 h-5 rounded text-rose-600 focus:ring-rose-500 border-rose-200">
+                                    <div>
+                                        <p class="text-[10px] font-black text-rose-600 uppercase tracking-widest">Marcar como BAJA para la Temp. ${window.currentSeason}</p>
+                                        <p class="text-[8px] font-bold text-rose-400 uppercase tracking-tight">El jugador no aparecerá en convocatorias, sesiones ni torneos de esta temporada.</p>
+                                    </div>
+                                </label>
+                            </div>
+
                             <div id="extra-teams-container-edit" class="space-y-2 md:col-span-2 ${player.sexo === 'Femenino' ? '' : 'hidden'}">
                                 <label class="block text-[10px] font-black text-blue-600 uppercase tracking-widest px-1">Otros Equipos (Multiequipo)</label>
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 bg-blue-50/30 border border-blue-100 rounded-2xl">
@@ -10536,6 +10559,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             data.equipoConvenido = formData.get('equipoConvenido') || null;
+
+            // Gestión de bajas por temporada
+            const isBajaChecked = formData.get('is_baja') === 'on';
+            let currentBajas = (player.baja || '').split(',').map(s => s.trim()).filter(Boolean);
+            if (isBajaChecked) {
+                if (!currentBajas.includes(window.currentSeason)) currentBajas.push(window.currentSeason);
+            } else {
+                currentBajas = currentBajas.filter(s => s !== window.currentSeason);
+            }
+            data.baja = currentBajas.join(', ');
 
             try {
                 if (photoInput.files[0]) {
@@ -13737,7 +13770,10 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     if (!t) return;
                     
                     const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : (t.players ? Object.keys(t.players).map(String) : []);
-                    let pInT = players.filter(p => tPids.includes(String(p.id)));
+                    let pInT = players.filter(p => {
+                        const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
+                        return tPids.includes(String(p.id)) && (window.currentSeason === 'ALL' || !isBaja);
+                    });
 
                     let title = t.nombre;
                     let clubInfo = 'Todos los clubes';
@@ -13873,7 +13909,10 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                         ${items.map(t => {
                                             const isChecked = selectedIds.has(t.id) || selectedIds.has(String(t.id));
                                             const tPids = Array.isArray(t.playerids) ? t.playerids.map(String) : (t.players ? Object.keys(t.players).map(String) : []);
-                                            const pInT = players.filter(p => tPids.includes(String(p.id)));
+                                            const pInT = players.filter(p => {
+                                                const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
+                                                return tPids.includes(String(p.id)) && (window.currentSeason === 'ALL' || !isBaja);
+                                            });
                                             
                                              let clubTag = '';
                                             if (filters.selectedClubId) {
