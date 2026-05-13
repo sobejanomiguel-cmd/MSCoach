@@ -7069,12 +7069,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         // --- TABLA DE JUGADORES ---
         const isTorneo = (conv.tipo || '').toUpperCase() === 'TORNEO';
         const tableBody = convocados.sort((a,b) => a.nombre.localeCompare(b.nombre)).map((p, index) => {
+            const birth = p.fechanacimiento;
+            const birthDisplay = birth && birth.includes('-') ? birth.split('-').reverse().join('/') : (birth || p.anionacimiento || '--');
             const row = [
                 index + 1,
                 p.nombre.toUpperCase(),
                 (p.equipoConvenido || p.club || '--').toUpperCase(),
                 (p.posicion || '--').toUpperCase(),
-                p.anionacimiento || '--'
+                birthDisplay
             ];
             if (isTorneo) {
                 const rend = (conv.rendimiento && conv.rendimiento[p.id]) ? conv.rendimiento[p.id].score : '--';
@@ -7083,7 +7085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return row;
         });
 
-        const tableHead = ['#', 'JUGADOR', 'CLUB / EQUIPO', 'POSICIÓN', 'AÑO'];
+        const tableHead = ['#', 'JUGADOR', 'CLUB / EQUIPO', 'POSICIÓN', 'F.NAC'];
         if (isTorneo) tableHead.push('NOTA');
 
         doc.autoTable({
