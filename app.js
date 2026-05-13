@@ -9539,6 +9539,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentSexo = window.currentJugadoresSexo || 'all';
         const currentPosicion = window.currentJugadoresPosicion || 'all';
         const currentClub = window.currentJugadoresClub || 'all';
+        const currentMissingBirthDate = window.jugadoresMissingBirthDate || 'all';
 
         const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a, b) => a - b);
         const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -9556,7 +9557,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const matchesClub = currentClub === 'all' || p.equipoConvenido === currentClub;
             const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
             const matchesBaja = window.currentSeason === 'ALL' || !isBaja;
-            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub && matchesBaja;
+            const matchesMissingBirthDate = currentMissingBirthDate === 'all' || 
+                (currentMissingBirthDate === 'missing' && !p.fechanacimiento && !p.anionacimiento);
+
+            return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub && matchesBaja && matchesMissingBirthDate;
         }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
         window.currentFilteredPlayers = filtered;
@@ -9669,6 +9673,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <option value="Femenino" ${currentSexo === 'Femenino' ? 'selected' : ''}>FEMENINO</option>
                             </select>
                         </div>
+                        <div class="relative flex-1 lg:min-w-[140px]">
+                            <select onchange="window.switchJugadoresMissingBirthDate(this.value)" class="w-full p-3.5 bg-slate-50 border border-transparent rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:bg-white focus:border-blue-100 transition-all appearance-none cursor-pointer">
+                                <option value="all" ${currentMissingBirthDate === 'all' ? 'selected' : ''}>FECHA: TODAS</option>
+                                <option value="missing" ${currentMissingBirthDate === 'missing' ? 'selected' : ''}>SIN FECHA</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"></i>
+                        </div>
                         <button onclick="window.bulkUpdateLateralidad(event)" class="lg:ml-auto flex items-center justify-center gap-2 px-6 py-3.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all group">
                             <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i> AUTO-PIE
                         </button>
@@ -9739,6 +9750,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.switchJugadoresClub = (val) => {
         window.paginationState.jugadores = 1;
         window.currentJugadoresClub = val;
+        window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.switchJugadoresMissingBirthDate = (val) => {
+        window.paginationState.jugadores = 1;
+        window.jugadoresMissingBirthDate = val;
         window.renderJugadores(document.getElementById('content-container'));
     };
 
