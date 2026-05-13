@@ -9558,7 +9558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const isBaja = (p.baja || '').split(',').map(s => s.trim()).includes(window.currentSeason);
             const matchesBaja = window.currentSeason === 'ALL' || !isBaja;
             const matchesMissingBirthDate = currentMissingBirthDate === 'all' || 
-                (currentMissingBirthDate === 'missing' && !p.fechanacimiento && !p.anionacimiento);
+                (currentMissingBirthDate === 'missing' && !p.fechanacimiento);
 
             return matchesTeam && matchesSearch && matchesAno && matchesSexo && matchesPosicion && matchesClub && matchesBaja && matchesMissingBirthDate;
         }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
