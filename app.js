@@ -9773,47 +9773,75 @@ document.addEventListener('DOMContentLoaded', async () => {
         const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a, b) => b - a);
         const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
+        modalContainer.className = "bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden transform transition-all duration-300";
         modalContainer.innerHTML = `
-            <div class="p-8">
+            <div class="p-8 md:p-10">
                 <div class="flex justify-between items-center mb-8">
                     <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Exportar Jugadores</h3>
-                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Generar listado personalizado</p>
+                        <h3 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Exportar Jugadores</h3>
+                        <p class="text-[11px] font-black text-blue-600 uppercase tracking-widest mt-1">Generar listado personalizado con multiselección</p>
                     </div>
-                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
 
-                <div class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo (Plantilla)</label>
-                            <select id="export-team" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                <option value="all">TODOS LOS EQUIPOS</option>
-                                ${sortedTeams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
-                            </select>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- SECCIÓN EQUIPOS -->
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center px-1">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Equipos / Plantillas</label>
+                            <button onclick="window.toggleExportCheckboxes('export-teams-list', true)" class="text-[9px] font-black text-blue-600 uppercase hover:underline">Todos</button>
                         </div>
-                        <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
-                            <select id="export-club" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                <option value="all">TODOS LOS CLUBES</option>
-                                ${uniqueClubs.map(c => `<option value="${c}">${c}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="space-y-2">
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año de Nacimiento</label>
-                            <select id="export-year" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
-                                <option value="all">TODOS LOS AÑOS</option>
-                                ${uniqueYears.map(y => `<option value="${y}">${y}</option>`).join('')}
-                            </select>
+                        <div id="export-teams-list" class="h-64 overflow-y-auto p-4 bg-slate-50 border border-slate-100 rounded-[2rem] space-y-2 custom-scrollbar">
+                            ${sortedTeams.map(t => `
+                                <label class="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer group transition-all">
+                                    <input type="checkbox" name="export-team" value="${t.id}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-all">
+                                    <span class="text-[10px] font-bold text-slate-600 group-hover:text-blue-600 transition-colors uppercase">${t.nombre.split(' ||| ')[0]}</span>
+                                </label>
+                            `).join('')}
                         </div>
                     </div>
 
-                    <div class="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button onclick="window.processExportJugadores('csv')" class="flex items-center justify-center gap-3 px-8 py-5 bg-slate-900 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-black transition-all text-[11px] shadow-xl shadow-slate-900/10">
-                            <i data-lucide="file-text" class="w-5 h-5"></i> Exportar a CSV
+                    <!-- SECCIÓN CLUBES -->
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center px-1">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Clubes Convenidos</label>
+                            <button onclick="window.toggleExportCheckboxes('export-clubs-list', true)" class="text-[9px] font-black text-blue-600 uppercase hover:underline">Todos</button>
+                        </div>
+                        <div id="export-clubs-list" class="h-64 overflow-y-auto p-4 bg-slate-50 border border-slate-100 rounded-[2rem] space-y-2 custom-scrollbar">
+                            ${uniqueClubs.map(c => `
+                                <label class="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer group transition-all">
+                                    <input type="checkbox" name="export-club" value="${c}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-all">
+                                    <span class="text-[10px] font-bold text-slate-600 group-hover:text-blue-600 transition-colors uppercase">${c}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN AÑOS -->
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center px-1">
+                            <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Años Nacimiento</label>
+                            <button onclick="window.toggleExportCheckboxes('export-years-list', true)" class="text-[9px] font-black text-blue-600 uppercase hover:underline">Todos</button>
+                        </div>
+                        <div id="export-years-list" class="h-64 overflow-y-auto p-4 bg-slate-50 border border-slate-100 rounded-[2rem] space-y-2 custom-scrollbar">
+                            ${uniqueYears.map(y => `
+                                <label class="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer group transition-all">
+                                    <input type="checkbox" name="export-year" value="${y}" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-all">
+                                    <span class="text-[10px] font-bold text-slate-600 group-hover:text-blue-600 transition-colors uppercase">${y}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-10 pt-8 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase italic">* Si no seleccionas nada en una columna, se incluirán todos.</p>
+                    <div class="flex gap-4 w-full md:w-auto">
+                        <button onclick="window.processExportJugadores('csv')" class="flex-1 md:flex-none flex items-center justify-center gap-3 px-10 py-5 bg-slate-900 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-black transition-all text-[11px] shadow-xl shadow-slate-900/10">
+                            <i data-lucide="file-text" class="w-5 h-5"></i> CSV
                         </button>
-                        <button onclick="window.processExportJugadores('pdf')" class="flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-all text-[11px] shadow-xl shadow-blue-600/20">
-                            <i data-lucide="file-down" class="w-5 h-5"></i> Exportar a PDF
+                        <button onclick="window.processExportJugadores('pdf')" class="flex-1 md:flex-none flex items-center justify-center gap-3 px-10 py-5 bg-blue-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-all text-[11px] shadow-xl shadow-blue-600/20">
+                            <i data-lucide="file-down" class="w-5 h-5"></i> PDF
                         </button>
                     </div>
                 </div>
@@ -9823,18 +9851,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalOverlay.classList.add('active');
     };
 
+    window.toggleExportCheckboxes = (containerId, state) => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        
+        // Si ya están todos marcados, los desmarcamos. Si no, los marcamos todos.
+        const allChecked = Array.from(checkboxes).every(c => c.checked);
+        checkboxes.forEach(c => c.checked = !allChecked);
+        
+        // Cambiar el texto del botón si fuera necesario (opcional)
+    };
+
     window.processExportJugadores = async (format) => {
-        const teamId = document.getElementById('export-team').value;
-        const club = document.getElementById('export-club').value;
-        const year = document.getElementById('export-year').value;
+        const selectedTeams = Array.from(document.querySelectorAll('input[name="export-team"]:checked')).map(i => i.value.toString());
+        const selectedClubs = Array.from(document.querySelectorAll('input[name="export-club"]:checked')).map(i => i.value);
+        const selectedYears = Array.from(document.querySelectorAll('input[name="export-year"]:checked')).map(i => i.value.toString());
 
         const players = await db.getAll('jugadores');
         const filtered = players.filter(p => {
-            const matchesTeam = teamId === 'all' || 
-                p.equipoid?.toString() === teamId.toString() ||
-                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(teamId.toString()));
-            const matchesClub = club === 'all' || p.equipoConvenido === club;
-            const matchesYear = year === 'all' || p.anionacimiento?.toString() === year.toString();
+            const matchesTeam = selectedTeams.length === 0 || 
+                selectedTeams.includes(p.equipoid?.toString()) ||
+                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.some(id => selectedTeams.includes(id.toString())));
+            const matchesClub = selectedClubs.length === 0 || selectedClubs.includes(p.equipoConvenido);
+            const matchesYear = selectedYears.length === 0 || selectedYears.includes(p.anionacimiento?.toString());
             return matchesTeam && matchesClub && matchesYear;
         }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
 
