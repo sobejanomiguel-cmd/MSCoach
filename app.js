@@ -9630,8 +9630,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <button onclick="window.showNewPlayerModal()" class="px-6 py-4 bg-blue-600 text-white rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-3 shadow-xl shadow-blue-500/20">
                             <i data-lucide="user-plus" class="w-4 h-4"></i> Nuevo Jugador
                         </button>
-                        <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm mr-2">
+                        <button onclick="window.cleanDuplicatePlayers()" class="px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center gap-2 border border-rose-100/50 shadow-sm">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Limpiar Duplicados
+                        </button>
+                        <button onclick="window.showExportJugadoresModal()" class="px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all flex items-center gap-2 border border-blue-100/50 shadow-sm">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> Exportar
                         </button>
                     </div>
                     <div class="relative w-full md:w-96 group">
@@ -9759,6 +9762,158 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.paginationState.jugadores = 1;
         window.jugadoresMissingBirthDate = val;
         window.renderJugadores(document.getElementById('content-container'));
+    };
+
+    window.showExportJugadoresModal = async () => {
+        const [players, teams] = await Promise.all([
+            db.getAll('jugadores'),
+            db.getAll('equipos')
+        ]);
+        const sortedTeams = window.getSortedTeams(teams);
+        const uniqueYears = [...new Set(players.map(p => p.anionacimiento).filter(Boolean))].sort((a, b) => b - a);
+        const uniqueClubs = [...new Set(players.map(p => p.equipoConvenido).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+        modalContainer.innerHTML = `
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Exportar Jugadores</h3>
+                        <p class="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">Generar listado personalizado</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Equipo (Plantilla)</label>
+                            <select id="export-team" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                <option value="all">TODOS LOS EQUIPOS</option>
+                                ${sortedTeams.map(t => `<option value="${t.id}">${t.nombre.split(' ||| ')[0]}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Club Convenido</label>
+                            <select id="export-club" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                <option value="all">TODOS LOS CLUBES</option>
+                                ${uniqueClubs.map(c => `<option value="${c}">${c}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Año de Nacimiento</label>
+                            <select id="export-year" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-blue-50 transition-all appearance-none">
+                                <option value="all">TODOS LOS AÑOS</option>
+                                ${uniqueYears.map(y => `<option value="${y}">${y}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button onclick="window.processExportJugadores('csv')" class="flex items-center justify-center gap-3 px-8 py-5 bg-slate-900 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-black transition-all text-[11px] shadow-xl shadow-slate-900/10">
+                            <i data-lucide="file-text" class="w-5 h-5"></i> Exportar a CSV
+                        </button>
+                        <button onclick="window.processExportJugadores('pdf')" class="flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 text-white font-black rounded-2xl uppercase tracking-widest hover:bg-blue-700 transition-all text-[11px] shadow-xl shadow-blue-600/20">
+                            <i data-lucide="file-down" class="w-5 h-5"></i> Exportar a PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.processExportJugadores = async (format) => {
+        const teamId = document.getElementById('export-team').value;
+        const club = document.getElementById('export-club').value;
+        const year = document.getElementById('export-year').value;
+
+        const players = await db.getAll('jugadores');
+        const filtered = players.filter(p => {
+            const matchesTeam = teamId === 'all' || 
+                p.equipoid?.toString() === teamId.toString() ||
+                (p.equipo_ids && Array.isArray(p.equipo_ids) && p.equipo_ids.map(String).includes(teamId.toString()));
+            const matchesClub = club === 'all' || p.equipoConvenido === club;
+            const matchesYear = year === 'all' || p.anionacimiento?.toString() === year.toString();
+            return matchesTeam && matchesClub && matchesYear;
+        }).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+
+        if (filtered.length === 0) {
+            return window.customAlert('Aviso', 'No hay jugadores que coincidan con los filtros seleccionados.', 'info');
+        }
+
+        if (format === 'csv') {
+            const headers = ['NOMBRE', 'CLUB/EQUIPO', 'POSICIÓN', 'NACIMIENTO', 'SEXO', 'LATERALIDAD', 'NIVEL'];
+            const rows = filtered.map(p => [
+                p.nombre || '',
+                p.equipoConvenido || '',
+                window.parsePosition(p.posicion).join(', '),
+                p.fechanacimiento || p.anionacimiento || '',
+                p.sexo || '',
+                p.lateralidad || '',
+                p.nivel || ''
+            ]);
+            
+            const csvContent = [
+                headers.join(';'),
+                ...rows.map(r => r.map(c => `"${c}"`).join(';'))
+            ].join('\n');
+
+            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `directorio_jugadores_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.customAlert('¡Éxito!', 'CSV generado correctamente.', 'success');
+        } else {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('l', 'mm', 'a4'); // Paisaje para más espacio
+            
+            // Estilos
+            const blueColor = [37, 99, 235];
+            const slateColor = [30, 41, 59];
+
+            doc.setFontSize(18);
+            doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+            doc.text('DIRECTORIO DE JUGADORES', 15, 20);
+            
+            doc.setFontSize(9);
+            doc.setTextColor(blueColor[0], blueColor[1], blueColor[2]);
+            doc.text(`TOTAL JUGADORES: ${filtered.length}`, 15, 27);
+
+            const tableHead = [['#', 'JUGADOR', 'CLUB / EQUIPO', 'POSICIÓN', 'F.NAC', 'SEXO', 'PIE', 'NIVEL']];
+            const tableBody = filtered.map((p, i) => [
+                i + 1,
+                (p.nombre || '').toUpperCase(),
+                (p.equipoConvenido || '--').toUpperCase(),
+                (window.parsePosition(p.posicion).join(', ') || '--').toUpperCase(),
+                p.fechanacimiento || p.anionacimiento || '--',
+                (p.sexo || '--').toUpperCase(),
+                (p.lateralidad || '--').toUpperCase(),
+                p.nivel || '3'
+            ]);
+
+            doc.autoTable({
+                startY: 35,
+                head: tableHead,
+                body: tableBody,
+                headStyles: { fillColor: slateColor, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center' },
+                styles: { fontSize: 8, cellPadding: 3 },
+                columnStyles: {
+                    0: { halign: 'center', cellWidth: 10 },
+                    4: { halign: 'center' },
+                    5: { halign: 'center' },
+                    6: { halign: 'center' },
+                    7: { halign: 'center' }
+                }
+            });
+
+            doc.save(`directorio_jugadores_${new Date().toISOString().split('T')[0]}.pdf`);
+            window.customAlert('¡Éxito!', 'PDF generado correctamente.', 'success');
+        }
+        closeModal();
     };
 
     window.updatePlayerBirthDate = async (id, val, inputElement) => {
