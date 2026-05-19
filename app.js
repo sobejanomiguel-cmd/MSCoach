@@ -736,6 +736,11 @@ window.applyGlobalFilters = (items, dateField = 'fecha', options = {}) => {
     // Visibility
     if (window.currentVisibilityMode === 'personal' && window.currentUser && !options.skipVisibility) {
         filtered = filtered.filter(i => {
+            // Exception: Tournaments are visible to all staff coaches (except external convenido coaches)
+            if (i.tipo && (i.tipo || '').toUpperCase().trim() === 'TORNEO' && db.userRole !== 'TECNICO CLUB CONVENIDO') {
+                return true;
+            }
+
             // Case 1: Created by current user
             if (!i.createdBy || i.createdBy === window.currentUser.id) return true;
             
@@ -1603,6 +1608,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
     };
 
+    // Clear active ficha flags when closing modal
+    const originalCloseModal = window.closeModal;
+    window.closeModal = () => {
+        window.isTorneoFichaOpen = false;
+        window.isConvFichaOpen = false;
+        if (typeof originalCloseModal === 'function') originalCloseModal();
+        else {
+            // Fallback if not yet defined
+            const modalOverlay = document.getElementById('modal-overlay');
+            if (modalOverlay) modalOverlay.classList.remove('active');
+        }
+    };
+
     window.switchView = async (viewId) => {
         window.currentView = currentView = viewId;
         navLinks.forEach(l => l.classList.remove('active'));
@@ -2441,6 +2459,29 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.innerHTML = `<div class="p-10 bg-red-50 text-red-600 rounded-3xl font-bold uppercase tracking-widest text-xs border border-red-100">Error al cargar el panel de control: ${err.message}</div>`;
         }
     }
+
+    // Auto-refresh views when data changes
+    window.addEventListener('db-data-changed', (e) => {
+        const currentViewId = document.querySelector('.nav-link.active')?.dataset.view;
+        
+        // 1. Refresh Dashboard if visible
+        if (currentViewId === 'dashboard') {
+            const dashboardWrapper = document.querySelector('.view') || document.getElementById('content-container');
+            if (dashboardWrapper) renderDashboard(dashboardWrapper);
+        }
+        
+        // 2. Refresh Tournament Ficha if open and relevant
+        if (window.isTorneoFichaOpen && window.activeTorneoId) {
+            if (e.detail.storeName === 'convocatorias' || e.detail.storeName === 'asistencia') {
+                window.viewTorneoRendimiento(window.activeTorneoId);
+            }
+        }
+
+        // 3. Refresh general Convocatoria view if open
+        if (window.isConvFichaOpen && window.activeConvId && e.detail.storeName === 'convocatorias') {
+             window.viewConvocatoria(window.activeConvId);
+        }
+    });
 
     // Auto-refresh dashboard when data syncs in background
     window.addEventListener('db-sync-complete', (e) => {
@@ -5449,7 +5490,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     window.customAlert('¡Creado!', 'La convocatoria ha sido guardada y se ha generado su parte de asistencia.', 'success');
                 }
 
-                closeModal();
+                if (isEdit && window.isTorneoFichaOpen && window.activeTorneoId == conv.id) {
+                    window.viewTorneoRendimiento(conv.id);
+                } else if (isEdit && window.isConvFichaOpen && window.activeConvId == conv.id) {
+                    window.viewConvocatoria(conv.id);
+                } else {
+                    closeModal();
+                }
+
                 if (window.currentView === 'convocatorias' || window.currentView === 'torneos') {
                     window.switchView(window.currentView);
                 }
@@ -5573,7 +5621,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             await db.update('convocatorias', { ...bundledData, id });
 
             window.customAlert('Éxito', 'Convocatoria actualizada', 'success');
-            window.viewConvocatoria(id);
+            
+            if (window.isTorneoFichaOpen && window.activeTorneoId == id) {
+                window.viewTorneoRendimiento(id);
+            } else {
+                window.viewConvocatoria(id);
+            }
 
             // Refresh table
             const currentView = document.querySelector('[data-view].active')?.getAttribute('data-view');
@@ -5880,6 +5933,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.viewConvocatoria = async (id, activeTab = 'pizarra') => {
+        window.activeConvId = id;
+        window.isConvFichaOpen = true;
+        window.isTorneoFichaOpen = false;
+
         try {
             const userRes = await supabaseClient.auth.getUser();
             const currentUser = userRes.data?.user;
@@ -8307,6 +8364,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     window.viewTorneoRendimiento = async (id) => {
+        window.activeTorneoId = id;
+        window.isTorneoFichaOpen = true;
+        window.isConvFichaOpen = false;
+
         modalOverlay.classList.add('p-0');
         modalOverlay.classList.remove('md:p-8', 'p-4');
 

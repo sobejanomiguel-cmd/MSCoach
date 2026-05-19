@@ -22,6 +22,10 @@ class CoachDB {
         this.lastSync = {};
     }
 
+    dispatchChange(storeName) {
+        window.dispatchEvent(new CustomEvent('db-data-changed', { detail: { storeName } }));
+    }
+
     async init() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -217,6 +221,7 @@ class CoachDB {
                 if (remote && remote.length > 0) {
                     const saved = remote[0];
                     await this.saveLocal(storeName, saved);
+                    this.dispatchChange(storeName);
                     return saved;
                 } else {
                     console.warn(`Supabase insert succeeded but returned no data for ${storeName}. RLS might be blocking the select.`);
@@ -230,7 +235,9 @@ class CoachDB {
                 }
             }
         }
-        return this.saveLocal(storeName, data);
+        const result = await this.saveLocal(storeName, data);
+        this.dispatchChange(storeName);
+        return result;
     }
 
     async saveLocal(storeName, data) {
@@ -290,7 +297,9 @@ class CoachDB {
         if (!existing) throw new Error(`Record with id ${id} not found in ${storeName}`);
         
         const merged = { ...existing, ...data, id: id }; // Ensure ID remains a number
-        return this.saveLocal(storeName, merged);
+        const result = await this.saveLocal(storeName, merged);
+        this.dispatchChange(storeName);
+        return result;
     }
 
     async delete(storeName, id) {
@@ -324,6 +333,7 @@ class CoachDB {
                 console.error("Local delete failed:", e);
                 resolve();
             };
+            this.dispatchChange(storeName);
         });
     }
 
@@ -375,7 +385,10 @@ class CoachDB {
         return new Promise((resolve) => {
             const tx = this.db.transaction(storeName, 'readwrite');
             tx.objectStore(storeName).clear();
-            tx.oncomplete = () => resolve();
+            tx.oncomplete = () => {
+                this.dispatchChange(storeName);
+                resolve();
+            };
         });
     }
 }
