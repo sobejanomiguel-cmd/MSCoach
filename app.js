@@ -4381,10 +4381,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             const isCompleted = s.completada || s.fecha < todayStr;
             let matchesComunidad = false;
-            if (sessionFilters.comunidad === 'COMPLETADAS') {
+            if (sessionFilters.comunidad === 'TODOS') {
+                matchesComunidad = true;
+            } else if (sessionFilters.comunidad === 'NAVARRA') {
+                matchesComunidad = (sessionComunidad === 'NAVARRA');
+            } else if (sessionFilters.comunidad === 'LA RIOJA') {
+                matchesComunidad = (sessionComunidad === 'LA RIOJA');
+            } else if (sessionFilters.comunidad === 'COMPLETADAS') {
                 matchesComunidad = isCompleted;
-            } else {
-                matchesComunidad = !isCompleted && (sessionFilters.comunidad === 'TODOS' || sessionComunidad === sessionFilters.comunidad);
+            } else if (sessionFilters.comunidad === 'PENDIENTES') {
+                matchesComunidad = !isCompleted;
             }
 
             const searchTerm = (sessionFilters.search || '').toLowerCase();
@@ -4394,15 +4400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 teamName.includes(searchTerm) ||
                 (s.lugar || '').toLowerCase().includes(searchTerm);
 
-            return matchesTeam && matchesCoach && matchesLugar && matchesSearch && matchesComunidad;
-        }).sort((a, b) => {
-            const diffA = Math.abs(new Date(a.fecha) - new Date(todayStr));
-            const diffB = Math.abs(new Date(b.fecha) - new Date(todayStr));
-            if (diffA !== diffB) {
-                return diffA - diffB;
-            }
-            return (a.hora || '').localeCompare(b.hora || '');
-        });
+        }).sort((a, b) => new Date(a.fecha) - new Date(b.fecha) || (a.hora || '').localeCompare(b.hora || ''));
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
@@ -4425,6 +4423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <button onclick="window.filterSessions('comunidad', 'NAVARRA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Navarra</button>
                                 <button onclick="window.filterSessions('comunidad', 'LA RIOJA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">La Rioja</button>
                                 <button onclick="window.filterSessions('comunidad', 'COMPLETADAS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'COMPLETADAS' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Completadas</button>
+                                <button onclick="window.filterSessions('comunidad', 'PENDIENTES')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'PENDIENTES' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Pendientes</button>
                             </div>
 
                             <!-- Coach Tabs -->
