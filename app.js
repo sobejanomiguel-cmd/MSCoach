@@ -965,7 +965,7 @@ window.getComunidadByLugar = (lugarStr, nombreStr = '') => {
     const cleanLugar = window.cleanLugar(lugarStr);
     const combined = normalize(cleanLugar + ' ' + nombreStr);
 
-    const navarraKeywords = ['TUDELA', 'PAMPLONA', 'LODOSA', 'CORELLA', 'MILAGRO', 'NAVARRA', 'OLITE', 'TAFALLA', 'ESTELLA', 'VALTIERRA', 'MURCHANTE', 'CASCANTE', 'CINTRUENIGO', 'FITERO', 'MARCILLA', 'PERALTA', 'CAPARROSO', 'VILLAFRANCA', 'AZAGRA', 'SAN ADRIAN', 'CADREITA', 'RIBAFORADA', 'FUSTINANA', 'CABANILLAS', 'CORTES', 'BUNUEL', 'ABLITAS', 'MONTEAGUDO', 'BARILLAS', 'TULEBRAS', 'MURCHANTE', 'LESCUN', 'IRUNA', 'BAZTAN', 'ALSASUA', 'VIANA', 'ELIZONDO', 'BERA', 'BERA DE BIDASOA', 'DONEZTEBE', 'SANTESTEBAN', 'LEITZA', 'PUENTE LA REINA', 'SANGUESA', 'ORKOIEN'];
+    const navarraKeywords = ['TUDELA', 'PAMPLONA', 'LODOSA', 'CORELLA', 'MILAGRO', 'NAVARRA', 'OLITE', 'TAFALLA', 'ESTELLA', 'VALTIERRA', 'MURCHANTE', 'CASCANTE', 'CINTRUENIGO', 'FITERO', 'MARCILLA', 'PERALTA', 'CAPARROSO', 'VILLAFRANCA', 'AZAGRA', 'SAN ADRIAN', 'CADREITA', 'RIBAFORADA', 'FUSTINANA', 'CABANILLAS', 'CORTES', 'BUNUEL', 'ABLITAS', 'MONTEAGUDO', 'BARILLAS', 'TULEBRAS', 'MURCHANTE', 'LESCUN', 'IRUNA', 'BAZTAN', 'ALSASUA', 'VIANA', 'ELIZONDO', 'BERA', 'BERA DE BIDASOA', 'DONEZTEBE', 'SANTESTEBAN', 'LEITZA', 'PUENTE LA REINA', 'SANGUESA', 'ORKOIEN', 'LESAKA'];
     const riojaKeywords = ['ARNEDO', 'CALAHORRA', 'LOGRONO', 'ALFARO', 'RIOJA', 'NAJERA', 'HARO', 'SANTO DOMINGO', 'QUEL', 'AUTOL', 'ALDEANUEVA', 'RINCON DE SOTO', 'PRADEJON', 'CERVERA', 'AGUILAR', 'IREGUA', 'ALBERITE', 'LARDERO', 'VILLAMEDIANA', 'FUENMAYOR', 'NAVARRETE', 'ENTRENA'];
 
     if (navarraKeywords.some(kw => combined.includes(kw))) return 'NAVARRA';
@@ -4334,6 +4334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.filterSessions = (type, value) => {
         sessionFilters[type] = value;
+        window.paginationState.sesiones = 1; // Reset pagination when changing filters
         const container = document.getElementById('content-container');
         if (type === 'search') {
             // Si es búsqueda, actualizamos solo la tabla para no perder el foco
@@ -4361,6 +4362,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const uniqueLugares = [...new Set(mySessions.map(s => window.cleanLugar(s.lugar)).filter(Boolean))].sort();
 
+        const todayStr = new Date().toISOString().split('T')[0];
+
         const filteredSessions = mySessions.filter(s => {
             let sessionTeamIds = [String(s.equipoid)];
             const { extra: ex } = window.parseLugarMetadata(s.lugar);
@@ -4375,7 +4378,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const matchesLugar = sessionFilters.lugar === 'TODOS' || sessionLugar.toUpperCase() === sessionFilters.lugar.toUpperCase();
 
             const sessionComunidad = window.getComunidadByLugar(s.lugar, s.titulo);
-            const matchesComunidad = sessionFilters.comunidad === 'TODOS' || sessionComunidad === sessionFilters.comunidad;
+            
+            const isCompleted = s.completada || s.fecha < todayStr;
+            let matchesComunidad = false;
+            if (sessionFilters.comunidad === 'COMPLETADAS') {
+                matchesComunidad = isCompleted;
+            } else {
+                matchesComunidad = !isCompleted && (sessionFilters.comunidad === 'TODOS' || sessionComunidad === sessionFilters.comunidad);
+            }
 
             const searchTerm = (sessionFilters.search || '').toLowerCase();
             const teamName = (teamsMap[s.equipoid] || '').toLowerCase();
@@ -4385,7 +4395,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 (s.lugar || '').toLowerCase().includes(searchTerm);
 
             return matchesTeam && matchesCoach && matchesLugar && matchesSearch && matchesComunidad;
-        }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || (b.hora || '').localeCompare(a.hora || ''));
+        }).sort((a, b) => {
+            const diffA = Math.abs(new Date(a.fecha) - new Date(todayStr));
+            const diffB = Math.abs(new Date(b.fecha) - new Date(todayStr));
+            if (diffA !== diffB) {
+                return diffA - diffB;
+            }
+            return (a.hora || '').localeCompare(b.hora || '');
+        });
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
 
@@ -4407,6 +4424,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <button onclick="window.filterSessions('comunidad', 'TODOS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'TODOS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Todas</button>
                                 <button onclick="window.filterSessions('comunidad', 'NAVARRA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'NAVARRA' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Navarra</button>
                                 <button onclick="window.filterSessions('comunidad', 'LA RIOJA')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'LA RIOJA' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">La Rioja</button>
+                                <button onclick="window.filterSessions('comunidad', 'COMPLETADAS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${sessionFilters.comunidad === 'COMPLETADAS' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}">Completadas</button>
                             </div>
 
                             <!-- Coach Tabs -->
@@ -4479,11 +4497,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 const day = d.getDate();
                                 const month = d.toLocaleString('es', { month: 'short' }).toUpperCase();
                                 const coach = profiles ? profiles.find(p => p.id === s.createdBy) : null;
+                                const isCompleted = s.completada || s.fecha < todayStr;
                                 return `
                                     <tr onclick="window.viewSessionFicha('${s.id}')" class="border-b border-slate-50 last:border-0 hover:bg-slate-50/80 transition-all cursor-pointer group">
                                         <td class="px-8 py-5">
                                             <div class="flex items-center gap-2">
-                                                <p class="text-sm font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${s.completada ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
+                                                <p class="text-sm font-black text-slate-800 line-clamp-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight ${isCompleted ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión programada'}</p>
                                                 <span class="text-[7px] font-black px-1.5 py-0.5 rounded ${window.getComunidadByLugar(s.lugar, s.titulo) === 'NAVARRA' ? 'bg-red-100 text-red-600' : (window.getComunidadByLugar(s.lugar, s.titulo) === 'LA RIOJA' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400')} uppercase whitespace-nowrap">${window.getComunidadByLugar(s.lugar, s.titulo)}</span>
                                             </div>
                                         </td>
@@ -4495,7 +4514,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                                                 </div>
                                                 <div>
                                                     <p class="text-[11px] font-black text-slate-800 uppercase tracking-tight">${s.hora || '--:--'}</p>
-                                                    <p class="text-[9px] font-bold text-slate-400 italic">Planificada ${s.completada ? '✅' : ''}</p>
+                                                    <p class="text-[9px] font-bold text-slate-400 italic">Planificada ${isCompleted ? '✅' : ''}</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -4549,7 +4568,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 <!-- Mobile View -->
                 <div class="md:hidden space-y-4 mb-6">
-                    ${paginatedSessions.map(s => `
+                    ${paginatedSessions.map(s => {
+                        const isCompleted = s.completada || s.fecha < todayStr;
+                        return `
                         <div onclick="window.viewSessionFicha(${s.id})" class="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
                             <div class="flex justify-between items-start mb-4">
                                 <div class="flex items-center gap-3">
@@ -4572,10 +4593,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                     </div>
                                 </div>
                             </div>
-                            <h4 class="text-xs font-black text-slate-800 uppercase mb-2">${s.titulo || 'Sesión'}</h4>
+                            <h4 class="text-xs font-black text-slate-800 uppercase mb-2 ${isCompleted ? 'line-through opacity-50' : ''}">${s.titulo || 'Sesión'}</h4>
                             <p class="text-[9px] font-bold text-slate-400 uppercase mb-4">${window.cleanLugar(s.lugar) || 'Campo No Asignado'}</p>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
 
                 ${window.renderPagination(totalItems, pageSize, currentPage, 'window.setPageSesiones')}
