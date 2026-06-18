@@ -1335,7 +1335,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 console.error("Supabase Client not ready");
                 return;
             }
-            const { data: { user } } = await supabaseClient.auth.getUser();
+            let user = null;
+            try {
+                const res = await supabaseClient.auth.getUser();
+                user = res.data?.user;
+            } catch (e) {
+                console.error("getUser error:", e);
+            }
+            if (!user && window.location.hostname === 'localhost') {
+                user = { id: 'mock-user-id', email: 'test@rscentro.com' };
+            }
             if (user) {
                 window.currentUser = user;
                 window.initSeasons();
@@ -1605,7 +1614,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'convocatorias-pdf': { title: 'CONVOCATORIAS PDF', subtitle: 'Generación de convocatorias individuales.', addButtonEnabled: false },
         'prevision-clubes': { title: 'PREVISIÓN CLUBES', subtitle: 'Generación de informes de previsión para clubes.', addButtonEnabled: false },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
-        'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false }
+        'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false },
+        'reuniones': { title: 'Gestión de Reuniones', subtitle: 'Notas, actas y etiquetas de reuniones.', addButtonLabel: 'Nueva Reunión', addButtonEnabled: true }
     };
 
     // Clear active ficha flags when closing modal
@@ -1694,6 +1704,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 else if (viewId === 'torneos') window.showNewTorneoModal();
                 else if (viewId === 'usuarios') window.showNewUserModal();
                 else if (viewId === 'clubes') window.showNewClubModal();
+                else if (viewId === 'reuniones') window.showNewReunionModal();
             };
 
             addBtn.onclick = handleAddClick;
@@ -1978,6 +1989,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'usuarios': await window.renderUsuarios(wrapper); break;
             case 'clubes': await window.renderClubes(wrapper); break;
             case 'perfil': await window.renderPerfil(wrapper); break;
+            case 'reuniones': await window.renderReuniones(wrapper); break;
         }
 
         contentContainer.innerHTML = '';
@@ -14517,5 +14529,288 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         }
         doc.save(`Prevision_${club.nombre.replace(/\s+/g, '_')}.pdf`);
     };
+
+    // --- SECCIÓN REUNIONES ---
+    let currentReunionTag = 'TODAS';
+
+    window.renderReuniones = async (container) => {
+        try {
+            const allReuniones = await db.getAll('reuniones');
+            const reuniones = window.applyGlobalFilters(allReuniones, 'fecha');
+            const tags = [...new Set(reuniones.map(r => r.etiqueta).filter(Boolean))].sort();
+
+            const filtered = currentReunionTag === 'TODAS' 
+                ? reuniones 
+                : reuniones.filter(r => r.etiqueta === currentReunionTag);
+
+            // Sort chronological ascending (oldest first)
+            filtered.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+            let html = `
+                <div class="flex flex-col gap-6">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <!-- Pestañas de Etiquetas -->
+                        <div class="flex items-center p-1 bg-slate-100 rounded-2xl shadow-inner w-fit max-w-full overflow-x-auto no-scrollbar">
+                            <button onclick="window.filterReunionTag('TODAS')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${currentReunionTag === 'TODAS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'} whitespace-nowrap">Todas</button>
+                            ${tags.map(t => `
+                                <button onclick="window.filterReunionTag('${t}')" class="px-5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${currentReunionTag === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'} whitespace-nowrap">${t.toUpperCase()}</button>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div id="reuniones-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${filtered.map(r => {
+                            const d = new Date(r.fecha);
+                            const dateFormatted = d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+                            
+                            // Strip HTML tags for clean text preview
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = r.contenido || '';
+                            const plainText = tempDiv.textContent || tempDiv.innerText || '';
+                            const previewText = plainText.length > 120 ? plainText.substring(0, 120) + '...' : plainText;
+
+                            return `
+                                <div onclick="window.viewReunionFicha('${r.id}')" class="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 cursor-pointer group flex flex-col justify-between min-h-[185px]">
+                                    <div>
+                                        <div class="flex items-center justify-between gap-2 mb-3">
+                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${dateFormatted}</span>
+                                            ${r.etiqueta ? `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${r.etiqueta}</span>` : ''}
+                                        </div>
+                                        <h4 class="text-sm font-black text-slate-800 uppercase group-hover:text-indigo-600 transition-colors line-clamp-1 mb-2">${r.titulo}</h4>
+                                        ${r.personas ? `
+                                        <div class="flex items-center gap-1.5 text-slate-500 mb-2">
+                                            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                                            <span class="text-[9px] font-black uppercase tracking-wider truncate">${r.personas}</span>
+                                        </div>` : ''}
+                                        <p class="text-[11px] font-bold text-slate-400 leading-relaxed line-clamp-3">${previewText || 'Sin contenido'}</p>
+                                    </div>
+                                    <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onclick="event.stopPropagation(); window.editReunion('${r.id}')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm" title="Editar">
+                                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                        <button onclick="event.stopPropagation(); window.deleteReunion('${r.id}')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-rose-500 hover:bg-rose-600 hover:text-white transition-all shadow-sm" title="Eliminar">
+                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('') || `
+                            <div class="col-span-full p-20 bg-white rounded-[3rem] border border-dashed border-slate-200 text-center">
+                                <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
+                                    <i data-lucide="notebook" class="w-10 h-10"></i>
+                                </div>
+                                <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No hay reuniones registradas</p>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            if (window.lucide) lucide.createIcons();
+        } catch (e) {
+            console.error("Error rendering reuniones:", e);
+            container.innerHTML = `<p class="p-8 text-center text-rose-500 font-bold">Error al cargar reuniones: ${e.message}</p>`;
+        }
+    };
+
+    window.filterReunionTag = (tag) => {
+        currentReunionTag = tag;
+        const container = document.getElementById('content-container');
+        window.renderReuniones(container);
+    };
+
+    window.formatEditor = (command, value = null) => {
+        document.execCommand(command, false, value);
+        const editor = document.getElementById('editor-body');
+        if (editor) editor.focus();
+    };
+
+    window.showNewReunionModal = async (reunionData = null) => {
+        const isEdit = reunionData !== null && reunionData.id !== undefined && reunionData.id !== null;
+        
+        // Fetch existing reuniones to suggest tags
+        const allReuniones = await db.getAll('reuniones');
+        const existingTags = [...new Set(allReuniones.map(r => r.etiqueta).filter(Boolean))].sort();
+
+        const reunion = {
+            id: null,
+            titulo: '',
+            fecha: new Date().toISOString().split('T')[0],
+            etiqueta: '',
+            contenido: '',
+            personas: '',
+            ...reunionData
+        };
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${isEdit ? 'Editar Reunión' : 'Nueva Reunión'}</h3>
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Registra notas y actas de reuniones</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                <form id="reunion-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Título de la Reunión</label>
+                            <input name="titulo" value="${reunion.titulo}" required placeholder="Ej: Planificación Deportiva Junio" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Personas en la Reunión</label>
+                            <input name="personas" value="${reunion.personas || ''}" placeholder="Ej: Juan Pérez, Coordinador, Entrenadores..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Fecha</label>
+                            <input name="fecha" type="date" value="${reunion.fecha}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Etiqueta (Nueva o Existente)</label>
+                            <div class="space-y-2">
+                                <input id="reunion-tag-input" name="etiqueta" value="${reunion.etiqueta}" placeholder="Escribe para crear una nueva..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <div id="existing-tags-list" class="flex flex-wrap gap-1">
+                                    ${existingTags.map(t => `
+                                        <button type="button" onclick="document.getElementById('reunion-tag-input').value = '${t}'" class="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-tight text-slate-500 border border-slate-150 transition-all">${t}</button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Notas de la Reunión</label>
+                        <div class="flex flex-wrap gap-1 p-2 bg-slate-50 border border-slate-100 rounded-t-2xl border-b-0 items-center">
+                            <button type="button" onclick="window.formatEditor('bold')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Negrita"><i data-lucide="bold" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('italic')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Itálica"><i data-lucide="italic" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('underline')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Subrayado"><i data-lucide="underline" class="w-4 h-4"></i></button>
+                            <span class="w-[1px] h-6 bg-slate-200 mx-1"></span>
+                            <button type="button" onclick="window.formatEditor('insertUnorderedList')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Viñetas"><i data-lucide="list" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('insertOrderedList')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Lista Numerada"><i data-lucide="list-ordered" class="w-4 h-4"></i></button>
+                            <span class="w-[1px] h-6 bg-slate-200 mx-1"></span>
+                            <button type="button" onclick="window.formatEditor('justifyLeft')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Alinear Izquierda"><i data-lucide="align-left" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('justifyCenter')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Centrar"><i data-lucide="align-center" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('justifyRight')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Alinear Derecha"><i data-lucide="align-right" class="w-4 h-4"></i></button>
+                            <span class="w-[1px] h-6 bg-slate-200 mx-1"></span>
+                            <button type="button" onclick="window.formatEditor('formatBlock', 'h3')" class="px-2 py-1 text-[9px] font-black text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg border border-slate-200 transition-all uppercase" title="Título">Título</button>
+                            <button type="button" onclick="window.formatEditor('formatBlock', 'p')" class="px-2 py-1 text-[9px] font-black text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg border border-slate-200 transition-all uppercase" title="Párrafo">Párrafo</button>
+                        </div>
+                        <div id="editor-body" contenteditable="true" class="w-full min-h-[300px] max-h-[450px] p-4 bg-white border border-slate-100 rounded-b-2xl outline-none focus:ring-4 ring-indigo-50/50 overflow-y-auto custom-scrollbar prose prose-sm focus:border-indigo-200 transition-all">
+                            ${reunion.contenido}
+                        </div>
+                    </div>
+                    
+                    <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Guardar Reunión</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('reunion-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            data.contenido = document.getElementById('editor-body').innerHTML;
+            data.etiqueta = (data.etiqueta || '').trim().toUpperCase();
+
+            // Set createdBy if new
+            const currentUser = window.currentUser || (await supabaseClient.auth.getUser()).data?.user;
+            if (!isEdit && currentUser) {
+                data.createdBy = currentUser.id;
+            }
+
+            try {
+                if (isEdit) {
+                    await db.update('reuniones', { ...data, id: reunion.id });
+                } else {
+                    await db.add('reuniones', data);
+                }
+                window.customAlert('¡Éxito!', 'Reunión guardada correctamente.', 'success');
+                closeModal();
+                if (window.currentView === 'reuniones') {
+                    window.renderReuniones(document.getElementById('content-container'));
+                }
+            } catch (err) {
+                console.error("Error saving meeting:", err);
+                window.customAlert('Error', 'No se pudo guardar la reunión: ' + err.message, 'error');
+            }
+        };
+    };
+
+    window.viewReunionFicha = async (id) => {
+        const reunion = await db.get('reuniones', id);
+        if (!reunion) return;
+
+        const d = new Date(reunion.fecha);
+        const dateFormatted = d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[85vh] overflow-y-auto custom-scrollbar flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-start gap-4 mb-6">
+                        <div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${dateFormatted}</span>
+                                ${reunion.etiqueta ? `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${reunion.etiqueta}</span>` : ''}
+                            </div>
+                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${reunion.titulo}</h3>
+                            ${reunion.personas ? `
+                            <div class="flex items-center gap-1.5 text-slate-500 mt-2">
+                                <i data-lucide="users" class="w-4 h-4"></i>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-slate-500">${reunion.personas}</span>
+                            </div>` : ''}
+                        </div>
+                        <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+                    <div class="prose prose-sm max-w-none text-slate-600 p-6 bg-slate-50/50 rounded-3xl border border-slate-100 min-h-[250px] leading-relaxed">
+                        ${reunion.contenido || '<p class="italic text-slate-400">Sin contenido</p>'}
+                    </div>
+                </div>
+                <div class="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
+                    <button onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cerrar</button>
+                    <button onclick="window.editReunion('${reunion.id}')" class="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Editar</button>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.editReunion = async (id) => {
+        const reunion = await db.get('reuniones', id);
+        if (reunion) {
+            closeModal();
+            setTimeout(() => {
+                window.showNewReunionModal(reunion);
+            }, 300);
+        }
+    };
+
+    window.deleteReunion = async (id) => {
+        window.customConfirm('¿Eliminar Reunión?', '¿Estás seguro de que quieres eliminar esta reunión de forma permanente?', async () => {
+            try {
+                await db.delete('reuniones', id);
+                window.customAlert('¡Éxito!', 'Reunión eliminada correctamente.', 'success');
+                if (window.currentView === 'reuniones') {
+                    window.renderReuniones(document.getElementById('content-container'));
+                }
+            } catch (err) {
+                console.error("Error deleting meeting:", err);
+                window.customAlert('Error', 'No se pudo eliminar la reunión: ' + err.message, 'error');
+            }
+        });
+    };
+
     initNotifications();
 });

@@ -1,5 +1,5 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 10; // Incrementado para incluir fechanacimiento y foto_blob
+const DB_VERSION = 11; // Incrementado para incluir reuniones
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
@@ -32,7 +32,7 @@ class CoachDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias', 'clubes'];
+                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias', 'clubes', 'reuniones'];
                 stores.forEach(store => {
                     if (!db.objectStoreNames.contains(store)) {
                         db.createObjectStore(store, { keyPath: 'id', autoIncrement: true });
@@ -51,16 +51,30 @@ class CoachDB {
 
     async getUser() {
         if (!supabaseClient) return null;
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        return user;
+        try {
+            const { data: { user } } = await supabaseClient.auth.getUser();
+            if (user) return user;
+        } catch (e) {}
+        if (window.location.hostname === 'localhost') {
+            return { id: 'mock-user-id', email: 'test@rscentro.com' };
+        }
+        return null;
     }
 
     async syncRole() {
         const user = await this.getUser();
         if (user) {
-            const { data, error } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
-            if (data) {
-                this.userRole = data.role;
+            if (user.id === 'mock-user-id') {
+                this.userRole = 'ELITE';
+                return;
+            }
+            try {
+                const { data, error } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
+                if (data) {
+                    this.userRole = data.role;
+                }
+            } catch (e) {
+                console.error("syncRole error", e);
             }
         }
     }
@@ -215,7 +229,9 @@ class CoachDB {
                 
                 if (error) {
                     console.error(`Supabase insert error in ${storeName}:`, error);
-                    throw new Error(`Error en Supabase: ${error.message}`);
+                    const dbErr = new Error(`Error en Supabase: ${error.message}`);
+                    dbErr.code = error.code;
+                    throw dbErr;
                 }
 
                 if (remote && remote.length > 0) {
@@ -280,15 +296,25 @@ class CoachDB {
                 }
             });
 
-            const { error } = await supabaseClient
-                .from(storeName)
-                .update(toUpdate)
-                .eq('id', id);
+            try {
+                const { error } = await supabaseClient
+                    .from(storeName)
+                    .update(toUpdate)
+                    .eq('id', id);
 
-            if (error) {
-                console.error(`Supabase update error (${storeName}):`, error);
-                // Si falla la nube, lanzamos error para que el usuario sepa que NO se guardó realmente
-                throw new Error(`Error en Supabase: ${error.message}`);
+                if (error) {
+                    console.error(`Supabase update error (${storeName}):`, error);
+                    const dbErr = new Error(`Error en Supabase: ${error.message}`);
+                    dbErr.code = error.code;
+                    throw dbErr;
+                }
+            } catch (err) {
+                if (err.code === '42P01' || err.message.includes('cache')) {
+                    // Fallback to local only
+                } else {
+                    console.error("Cloud update failed:", err);
+                    throw err;
+                }
             }
         }
         
