@@ -14537,11 +14537,22 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         try {
             const allReuniones = await db.getAll('reuniones');
             const reuniones = window.applyGlobalFilters(allReuniones, 'fecha');
-            const tags = [...new Set(reuniones.map(r => r.etiqueta).filter(Boolean))].sort();
+            
+            const tagsSet = new Set();
+            reuniones.forEach(r => {
+                if (r.etiqueta) {
+                    r.etiqueta.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).forEach(t => tagsSet.add(t));
+                }
+            });
+            const tags = [...tagsSet].sort();
 
             const filtered = currentReunionTag === 'TODAS' 
                 ? reuniones 
-                : reuniones.filter(r => r.etiqueta === currentReunionTag);
+                : reuniones.filter(r => {
+                    if (!r.etiqueta) return false;
+                    const itemTags = r.etiqueta.split(',').map(t => t.trim().toUpperCase());
+                    return itemTags.includes(currentReunionTag);
+                });
 
             // Sort chronological ascending (oldest first)
             filtered.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
@@ -14574,7 +14585,11 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                                     <div>
                                         <div class="flex items-center justify-between gap-2 mb-3">
                                             <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${dateFormatted}</span>
-                                            ${r.etiqueta ? `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${r.etiqueta}</span>` : ''}
+                                            <div class="flex flex-wrap gap-1">
+                                                ${r.etiqueta ? r.etiqueta.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).map(tag => `
+                                                    <span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${tag}</span>
+                                                `).join('') : ''}
+                                            </div>
                                         </div>
                                         <h4 class="text-sm font-black text-slate-800 uppercase group-hover:text-indigo-600 transition-colors line-clamp-1 mb-2">${r.titulo}</h4>
                                         ${r.personas ? `
@@ -14619,6 +14634,32 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         window.renderReuniones(container);
     };
 
+    window.toggleReunionTagInput = (tag) => {
+        const input = document.getElementById('reunion-tag-input');
+        if (!input) return;
+        let currentVal = input.value.trim();
+        let tags = currentVal ? currentVal.split(',').map(t => t.trim().toUpperCase()).filter(Boolean) : [];
+        const tagUpper = tag.toUpperCase();
+        const index = tags.indexOf(tagUpper);
+        if (index > -1) {
+            tags.splice(index, 1);
+        } else {
+            tags.push(tagUpper);
+        }
+        input.value = tags.join(', ');
+        
+        // Highlight active tags in modal list
+        const tagButtons = document.querySelectorAll('#existing-tags-list button');
+        tagButtons.forEach(btn => {
+            const btnTag = btn.textContent.trim().toUpperCase();
+            if (tags.includes(btnTag)) {
+                btn.className = 'px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-150 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all';
+            } else {
+                btn.className = 'px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-tight text-slate-500 border border-slate-150 transition-all';
+            }
+        });
+    };
+
     window.formatEditor = (command, value = null) => {
         document.execCommand(command, false, value);
         const editor = document.getElementById('editor-body');
@@ -14630,7 +14671,13 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         
         // Fetch existing reuniones to suggest tags
         const allReuniones = await db.getAll('reuniones');
-        const existingTags = [...new Set(allReuniones.map(r => r.etiqueta).filter(Boolean))].sort();
+        const tagsSet = new Set();
+        allReuniones.forEach(r => {
+            if (r.etiqueta) {
+                r.etiqueta.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).forEach(t => tagsSet.add(t));
+            }
+        });
+        const existingTags = [...tagsSet].sort();
 
         const reunion = {
             id: null,
@@ -14670,13 +14717,17 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                             <input name="fecha" type="date" value="${reunion.fecha}" required class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Etiqueta (Nueva o Existente)</label>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Etiquetas (Separadas por comas)</label>
                             <div class="space-y-2">
-                                <input id="reunion-tag-input" name="etiqueta" value="${reunion.etiqueta}" placeholder="Escribe para crear una nueva..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input id="reunion-tag-input" name="etiqueta" value="${reunion.etiqueta}" placeholder="Ej: STAFF, DEPORTIVO..." class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                                 <div id="existing-tags-list" class="flex flex-wrap gap-1">
-                                    ${existingTags.map(t => `
-                                        <button type="button" onclick="document.getElementById('reunion-tag-input').value = '${t}'" class="px-2.5 py-1 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-tight text-slate-500 border border-slate-150 transition-all">${t}</button>
-                                    `).join('')}
+                                    ${existingTags.map(t => {
+                                        const currentTags = (reunion.etiqueta || '').split(',').map(tag => tag.trim().toUpperCase());
+                                        const isActive = currentTags.includes(t.toUpperCase());
+                                        return `
+                                            <button type="button" onclick="window.toggleReunionTagInput('${t}')" class="px-2.5 py-1 ${isActive ? 'bg-indigo-50 text-indigo-600 border border-indigo-150' : 'bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 text-slate-500 border border-slate-150'} rounded-lg text-[9px] font-black uppercase tracking-tight transition-all">${t}</button>
+                                        `;
+                                    }).join('')}
                                 </div>
                             </div>
                         </div>
@@ -14691,6 +14742,8 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                             <span class="w-[1px] h-6 bg-slate-200 mx-1"></span>
                             <button type="button" onclick="window.formatEditor('insertUnorderedList')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Viñetas"><i data-lucide="list" class="w-4 h-4"></i></button>
                             <button type="button" onclick="window.formatEditor('insertOrderedList')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Lista Numerada"><i data-lucide="list-ordered" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('outdent')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Disminuir Sangría"><i data-lucide="outdent" class="w-4 h-4"></i></button>
+                            <button type="button" onclick="window.formatEditor('indent')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Aumentar Sangría"><i data-lucide="indent" class="w-4 h-4"></i></button>
                             <span class="w-[1px] h-6 bg-slate-200 mx-1"></span>
                             <button type="button" onclick="window.formatEditor('justifyLeft')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Alinear Izquierda"><i data-lucide="align-left" class="w-4 h-4"></i></button>
                             <button type="button" onclick="window.formatEditor('justifyCenter')" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition-all" title="Centrar"><i data-lucide="align-center" class="w-4 h-4"></i></button>
@@ -14713,6 +14766,20 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         `;
         if (window.lucide) lucide.createIcons();
         modalOverlay.classList.add('active');
+
+        const editorBody = document.getElementById('editor-body');
+        if (editorBody) {
+            editorBody.addEventListener('keydown', (e) => {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        window.formatEditor('outdent');
+                    } else {
+                        window.formatEditor('indent');
+                    }
+                }
+            });
+        }
 
         document.getElementById('reunion-form').onsubmit = async (e) => {
             e.preventDefault();
@@ -14762,7 +14829,11 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <div>
                             <div class="flex items-center gap-2 mb-2">
                                 <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${dateFormatted}</span>
-                                ${reunion.etiqueta ? `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${reunion.etiqueta}</span>` : ''}
+                                <div class="flex flex-wrap gap-1">
+                                    ${reunion.etiqueta ? reunion.etiqueta.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).map(tag => `
+                                        <span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${tag}</span>
+                                    `).join('') : ''}
+                                </div>
                             </div>
                             <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${reunion.titulo}</h3>
                             ${reunion.personas ? `
