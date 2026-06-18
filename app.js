@@ -4400,6 +4400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 teamName.includes(searchTerm) ||
                 (s.lugar || '').toLowerCase().includes(searchTerm);
 
+            return matchesTeam && matchesCoach && matchesLugar && matchesSearch && matchesComunidad;
         }).sort((a, b) => new Date(a.fecha) - new Date(b.fecha) || (a.hora || '').localeCompare(b.hora || ''));
 
         const coaches = profiles ? profiles.filter(p => p.role === 'TECNICO' || p.role === 'ELITE' || p.role === 'ADMIN') : [];
