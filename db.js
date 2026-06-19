@@ -1,5 +1,5 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 11; // Incrementado para incluir reuniones
+const DB_VERSION = 12; // Incrementado para incluir docfamilias
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
@@ -32,7 +32,7 @@ class CoachDB {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias', 'clubes', 'reuniones'];
+                const stores = ['tareas', 'sesiones', 'equipos', 'jugadores', 'asistencia', 'eventos', 'convocatorias', 'clubes', 'reuniones', 'docfamilias'];
                 stores.forEach(store => {
                     if (!db.objectStoreNames.contains(store)) {
                         db.createObjectStore(store, { keyPath: 'id', autoIncrement: true });

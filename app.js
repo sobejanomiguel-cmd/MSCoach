@@ -1615,7 +1615,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         'prevision-clubes': { title: 'PREVISIÓN CLUBES', subtitle: 'Generación de informes de previsión para clubes.', addButtonEnabled: false },
         'usuarios': { title: 'Gestión de Staff', subtitle: 'Añade y gestiona los técnicos de tu plataforma.', addButtonEnabled: true, addButtonLabel: 'Nuevo Miembro' },
         'perfil': { title: 'Mi Perfil', subtitle: 'Configuración personal y seguridad.', addButtonEnabled: false },
-        'reuniones': { title: 'Gestión de Reuniones', subtitle: 'Notas, actas y etiquetas de reuniones.', addButtonLabel: 'Nueva Reunión', addButtonEnabled: true }
+        'reuniones': { title: 'Gestión de Reuniones', subtitle: 'Notas, actas y etiquetas de reuniones.', addButtonLabel: 'Nueva Reunión', addButtonEnabled: true },
+        'docfamilias': { title: 'Documentos para Familias', subtitle: 'Información y organización de viajes y torneos para las familias.', addButtonLabel: 'Nuevo Documento', addButtonEnabled: true }
     };
 
     // Clear active ficha flags when closing modal
@@ -1705,6 +1706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 else if (viewId === 'usuarios') window.showNewUserModal();
                 else if (viewId === 'clubes') window.showNewClubModal();
                 else if (viewId === 'reuniones') window.showNewReunionModal();
+                else if (viewId === 'docfamilias') window.showNewDocFamiliasModal();
             };
 
             addBtn.onclick = handleAddClick;
@@ -1990,6 +1992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'clubes': await window.renderClubes(wrapper); break;
             case 'perfil': await window.renderPerfil(wrapper); break;
             case 'reuniones': await window.renderReuniones(wrapper); break;
+            case 'docfamilias': await window.renderDocFamilias(wrapper); break;
         }
 
         contentContainer.innerHTML = '';
@@ -14868,17 +14871,490 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         }
     };
 
-    window.deleteReunion = async (id) => {
-        window.customConfirm('¿Eliminar Reunión?', '¿Estás seguro de que quieres eliminar esta reunión de forma permanente?', async () => {
+    };
+
+    // --- SECCIÓN DOC. FAMILIAS ---
+    window.getDocFamiliasPagesHTML = (doc) => {
+        const d = new Date(doc.fecha);
+        const dateFormatted = d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+        
+        // Page 1
+        const p1HTML = `
+            <div class="page bg-white relative flex flex-col justify-between p-12 border border-slate-100 shadow-sm" style="width:210mm; height:297mm; box-sizing:border-box; page-break-after:always; text-align:left;">
+                <div>
+                    <!-- Header Title Box -->
+                    <div class="bg-[#007bc4] border-4 border-black rounded-[2rem] p-6 text-center text-white mb-8">
+                        <h1 class="text-3xl font-black uppercase tracking-tight mb-2">${doc.titulo} ✈️⚽</h1>
+                        <h2 class="text-lg font-bold uppercase tracking-wide opacity-90">${doc.subtitulo}</h2>
+                        <h3 class="text-base font-black tracking-widest mt-1 text-[#e2f1ff] uppercase">${doc.categoria}</h3>
+                    </div>
+                    
+                    <!-- Introduction -->
+                    <div class="text-slate-800 text-sm leading-relaxed mb-8 whitespace-pre-wrap font-medium">${doc.introduccion}</div>
+                    
+                    <!-- Convocatoria y Vuelo -->
+                    <div class="mb-6">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">⏰ Convocatoria y Vuelo</h4>
+                        <ul class="space-y-3">
+                            <li class="list-disc ml-6 text-sm text-slate-800 font-medium">
+                                <strong>Hora de quedada en el aeropuerto:</strong> <span class="bg-yellow-100 px-1.5 py-0.5 rounded font-black text-slate-900">${doc.vuelo_hora_quedada}</span> (¡Toca madrugar!).
+                            </li>
+                            <li class="list-disc ml-6 text-sm text-slate-800 font-medium">
+                                <strong>Hora de salida del vuelo:</strong> <span class="bg-yellow-100 px-1.5 py-0.5 rounded font-black text-slate-900">${doc.vuelo_hora_salida}</span>.
+                            </li>
+                            ${doc.vuelo_detalles ? doc.vuelo_detalles.split('\n').map(line => {
+                                let clean = line.trim();
+                                if (!clean) return '';
+                                if (clean.startsWith('•') || clean.startsWith('-') || clean.startsWith('*')) {
+                                    clean = clean.substring(1).trim();
+                                }
+                                clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                return `<li class="list-disc ml-6 text-sm text-slate-800 font-medium">${clean}</li>`;
+                            }).join('') : ''}
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Alert Box -->
+                <div class="bg-[#eb7d65] border-4 border-[#867370] rounded-[2rem] p-6 text-white text-center font-bold">
+                    <span class="text-lg uppercase tracking-wider block mb-1">⚠️ Documentación</span>
+                    <p class="text-sm font-black leading-relaxed">${doc.documentacion_alerta}</p>
+                </div>
+                
+                <div class="absolute bottom-4 left-0 right-0 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Página 1 de 4</div>
+            </div>
+        `;
+
+        // Page 2
+        const p2HTML = `
+            <div class="page bg-white relative flex flex-col justify-between p-12 border border-slate-100 shadow-sm" style="width:210mm; height:297mm; box-sizing:border-box; page-break-after:always; text-align:left;">
+                <div>
+                    <!-- Entrega de ropa -->
+                    <div class="mb-8">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">👕 Entrega de Ropa Real Sociedad</h4>
+                        <ul class="space-y-3">
+                            ${doc.entrega_ropa ? doc.entrega_ropa.split('\n').map(line => {
+                                let clean = line.trim();
+                                if (!clean) return '';
+                                if (clean.startsWith('•') || clean.startsWith('-') || clean.startsWith('*')) {
+                                    clean = clean.substring(1).trim();
+                                }
+                                clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                return `<li class="list-disc ml-6 text-sm text-slate-800 font-medium">${clean}</li>`;
+                            }).join('') : ''}
+                        </ul>
+                    </div>
+                    
+                    <!-- Equipaje y maletas -->
+                    <div class="mt-8">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">🎒 Equipaje y Maletas (¡Espacio muy limitado!)</h4>
+                        <p class="text-sm text-slate-800 leading-relaxed mb-6 font-medium">Las condiciones de la compañía aérea son estrictas y no facturaremos más equipaje que los bolsones colectivos con la ropa de juego (que la llevamos nosotros).</p>
+                        
+                        <!-- Box of allowed items -->
+                        <div class="bg-[#3f92dc] border-4 border-black rounded-[2rem] p-6 text-white text-center font-bold">
+                            <span class="text-base uppercase tracking-wider block mb-4">Medidas máximas permitidas por niño:</span>
+                            <div class="mb-4"><span class="text-sm font-black bg-white/20 py-2 px-4 rounded-xl inline-block">${doc.equipaje_medidas}</span></div>
+                            <p class="text-xs uppercase tracking-widest text-[#d5ebff] mb-4 font-bold">¿Qué deben meter en esa maleta/mochila pequeña?</p>
+                            <ul class="space-y-2 text-left max-w-md mx-auto">
+                                ${doc.equipaje_lista ? doc.equipaje_lista.split('\n').map(line => {
+                                    let clean = line.trim();
+                                    if (!clean) return '';
+                                    if (clean.startsWith('•') || clean.startsWith('-') || clean.startsWith('*')) {
+                                        clean = clean.substring(1).trim();
+                                    }
+                                    clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                    return `<li class="text-sm font-bold flex items-center gap-2">✓ ${clean}</li>`;
+                                }).join('') : ''}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center text-xs font-black text-slate-500 italic mt-6">*Recomendamos economizar el espacio al máximo y ser muy organizados para que quepa todo sin problemas.</div>
+                
+                <div class="absolute bottom-4 left-0 right-0 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Página 2 de 4</div>
+            </div>
+        `;
+
+        // Page 3
+        const p3HTML = `
+            <div class="page bg-white relative flex flex-col justify-between p-12 border border-slate-100 shadow-sm" style="width:210mm; height:297mm; box-sizing:border-box; page-break-after:always; text-align:left;">
+                <div>
+                    <!-- Desconexión -->
+                    <div class="mb-8">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">📵 Desconexión y Entretenimiento (Sin pantallas)</h4>
+                        <ul class="space-y-3">
+                            ${doc.normas_pantallas ? doc.normas_pantallas.split('\n').map(line => {
+                                let clean = line.trim();
+                                if (!clean) return '';
+                                if (clean.startsWith('•') || clean.startsWith('-') || clean.startsWith('*')) {
+                                    clean = clean.substring(1).trim();
+                                }
+                                clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                return `<li class="list-disc ml-6 text-sm text-slate-800 font-medium">${clean}</li>`;
+                            }).join('') : ''}
+                        </ul>
+                    </div>
+                    
+                    <!-- Dinámica -->
+                    <div class="mb-8">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">👥 Dinámica del Viaje y Familias</h4>
+                        <p class="text-sm text-slate-800 leading-relaxed font-medium whitespace-pre-wrap">${doc.dinamica_viaje}</p>
+                    </div>
+                    
+                    <!-- Alergias y Dudas -->
+                    <div class="mt-8">
+                        <h4 class="text-lg font-black text-slate-800 border-b-2 border-slate-200 pb-2 mb-4 flex items-center gap-2">⚠️ Información Importante y Dudas</h4>
+                        <ul class="space-y-3">
+                            ${doc.alergias_dudas ? doc.alergias_dudas.split('\n').map(line => {
+                                let clean = line.trim();
+                                if (!clean) return '';
+                                if (clean.startsWith('•') || clean.startsWith('-') || clean.startsWith('*')) {
+                                    clean = clean.substring(1).trim();
+                                }
+                                clean = clean.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                return `<li class="list-disc ml-6 text-sm text-slate-800 font-medium">${clean}</li>`;
+                            }).join('') : ''}
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="absolute bottom-4 left-0 right-0 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Página 3 de 4</div>
+            </div>
+        `;
+
+        // Page 4
+        const p4HTML = `
+            <div class="page bg-white relative flex flex-col justify-between p-12 border border-slate-100 shadow-sm" style="width:210mm; height:297mm; box-sizing:border-box; page-break-after:always; text-align:left;">
+                <div>
+                    <!-- Large Closing message Box -->
+                    <div class="bg-[#3f92dc] border-4 border-black rounded-[2rem] p-12 text-white text-center font-bold my-auto min-h-[400px] flex flex-col justify-between" style="margin-top: 100px;">
+                        <div>
+                            <p class="text-base font-black leading-relaxed whitespace-pre-wrap mb-8">${doc.despedida.split('\n\n')[0] || ''}</p>
+                            <p class="text-lg font-black uppercase tracking-wider mb-8">${doc.despedida.split('\n\n')[1] || ''}</p>
+                        </div>
+                        <div class="text-2xl font-black uppercase tracking-widest mt-12 bg-white/20 py-4 rounded-3xl">
+                            ${doc.despedida.split('\n\n')[2] || '¡Aupa Real! 🔵⚪'}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center text-xs text-slate-400 font-black uppercase tracking-widest mt-6">Documento generado el ${dateFormatted}</div>
+                
+                <div class="absolute bottom-4 left-0 right-0 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Página 4 de 4</div>
+            </div>
+        `;
+
+        return [p1HTML, p2HTML, p3HTML, p4HTML];
+    };
+
+    window.renderDocFamilias = async (container) => {
+        try {
+            const allDocs = await db.getAll('docfamilias');
+            const docs = window.applyGlobalFilters ? window.applyGlobalFilters(allDocs, 'fecha') : allDocs;
+            
+            // Sort chronological descending (newest first)
+            docs.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+            let html = `
+                <div class="flex flex-col gap-6">
+                    <div id="docfamilias-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        \${docs.map(d => {
+                            const dateObj = new Date(d.fecha);
+                            const dateFormatted = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+                            
+                            return \`
+                                <div onclick="window.viewDocFamiliasFicha('\${d.id}')" class="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 cursor-pointer group flex flex-col justify-between min-h-[185px]">
+                                    <div>
+                                        <div class="flex items-center justify-between gap-2 mb-3">
+                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">\${dateFormatted}</span>
+                                            <span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">\${d.categoria}</span>
+                                        </div>
+                                        <h4 class="text-sm font-black text-slate-800 uppercase group-hover:text-indigo-600 transition-colors line-clamp-1 mb-2">\${d.titulo}</h4>
+                                        <p class="text-[11px] font-bold text-slate-400 leading-relaxed line-clamp-3">\${d.subtitulo}</p>
+                                    </div>
+                                    <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onclick="event.stopPropagation(); window.printDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-emerald-500 hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Imprimir / PDF">
+                                            <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                        <button onclick="event.stopPropagation(); window.editDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm" title="Editar">
+                                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                        <button onclick="event.stopPropagation(); window.deleteDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-rose-500 hover:bg-rose-600 hover:text-white transition-all shadow-sm" title="Eliminar">
+                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            \`;
+                        }).join('') || \`
+                            <div class="col-span-full p-20 bg-white rounded-[3rem] border border-dashed border-slate-200 text-center">
+                                <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
+                                    <i data-lucide="file-text" class="w-10 h-10"></i>
+                                </div>
+                                <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No hay documentos para familias registrados</p>
+                            </div>
+                        \`}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            if (window.lucide) lucide.createIcons();
+        } catch (e) {
+            console.error("Error rendering docfamilias:", e);
+            container.innerHTML = `<p class="p-8 text-center text-rose-500 font-bold">Error al cargar documentos: \${e.message}</p>`;
+        }
+    };
+
+    window.showNewDocFamiliasModal = async (docData = null) => {
+        const isEdit = docData !== null && docData.id !== undefined && docData.id !== null;
+        
+        const doc = {
+            id: null,
+            titulo: 'TORNEO DE LANZAROTE',
+            subtitulo: 'Información y Organización del Viaje',
+            categoria: 'Categoría 2016',
+            introduccion: '¡Hola a todas las familias! ✈️⚽\\n\\nYa no queda nada para el torneo de Lanzarote. Como comprenderéis, mover a un grupo de campeones de 10 años requiere un poco de organización, así que os dejamos aquí toda la información detallada para que el viaje sea un éxito. Por favor, leedlo con atención.',
+            vuelo_hora_quedada: '05:15 am',
+            vuelo_hora_salida: '07:10 am',
+            vuelo_detalles: '• **Embarque:** El acceso a la zona de embarque se realizará directamente con el cuerpo técnico.\\n• **Desayuno:** Al ser tan temprano, os pedimos que lleven un pequeño tentempié en la mochila para que puedan comer algo antes de subir al avión.',
+            documentacion_alerta: 'Es IMPRESCINDIBLE que lleven el DNI físico para el embarque. Sin él, no vuelan. El embarque lo harán ya directamente con nosotros.',
+            entrega_ropa: '• Chándal, polo, pantaloneta, sudadera y camiseta.\\n• 🎒 **Nota:** La mochila para los partidos la tienen que traer ellos de casa.',
+            equipaje_medidas: 'Una (1) pieza de equipaje de mano (máximo 40 x 20 x 30 cm), que deberá colocarse obligatoriamente debajo del asiento.',
+            equipaje_lista: '• Botas de fútbol y espinilleras.\\n• Toalla para la ducha y chancletas.\\n• Bañador.\\n• Mudas de cambio para los 4 días.',
+            normas_pantallas: '• **Dispositivos electrónicos:** Está prohibido que lleven móviles, tablets o consolas para el viaje. Queremos que hagan grupo.\\n• **¿Cómo contactar?** Si alguna familia no viaja y necesita hablar con su hijo, podéis llamarme a mí directamente.\\n• **Alternativas para el avión:** Para que no se aburran en el vuelo, pueden llevar juegos de cartas o similares.',
+            dinamica_viaje: 'Durante todo el viaje, los niños estarán bajo nuestra responsabilidad y convivencia. Eso sí, en los tiempos muertos entre partidos nos juntaremos con vosotros para que podáis pasar un rato juntos. ¡Seguro que tanto ellos como vosotros lo agradeceréis!',
+            alergias_dudas: '• 🍏 **Alergias o intolerancias:** Si alguno tiene alguna alergia, intolerancia médica o cualquier detalle que debamos saber, por favor, decídmelo por privado lo antes posible.\\n• 💬 **Dudas:** Podéis escribirme por privado o usar el grupo de WhatsApp, siempre que sea para dudas concretas del torneo y no para temas ajenos al viaje.',
+            despedida: 'Creo que no me dejo nada. Si veis que falta algún detalle, avisadme sin problema.\\n\\n¡Muchas gracias por vuestra colaboración, nos espera una gran experiencia!\\n\\n¡Aupa Real! 🔵⚪',
+            fecha: new Date().toISOString().split('T')[0],
+            ...docData
+        };
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">\${isEdit ? 'Editar Documento' : 'Nuevo Documento'}</h3>
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Organización y viajes para familias</p>
+                    </div>
+                    <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                
+                <form id="docfamilias-form" class="space-y-6 text-left">
+                    <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 space-y-4">
+                        <h4 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Cabecera del Documento</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Título del Viaje</label>
+                                <input name="titulo" value="\${doc.titulo}" required placeholder="Ej: TORNEO DE LANZAROTE" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Subtítulo</label>
+                                <input name="subtitulo" value="\${doc.subtitulo}" required placeholder="Ej: Información y Organización" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Categoría / Edad</label>
+                                <input name="categoria" value="\${doc.categoria}" required placeholder="Ej: Categoría 2016" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Fecha del Documento</label>
+                                <input name="fecha" type="date" value="\${doc.fecha}" required class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Mensaje de Introducción</label>
+                                <textarea name="introduccion" required rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.introduccion}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                        <h4 class="text-xs font-black text-slate-600 uppercase tracking-widest">Página 1: Convocatoria y Vuelo</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Hora Quedada Aeropuerto</label>
+                                <input name="vuelo_hora_quedada" value="\${doc.vuelo_hora_quedada}" required placeholder="Ej: 05:15 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Hora Salida Vuelo</label>
+                                <input name="vuelo_hora_salida" value="\${doc.vuelo_hora_salida}" required placeholder="Ej: 07:10 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Detalles del Vuelo (Viñetas)</label>
+                                <textarea name="vuelo_detalles" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.vuelo_detalles}</textarea>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-rose-500 uppercase tracking-widest px-1 mb-1.5 font-bold text-rose-500">Alerta de Documentación (DNI)</label>
+                                <textarea name="documentacion_alerta" rows="2" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all text-rose-600">\${doc.documentacion_alerta}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                        <h4 class="text-xs font-black text-slate-600 uppercase tracking-widest">Página 2: Entrega de Ropa y Equipaje</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Entrega de Ropa (Viñetas)</label>
+                                <textarea name="entrega_ropa" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.entrega_ropa}</textarea>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Medidas del Equipaje de Mano</label>
+                                <input name="equipaje_medidas" value="\${doc.equipaje_medidas}" placeholder="Ej: Una (1) pieza..." class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Qué Meter en la Maleta (Viñetas)</label>
+                                <textarea name="equipaje_lista" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.equipaje_lista}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                        <h4 class="text-xs font-black text-slate-600 uppercase tracking-widest">Página 3: Normas y Dinámica</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Normas sobre Pantallas y Móviles</label>
+                                <textarea name="normas_pantallas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.normas_pantallas}</textarea>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Dinámica del Viaje y Relación con Familias</label>
+                                <textarea name="dinamica_viaje" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.dinamica_viaje}</textarea>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Alergias, Intolerancias y Dudas</label>
+                                <textarea name="alergias_dudas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.alergias_dudas}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 space-y-4">
+                        <h4 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Página 4: Despedida y Cierre</h4>
+                        <div>
+                            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Mensaje de Cierre</label>
+                            <textarea name="despedida" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.despedida}</textarea>
+                        </div>
+                    </div>
+
+                    <div class="pt-8 border-t border-slate-100 flex justify-end gap-3">
+                        <button type="button" onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cancelar</button>
+                        <button type="submit" class="px-12 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Guardar Documento</button>
+                    </div>
+                </form>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+
+        document.getElementById('docfamilias-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+
+            // Set createdBy if new
+            const currentUser = window.currentUser || (await supabaseClient.auth.getUser()).data?.user;
+            if (!isEdit && currentUser) {
+                data.createdBy = currentUser.id;
+            }
+
             try {
-                await db.delete('reuniones', id);
-                window.customAlert('¡Éxito!', 'Reunión eliminada correctamente.', 'success');
-                if (window.currentView === 'reuniones') {
-                    window.renderReuniones(document.getElementById('content-container'));
+                if (isEdit) {
+                    await db.update('docfamilias', { ...data, id: doc.id });
+                } else {
+                    await db.add('docfamilias', data);
+                }
+                window.customAlert('¡Éxito!', 'Documento guardado correctamente.', 'success');
+                closeModal();
+                if (window.currentView === 'docfamilias') {
+                    window.renderDocFamilias(document.getElementById('content-container'));
                 }
             } catch (err) {
-                console.error("Error deleting meeting:", err);
-                window.customAlert('Error', 'No se pudo eliminar la reunión: ' + err.message, 'error');
+                console.error("Error saving docfamilias:", err);
+                window.customAlert('Error', 'No se pudo guardar el documento: ' + err.message, 'error');
+            }
+        };
+    };
+
+    window.viewDocFamiliasFicha = async (id) => {
+        const doc = await db.get('docfamilias', id);
+        if (!doc) return;
+
+        const modalContainer = document.getElementById('modal-container');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        const pagesHTML = window.getDocFamiliasPagesHTML(doc);
+
+        modalContainer.innerHTML = `
+            <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Vista Previa: \${doc.titulo}</h3>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Organización del Viaje para Familias</p>
+                        </div>
+                        <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    
+                    <!-- Preview Container -->
+                    <div class="flex flex-col gap-6 bg-slate-200 p-8 rounded-3xl overflow-y-auto max-h-[60vh] custom-scrollbar border border-slate-300 items-center">
+                        \${pagesHTML.map(page => \`
+                            <div class="shadow-xl rounded-xl overflow-hidden scale-90 md:scale-100 origin-top bg-white">
+                                \${page}
+                            </div>
+                        \`).join('')}
+                    </div>
+                </div>
+                
+                <div class="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
+                    <button onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cerrar</button>
+                    <button onclick="window.printDocFamilias('\${doc.id}')" class="px-10 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px] flex items-center gap-2">
+                        <i data-lucide="printer" class="w-4 h-4"></i> Imprimir / PDF
+                    </button>
+                    <button onclick="window.editDocFamilias('\${doc.id}')" class="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Editar</button>
+                </div>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        modalOverlay.classList.add('active');
+    };
+
+    window.printDocFamilias = async (id) => {
+        const doc = await db.get('docfamilias', id);
+        if (!doc) return;
+        
+        const pagesHTML = window.getDocFamiliasPagesHTML(doc);
+        const printWindow = window.open('', '_blank');
+        
+        printWindow.document.write('<html><head><title>' + doc.titulo + ' - ' + doc.categoria + '</title>');
+        printWindow.document.write('<script src="https://cdn.tailwindcss.com"></script>');
+        printWindow.document.write('<style>@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap"); body { font-family: "Montserrat", sans-serif; background-color: white; margin: 0; padding: 0; } .page { width: 210mm; height: 297mm; padding: 20mm; margin: 0 auto; box-sizing: border-box; position: relative; page-break-after: always; display: flex; flex-direction: column; justify-content: flex-start; } @media print { body { background: white; } .page { margin: 0; border: none; box-shadow: none; page-break-after: always; } }</style>');
+        printWindow.document.write('</head><body class="bg-white">');
+        printWindow.document.write(pagesHTML.join(''));
+        printWindow.document.write('<script>window.onload = function() { setTimeout(function() { window.print(); window.close(); }, 500); };</script>');
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+    };
+
+    window.editDocFamilias = async (id) => {
+        const doc = await db.get('docfamilias', id);
+        if (doc) {
+            closeModal();
+            setTimeout(() => {
+                window.showNewDocFamiliasModal(doc);
+            }, 300);
+        }
+    };
+
+    window.deleteDocFamilias = async (id) => {
+        window.customConfirm('¿Eliminar Documento?', '¿Estás seguro de que quieres eliminar este documento de forma permanente?', async () => {
+            try {
+                await db.delete('docfamilias', id);
+                window.customAlert('¡Éxito!', 'Documento eliminado correctamente.', 'success');
+                if (window.currentView === 'docfamilias') {
+                    window.renderDocFamilias(document.getElementById('content-container'));
+                }
+            } catch (err) {
+                console.error("Error deleting docfamilias:", err);
+                window.customAlert('Error', 'No se pudo eliminar el documento: ' + err.message, 'error');
             }
         });
     };
