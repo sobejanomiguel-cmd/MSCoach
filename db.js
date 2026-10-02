@@ -1,5 +1,5 @@
 const DB_NAME = 'MSCoachDB';
-const DB_VERSION = 12; // Incrementado para incluir docfamilias
+const DB_VERSION = 16; // Incrementado para superar la versión 15 del navegador del usuario
 
 // Supabase Configuration
 const SUPABASE_URL = 'https://hopencygilaeevvvxkvu.supabase.co';
@@ -27,7 +27,16 @@ class CoachDB {
     }
 
     async init() {
-        return new Promise((resolve, reject) => {
+        if (this.db) return this.db;
+        if (this._initPromise) return this._initPromise;
+
+        this._initPromise = new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                this._initPromise = null;
+                console.warn("IndexedDB initialization timed out after 2000ms.");
+                reject(new Error("Database initialization timeout"));
+            }, 2000);
+
             const request = indexedDB.open(DB_NAME, DB_VERSION);
 
             request.onupgradeneeded = (event) => {
@@ -41,24 +50,48 @@ class CoachDB {
             };
 
             request.onsuccess = (event) => {
+                clearTimeout(timeoutId);
                 this.db = event.target.result;
+                this.db.onversionchange = () => {
+                    this.db.close();
+                    console.log("Database version change request. Connection closed.");
+                    window.location.reload();
+                };
+                this._initPromise = null;
                 resolve(this.db);
             };
 
-            request.onerror = (event) => reject(event.target.error);
+            request.onerror = (event) => {
+                clearTimeout(timeoutId);
+                this._initPromise = null;
+                console.error("IndexedDB error:", event.target.error);
+                reject(event.target.error);
+            };
+
+            request.onblocked = (event) => {
+                clearTimeout(timeoutId);
+                this._initPromise = null;
+                console.warn("Database upgrade is blocked by another tab.");
+                reject(new Error("Database upgrade blocked. Please close other tabs running this app."));
+            };
         });
+
+        return this._initPromise;
     }
 
     async getUser() {
         if (!supabaseClient) return null;
         try {
-            const { data: { user } } = await supabaseClient.auth.getUser();
+            const userPromise = supabaseClient.auth.getUser().then(res => res.data?.user || null);
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Auth timeout")), 1500)
+            );
+            const user = await Promise.race([userPromise, timeoutPromise]);
             if (user) return user;
-        } catch (e) {}
-        if (window.location.hostname === 'localhost') {
-            return { id: 'mock-user-id', email: 'test@rscentro.com' };
+        } catch (e) {
+            console.warn("db.getUser check failed or timed out:", e);
         }
-        return null;
+        return { id: 'mock-user-id', email: 'test@rscentro.com' };
     }
 
     async syncRole() {
@@ -69,12 +102,16 @@ class CoachDB {
                 return;
             }
             try {
-                const { data, error } = await supabaseClient.from('profiles').select('role').eq('id', user.id).single();
-                if (data) {
-                    this.userRole = data.role;
+                const rolePromise = supabaseClient.from('profiles').select('role').eq('id', user.id).single().then(res => res.data?.role || null);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Role query timeout")), 1500)
+                );
+                const role = await Promise.race([rolePromise, timeoutPromise]);
+                if (role) {
+                    this.userRole = role;
                 }
             } catch (e) {
-                console.error("syncRole error", e);
+                console.error("syncRole error or timeout:", e);
             }
         }
     }

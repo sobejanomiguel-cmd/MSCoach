@@ -1261,7 +1261,11 @@ window.closeCustomModal = () => {
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize DB
-    await db.init();
+    try {
+        await db.init();
+    } catch (err) {
+        console.error("Initial DB connection failed during load:", err);
+    }
 
     // --- TEMPORARY CLEANUP SCRIPT (RUNS ONCE) ---
     if (localStorage.getItem('force_photo_reset') === 'true') {
@@ -1337,12 +1341,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             let user = null;
             try {
-                const res = await supabaseClient.auth.getUser();
-                user = res.data?.user;
+                const userPromise = supabaseClient.auth.getUser().then(res => res.data?.user || null);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Auth timeout")), 1500)
+                );
+                user = await Promise.race([userPromise, timeoutPromise]);
             } catch (e) {
-                console.error("getUser error:", e);
+                console.error("getUser error / timeout:", e);
             }
-            if (!user && window.location.hostname === 'localhost') {
+            if (!user) {
                 user = { id: 'mock-user-id', email: 'test@rscentro.com' };
             }
             if (user) {
@@ -14871,8 +14878,6 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
         }
     };
 
-    };
-
     // --- SECCIÓN DOC. FAMILIAS ---
     window.getDocFamiliasPagesHTML = (doc) => {
         const d = new Date(doc.fecha);
@@ -15059,41 +15064,41 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             let html = `
                 <div class="flex flex-col gap-6">
                     <div id="docfamilias-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        \${docs.map(d => {
+                        ${docs.map(d => {
                             const dateObj = new Date(d.fecha);
                             const dateFormatted = dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
                             
-                            return \`
-                                <div onclick="window.viewDocFamiliasFicha('\${d.id}')" class="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 cursor-pointer group flex flex-col justify-between min-h-[185px]">
+                            return `
+                                <div onclick="window.viewDocFamiliasFicha('${d.id}')" class="bg-white p-6 rounded-[2rem] border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 cursor-pointer group flex flex-col justify-between min-h-[185px]">
                                     <div>
                                         <div class="flex items-center justify-between gap-2 mb-3">
-                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">\${dateFormatted}</span>
-                                            <span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">\${d.categoria}</span>
+                                            <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">${dateFormatted}</span>
+                                            <span class="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-[8px] font-black uppercase tracking-tight">${d.categoria}</span>
                                         </div>
-                                        <h4 class="text-sm font-black text-slate-800 uppercase group-hover:text-indigo-600 transition-colors line-clamp-1 mb-2">\${d.titulo}</h4>
-                                        <p class="text-[11px] font-bold text-slate-400 leading-relaxed line-clamp-3">\${d.subtitulo}</p>
+                                        <h4 class="text-sm font-black text-slate-800 uppercase group-hover:text-indigo-600 transition-colors line-clamp-1 mb-2">${d.titulo}</h4>
+                                        <p class="text-[11px] font-bold text-slate-400 leading-relaxed line-clamp-3">${d.subtitulo}</p>
                                     </div>
                                     <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onclick="event.stopPropagation(); window.printDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-emerald-500 hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Imprimir / PDF">
+                                        <button onclick="event.stopPropagation(); window.printDocFamilias('${d.id}')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-emerald-500 hover:bg-emerald-600 hover:text-white transition-all shadow-sm" title="Imprimir / PDF">
                                             <i data-lucide="printer" class="w-3.5 h-3.5"></i>
                                         </button>
-                                        <button onclick="event.stopPropagation(); window.editDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm" title="Editar">
+                                        <button onclick="event.stopPropagation(); window.editDocFamilias('${d.id}')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm" title="Editar">
                                             <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
                                         </button>
-                                        <button onclick="event.stopPropagation(); window.deleteDocFamilias('\&apos;\${d.id}\&apos;')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-rose-500 hover:bg-rose-600 hover:text-white transition-all shadow-sm" title="Eliminar">
+                                        <button onclick="event.stopPropagation(); window.deleteDocFamilias('${d.id}')" class="w-8 h-8 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-lg text-rose-500 hover:bg-rose-600 hover:text-white transition-all shadow-sm" title="Eliminar">
                                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                                         </button>
                                     </div>
                                 </div>
-                            \`;
-                        }).join('') || \`
+                            `;
+                        }).join('') || `
                             <div class="col-span-full p-20 bg-white rounded-[3rem] border border-dashed border-slate-200 text-center">
                                 <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
                                     <i data-lucide="file-text" class="w-10 h-10"></i>
                                 </div>
                                 <p class="text-slate-400 font-bold uppercase tracking-widest text-[10px]">No hay documentos para familias registrados</p>
                             </div>
-                        \`}
+                        `}
                     </div>
                 </div>
             `;
@@ -15136,7 +15141,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
             <div class="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <div class="flex justify-between items-center mb-6">
                     <div>
-                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">\${isEdit ? 'Editar Documento' : 'Nuevo Documento'}</h3>
+                        <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">${isEdit ? 'Editar Documento' : 'Nuevo Documento'}</h3>
                         <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Organización y viajes para familias</p>
                     </div>
                     <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -15148,23 +15153,23 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Título del Viaje</label>
-                                <input name="titulo" value="\${doc.titulo}" required placeholder="Ej: TORNEO DE LANZAROTE" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="titulo" value="${doc.titulo}" required placeholder="Ej: TORNEO DE LANZAROTE" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Subtítulo</label>
-                                <input name="subtitulo" value="\${doc.subtitulo}" required placeholder="Ej: Información y Organización" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="subtitulo" value="${doc.subtitulo}" required placeholder="Ej: Información y Organización" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Categoría / Edad</label>
-                                <input name="categoria" value="\${doc.categoria}" required placeholder="Ej: Categoría 2016" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="categoria" value="${doc.categoria}" required placeholder="Ej: Categoría 2016" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Fecha del Documento</label>
-                                <input name="fecha" type="date" value="\${doc.fecha}" required class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="fecha" type="date" value="${doc.fecha}" required class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Mensaje de Introducción</label>
-                                <textarea name="introduccion" required rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.introduccion}</textarea>
+                                <textarea name="introduccion" required rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.introduccion}</textarea>
                             </div>
                         </div>
                     </div>
@@ -15174,19 +15179,19 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Hora Quedada Aeropuerto</label>
-                                <input name="vuelo_hora_quedada" value="\${doc.vuelo_hora_quedada}" required placeholder="Ej: 05:15 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="vuelo_hora_quedada" value="${doc.vuelo_hora_quedada}" required placeholder="Ej: 05:15 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Hora Salida Vuelo</label>
-                                <input name="vuelo_hora_salida" value="\${doc.vuelo_hora_salida}" required placeholder="Ej: 07:10 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="vuelo_hora_salida" value="${doc.vuelo_hora_salida}" required placeholder="Ej: 07:10 am" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Detalles del Vuelo (Viñetas)</label>
-                                <textarea name="vuelo_detalles" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.vuelo_detalles}</textarea>
+                                <textarea name="vuelo_detalles" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.vuelo_detalles}</textarea>
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-rose-500 uppercase tracking-widest px-1 mb-1.5 font-bold text-rose-500">Alerta de Documentación (DNI)</label>
-                                <textarea name="documentacion_alerta" rows="2" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all text-rose-600">\${doc.documentacion_alerta}</textarea>
+                                <textarea name="documentacion_alerta" rows="2" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all text-rose-600">${doc.documentacion_alerta}</textarea>
                             </div>
                         </div>
                     </div>
@@ -15196,15 +15201,15 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Entrega de Ropa (Viñetas)</label>
-                                <textarea name="entrega_ropa" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.entrega_ropa}</textarea>
+                                <textarea name="entrega_ropa" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.entrega_ropa}</textarea>
                             </div>
                             <div>
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Medidas del Equipaje de Mano</label>
-                                <input name="equipaje_medidas" value="\${doc.equipaje_medidas}" placeholder="Ej: Una (1) pieza..." class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
+                                <input name="equipaje_medidas" value="${doc.equipaje_medidas}" placeholder="Ej: Una (1) pieza..." class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Qué Meter en la Maleta (Viñetas)</label>
-                                <textarea name="equipaje_lista" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.equipaje_lista}</textarea>
+                                <textarea name="equipaje_lista" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.equipaje_lista}</textarea>
                             </div>
                         </div>
                     </div>
@@ -15214,15 +15219,15 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Normas sobre Pantallas y Móviles</label>
-                                <textarea name="normas_pantallas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.normas_pantallas}</textarea>
+                                <textarea name="normas_pantallas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.normas_pantallas}</textarea>
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Dinámica del Viaje y Relación con Familias</label>
-                                <textarea name="dinamica_viaje" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.dinamica_viaje}</textarea>
+                                <textarea name="dinamica_viaje" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.dinamica_viaje}</textarea>
                             </div>
                             <div class="md:col-span-2">
                                 <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Alergias, Intolerancias y Dudas</label>
-                                <textarea name="alergias_dudas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.alergias_dudas}</textarea>
+                                <textarea name="alergias_dudas" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.alergias_dudas}</textarea>
                             </div>
                         </div>
                     </div>
@@ -15231,7 +15236,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                         <h4 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Página 4: Despedida y Cierre</h4>
                         <div>
                             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 mb-1.5">Mensaje de Cierre</label>
-                            <textarea name="despedida" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">\${doc.despedida}</textarea>
+                            <textarea name="despedida" rows="3" class="w-full p-4 bg-white border border-slate-100 rounded-2xl font-bold outline-none focus:ring-4 ring-indigo-50 transition-all">${doc.despedida}</textarea>
                         </div>
                     </div>
 
@@ -15288,7 +15293,7 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                 <div>
                     <div class="flex justify-between items-center mb-6">
                         <div>
-                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Vista Previa: \${doc.titulo}</h3>
+                            <h3 class="text-2xl font-black text-slate-800 uppercase tracking-tight">Vista Previa: ${doc.titulo}</h3>
                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Organización del Viaje para Familias</p>
                         </div>
                         <button onclick="closeModal()" class="p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -15296,20 +15301,20 @@ Si el jugador citado no puede asistir a la convocatoria os pedimos que nos lo ha
                     
                     <!-- Preview Container -->
                     <div class="flex flex-col gap-6 bg-slate-200 p-8 rounded-3xl overflow-y-auto max-h-[60vh] custom-scrollbar border border-slate-300 items-center">
-                        \${pagesHTML.map(page => \`
+                        ${pagesHTML.map(page => `
                             <div class="shadow-xl rounded-xl overflow-hidden scale-90 md:scale-100 origin-top bg-white">
-                                \${page}
+                                ${page}
                             </div>
-                        \`).join('')}
+                        `).join('')}
                     </div>
                 </div>
                 
                 <div class="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
                     <button onclick="closeModal()" class="px-8 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase tracking-widest text-[10px]">Cerrar</button>
-                    <button onclick="window.printDocFamilias('\${doc.id}')" class="px-10 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px] flex items-center gap-2">
+                    <button onclick="window.printDocFamilias('${doc.id}')" class="px-10 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all uppercase tracking-widest text-[10px] flex items-center gap-2">
                         <i data-lucide="printer" class="w-4 h-4"></i> Imprimir / PDF
                     </button>
-                    <button onclick="window.editDocFamilias('\${doc.id}')" class="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Editar</button>
+                    <button onclick="window.editDocFamilias('${doc.id}')" class="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all uppercase tracking-widest text-[10px]">Editar</button>
                 </div>
             </div>
         `;
