@@ -15,7 +15,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -23,11 +23,37 @@
         theme: {
           extend: {
             fontFamily: {
-              inter: ['Inter', 'sans-serif'],
-              outfit: ['Outfit', 'sans-serif'],
+              inter: ['"Plus Jakarta Sans"', 'sans-serif'],
+              outfit: ['"Plus Jakarta Sans"', 'sans-serif'],
             },
             colors: {
-              primary: '#2563eb',
+              primary: '#0f172a',
+              blue: {
+                50: '#f4f6f8',
+                100: '#e4e9f0',
+                200: '#c5d2df',
+                300: '#9bb2c8',
+                400: '#6a8eac',
+                500: '#487293',
+                600: '#345978',
+                700: '#2a4762',
+                800: '#253d53',
+                900: '#223447',
+                950: '#152231',
+              },
+              slate: {
+                50: '#f8fafc',
+                100: '#f1f5f9',
+                200: '#e2e8f0',
+                300: '#cbd5e1',
+                400: '#94a3b8',
+                500: '#64748b',
+                600: '#475569',
+                700: '#334155',
+                800: '#1e293b',
+                900: '#0f172a',
+                950: '#020617',
+              }
             }
           }
         }
@@ -45,12 +71,12 @@
     <style>
         .notif-swipe-container { position: relative; overflow: hidden; touch-action: pan-y; }
         .notif-swipe-actions { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between; border-radius: 1.25rem; }
-        .notif-swipe-action-left { height: 100%; display: flex; align-items: center; padding-left: 1.5rem; background-color: #3b82f6; color: white; border-radius: 1.25rem 0 0 1.25rem; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; transition: opacity 0.2s; }
-        .notif-swipe-action-right { height: 100%; display: flex; align-items: center; padding-right: 1.5rem; background-color: #ef4444; color: white; border-radius: 0 1.25rem 1.25rem 0; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; transition: opacity 0.2s; }
+        .notif-swipe-action-left { height: 100%; display: flex; align-items: center; padding-left: 1.5rem; background-color: #3b82f6; color: white; border-radius: 1.25rem 0 0 1.25rem; font-size: 10px; font-weight: 900; text-transform: capitalize; letter-spacing: 0.1em; transition: opacity 0.2s; }
+        .notif-swipe-action-right { height: 100%; display: flex; align-items: center; padding-right: 1.5rem; background-color: #ef4444; color: white; border-radius: 0 1.25rem 1.25rem 0; font-size: 10px; font-weight: 900; text-transform: capitalize; letter-spacing: 0.1em; transition: opacity 0.2s; }
         .notif-swipe-content { position: relative; background: white; z-index: 10; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
     </style>
 </head>
-<body class="bg-gray-50 text-slate-900 font-inter">
+<body class="bg-slate-200 text-slate-900 font-inter">
     <!-- Preloader -->
     <div id="preloader" class="fixed inset-0 bg-slate-900 z-[300] flex items-center justify-center transition-opacity duration-300">
         <div class="flex flex-col items-center gap-4">
@@ -61,25 +87,25 @@
 
     <!-- Auth Screen -->
     <div id="auth-screen" class="fixed inset-0 bg-slate-900 z-[200] flex items-center justify-center p-4 hidden">
-        <div class="bg-white w-full max-w-sm rounded-[2rem] p-10 shadow-2xl relative overflow-hidden">
+        <div class="bg-white w-full max-w-sm rounded-xl p-10 shadow-2xl relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
             <div class="text-center mb-10">
                 <img src="Imagenes/RS.png" alt="RS CENTRO" class="h-[26px] mx-auto mb-6">
-                <h2 id="auth-title" class="text-2xl font-black text-slate-800 uppercase tracking-tight">Acceso Entrenador</h2>
+                <h2 id="auth-title" class="text-2xl font-black text-slate-800 capitalize tracking-tight">Acceso Entrenador</h2>
                 <p id="auth-subtitle" class="text-slate-500 text-sm font-medium">Gestiona tu equipo profesionalmente</p>
             </div>
             <form id="auth-form" class="space-y-5">
                 <div class="space-y-1">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Profesional</label>
+                    <label class="text-[10px] font-black text-slate-400 capitalize tracking-widest ml-1">Email Profesional</label>
                     <input type="email" id="auth-email" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 transition-all" placeholder="tuejemplo@club.com" required>
                 </div>
                 <div class="space-y-1">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Contraseña</label>
+                    <label class="text-[10px] font-black text-slate-400 capitalize tracking-widest ml-1">Contraseña</label>
                     <input type="password" id="auth-password" class="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 ring-blue-50 transition-all" placeholder="••••••••" required>
                 </div>
-                <button type="submit" id="auth-submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4">Entrar al Panel</button>
+                <button type="submit" id="auth-submit" class="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-xl shadow-slate-200/40 hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] transition-all mt-4">Entrar al Panel</button>
                 <div class="text-center pt-4">
-                    <button type="button" id="toggle-auth" class="text-[11px] text-slate-400 font-bold uppercase tracking-widest hover:text-blue-600 transition-colors">¿No tienes cuenta? Regístrate</button>
+                    <button type="button" onclick="window.requestPasswordReset()" class="text-[11px] text-slate-400 font-bold capitalize tracking-widest hover:text-blue-600 transition-colors">¿Has olvidado tu contraseña?</button>
                 </div>
             </form>
         </div>
@@ -94,8 +120,8 @@
                     <i data-lucide="menu" class="w-6 h-6"></i>
                 </button>
                 <div>
-                    <h2 id="view-title-mobile" class="text-sm font-black text-slate-800 uppercase leading-none">PANEL</h2>
-                    <p id="view-subtitle-mobile" class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Visión General</p>
+                    <h2 id="view-title-mobile" class="text-sm font-black text-slate-800 capitalize leading-none">PANEL</h2>
+                    <p id="view-subtitle-mobile" class="text-[9px] font-bold text-slate-400 capitalize tracking-widest mt-0.5">Visión General</p>
                 </div>
             </div>
         </div>
@@ -104,8 +130,8 @@
         <div id="sidebar-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] hidden md:hidden"></div>
 
         <!-- Sidebar (Desktop & Mobile) -->
-        <aside id="sidebar" class="sidebar flex w-72 bg-white border-r border-slate-200 flex flex-col z-[100] fixed inset-y-0 left-0 transform -translate-x-full md:translate-x-0 md:relative transition-transform duration-300">
-            <div class="pt-2 pb-6 px-6 flex flex-col items-center border-b border-slate-50 relative">
+        <aside id="sidebar" class="sidebar flex w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-[100] fixed inset-y-0 left-0 transform -translate-x-full md:translate-x-0 md:relative transition-transform duration-300">
+            <div class="pt-2 pb-6 px-6 flex flex-col items-center border-b border-slate-800 relative">
                 <!-- Mobile Close Button -->
                 <button id="close-sidebar-btn" class="md:hidden absolute right-4 top-4 p-2 text-slate-400 hover:text-blue-600">
                     <i data-lucide="x" class="w-6 h-6"></i>
@@ -114,21 +140,21 @@
             </div>
 
             <!-- Workspace Toggle -->
-            <div class="px-6 py-4 border-b border-slate-50 admin-only">
-                <div class="bg-slate-100 p-1.5 rounded-2xl flex gap-1 relative overflow-hidden mb-4">
-                    <button id="mode-personal" onclick="window.toggleVisibility('personal')" class="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative z-10 bg-white text-blue-600 shadow-sm">
+            <div class="px-6 py-4 border-b border-slate-800 admin-only">
+                <div class="bg-slate-800 p-1.5 rounded-2xl flex gap-1 relative overflow-hidden mb-4">
+                    <button id="mode-personal" onclick="window.toggleVisibility('personal')" class="flex-1 py-2 rounded-xl text-[10px] font-black capitalize tracking-widest transition-all relative z-10 bg-blue-600 text-white shadow-sm border border-slate-700">
                         Mí Espacio
                     </button>
-                    <button id="mode-global" onclick="window.toggleVisibility('global')" class="flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all relative z-10 text-slate-400 hover:text-slate-600">
+                    <button id="mode-global" onclick="window.toggleVisibility('global')" class="flex-1 py-2 rounded-xl text-[10px] font-black capitalize tracking-widest transition-all relative z-10 text-slate-400 hover:text-slate-200">
                         Global
                     </button>
                 </div>
 
                 <!-- Season Selector -->
                 <div class="space-y-1.5">
-                    <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Temporada</label>
+                    <label class="text-[9px] font-black text-slate-400 capitalize tracking-widest ml-1">Temporada</label>
                     <div class="relative group">
-                        <select id="season-selector" onchange="window.setSeason(this.value)" class="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-[11px] font-black text-slate-700 uppercase tracking-tight focus:ring-4 focus:ring-blue-50 transition-all appearance-none cursor-pointer">
+                        <select id="season-selector" onchange="window.setSeason(this.value)" class="w-full pl-4 pr-10 py-3 bg-slate-800 border border-slate-700 rounded-xl outline-none text-[11px] font-black text-slate-200 capitalize tracking-tight focus:ring-4 focus:ring-blue-500/30 transition-all appearance-none cursor-pointer">
                             <!-- Options will be injected by JS -->
                         </select>
                         <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
@@ -139,77 +165,77 @@
             </div>
 
             <nav class="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
-                <a href="#" data-view="dashboard" class="nav-link active flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="home" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">PANEL DE CONTROL</span>
+                <a href="#" data-view="dashboard" class="nav-link active flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                    <i data-lucide="home" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                    <span class="text-sm font-medium text-slate-300 group-hover:text-white">Panel de Control</span>
                 </a>
-                <a href="#" data-view="calendario" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="calendar-days" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Calendario</span>
+                <a href="#" data-view="calendario" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                    <i data-lucide="calendar-days" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                    <span class="text-sm font-medium text-slate-300 group-hover:text-white">Calendario</span>
                 </a>
-                <a href="#" data-view="eventos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <i data-lucide="alarm-clock" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                    <span class="font-medium">Eventos / Agenda</span>
+                <a href="#" data-view="eventos" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                    <i data-lucide="alarm-clock" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                    <span class="text-sm font-medium text-slate-300 group-hover:text-white">Agenda</span>
                 </a>
-                <a href="#" data-view="campograma" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                    <svg class="w-5 h-5 text-slate-500 group-hover:text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><circle cx="12" cy="12" r="3"/></svg>
-                    <span class="font-medium">Pizarra Táctica</span>
+                <a href="#" data-view="campograma" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                    <svg class="w-4 h-4 text-slate-400 group-hover:text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span class="text-sm font-medium text-slate-300 group-hover:text-white">Pizarra Táctica</span>
                 </a>
 
 
                 <!-- DIRECTORIO -->
                 <div class="nav-section mt-4 active">
-                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-500 capitalize tracking-widest hover:text-slate-300 transition-all">
                         <span>Directorio</span>
                         <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
                     </button>
                     <div class="section-content px-1">
-                        <a href="#" data-view="tareas" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="clipboard-list" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Tareas</span>
+                        <a href="#" data-view="tareas" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="clipboard-list" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Tareas</span>
                         </a>
-                        <a href="#" data-view="jugadores" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="contact" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Jugadores</span>
+                        <a href="#" data-view="jugadores" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="contact" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Jugadores</span>
                         </a>
-                        <a href="#" data-view="clubes" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="building-2" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Clubes</span>
+                        <a href="#" data-view="clubes" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="building-2" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Clubes</span>
                         </a>
-                        <a href="#" data-view="equipos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="users" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Equipos</span>
+                        <a href="#" data-view="equipos" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="users" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Equipos</span>
                         </a>
                     </div>
                 </div>
 
                 <!-- GESTIÓN -->
                 <div class="nav-section active">
-                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-500 capitalize tracking-widest hover:text-slate-300 transition-all">
                         <span>Gestión</span>
                         <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
                     </button>
                     <div class="section-content px-1">
-                        <a href="#" data-view="sesiones" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="calendar" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Sesiones</span>
+                        <a href="#" data-view="sesiones" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="calendar" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Sesiones</span>
                         </a>
-                        <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="check-square" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Asistencia</span>
+                        <a href="#" data-view="asistencia" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="check-square" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Asistencia</span>
                         </a>
-                        <a href="#" data-view="torneos" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="trophy" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Torneos</span>
+                        <a href="#" data-view="torneos" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="trophy" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Torneos</span>
                         </a>
                         <div class="admin-only">
-                            <a href="#" data-view="reuniones" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                                <i data-lucide="notebook" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                                <span class="font-medium">Reuniones</span>
+                            <a href="#" data-view="reuniones" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                                <i data-lucide="notebook" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                                <span class="text-sm font-medium text-slate-300 group-hover:text-white">Reuniones</span>
                             </a>
-                            <a href="#" data-view="docfamilias" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                                <i data-lucide="file-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                                <span class="font-medium">Doc. Familias</span>
+                            <a href="#" data-view="docfamilias" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                                <i data-lucide="file-text" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                                <span class="text-sm font-medium text-slate-300 group-hover:text-white">Doc. Familias</span>
                             </a>
                         </div>
                     </div>
@@ -217,78 +243,80 @@
 
                 <!-- CONVOCATORIAS -->
                 <div class="nav-section active">
-                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-all">
+                    <button onclick="window.toggleNavSection(this)" class="section-header w-full flex items-center justify-between px-4 py-3 text-[10px] font-black text-slate-500 capitalize tracking-widest hover:text-slate-300 transition-all">
                         <span>Convocatorias</span>
                         <i data-lucide="chevron-down" class="chevron-icon w-3.5 h-3.5 transform transition-transform duration-300"></i>
                     </button>
                     <div class="section-content px-1">
-                        <a href="#" data-view="convocatorias" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                            <i data-lucide="scroll-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                            <span class="font-medium">Gestión Convocatorias</span>
+                        <a href="#" data-view="convocatorias" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                            <i data-lucide="scroll-text" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                            <span class="text-sm font-medium text-slate-300 group-hover:text-white">Gestión Conv.</span>
                         </a>
                         <div class="admin-only">
-                            <a href="#" data-view="prevision-clubes" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                                <i data-lucide="mail" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                                <span class="font-medium">PREVISIÓN CLUBES</span>
+                            <a href="#" data-view="prevision-clubes" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                                <i data-lucide="mail" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                                <span class="text-sm font-medium text-slate-300 group-hover:text-white">Prev. Clubes</span>
                             </a>
-                            <a href="#" data-view="convocatorias-pdf" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                                <i data-lucide="file-text" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                                <span class="font-medium">Convocatorias PDF</span>
+                            <a href="#" data-view="convocatorias-pdf" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                                <i data-lucide="file-text" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                                <span class="text-sm font-medium text-slate-300 group-hover:text-white">Conv. PDF</span>
                             </a>
                         </div>
                     </div>
                 </div>
 
                 <div class="div-perfil-personal space-y-1">
-                    <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Cuenta</div>
-                    <a href="#" data-view="perfil" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                        <i data-lucide="user" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                        <span class="font-medium">Mi Perfil</span>
+                    <div class="text-[10px] font-black text-slate-400 capitalize tracking-widest px-4 pt-6 pb-2">Cuenta</div>
+                    <a href="#" data-view="perfil" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                        <i data-lucide="user" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                        <span class="text-sm font-medium text-slate-300 group-hover:text-white">Mi Perfil</span>
                     </a>
                 </div>
 
-                <div class="admin-only">
-                    <div class="text-xs font-bold text-slate-400 uppercase tracking-widest px-4 pt-6 pb-2">Administración</div>
-                    <a href="#" data-view="usuarios" class="nav-link flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group">
-                        <i data-lucide="user-cog" class="w-5 h-5 text-slate-500 group-hover:text-blue-600"></i>
-                        <span class="font-medium">Gestión Staff</span>
+                <div class="admin-only space-y-1">
+                    <div class="text-[10px] font-black text-slate-400 capitalize tracking-widest px-4 pt-6 pb-2">Administración</div>
+                    <a href="#" data-view="usuarios" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group">
+                        <i data-lucide="user-cog" class="w-4 h-4 text-slate-400 group-hover:text-white"></i>
+                        <span class="text-sm font-medium text-slate-300 group-hover:text-white">Gestión Staff</span>
                     </a>
                 </div>
             </nav>
 
-            <div class="p-4 border-t border-slate-100">
-                <button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-red-600 rounded-xl transition-all duration-200">
+            <div class="p-4 border-t border-slate-800">
+                <button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-red-400 rounded-xl transition-all duration-200">
                     <i data-lucide="log-out" class="w-5 h-5"></i>
                     <span class="font-medium">Cerrar Sesión</span>
                 </button>
             </div>
         </aside>
 
+
+
         <!-- Main Content -->
-        <main class="flex-1 flex flex-col bg-slate-50 relative">
+        <main class="flex-1 flex flex-col bg-slate-200 relative">
             <!-- Header (Desktop version hidden on mobile) -->
-            <header class="hidden md:flex h-16 bg-white border-b border-slate-200 items-center justify-between px-8 sticky top-0 z-40">
+            <header class="hidden md:flex h-16 bg-slate-900 border-b border-slate-800 items-center justify-between px-8 sticky top-0 z-40">
                 <div>
-                    <h2 id="view-title" class="text-2xl font-outfit font-bold text-slate-800">PANEL DE CONTROL</h2>
-                    <p id="view-subtitle" class="text-sm text-slate-500 tracking-tight">Bienvenido de nuevo, Entrenador.</p>
+                    <h2 id="view-title" class="text-2xl font-outfit font-bold text-white">PANEL DE CONTROL</h2>
+                    <p id="view-subtitle" class="text-sm text-slate-400 tracking-tight">Bienvenido de nuevo, Entrenador.</p>
                 </div>
                 <!-- ... rests of header ... -->
                 <div class="flex items-center gap-2">
-                    <button id="secondary-add-btn" class="hidden flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 transition-all duration-300">
+                    <button id="secondary-add-btn" class="hidden flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-700 transition-all duration-300">
                         <i data-lucide="file-up" class="w-4 h-4"></i>
                         <span>Importar CSV</span>
                     </button>
-                    <button id="tertiary-add-btn" class="hidden flex items-center gap-1.5 bg-white hover:bg-blue-50 text-blue-600 px-3.5 py-2 rounded-xl text-xs font-bold border border-blue-200 transition-all duration-300">
+                    <button id="tertiary-add-btn" class="hidden flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 px-3.5 py-2 rounded-xl text-xs font-bold border border-blue-500/30 transition-all duration-300">
                         <i data-lucide="image" class="w-4 h-4"></i>
                         <span>Vincular Imágenes</span>
                     </button>
-                    <button id="clean-tasks-btn" class="hidden flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 px-3.5 py-2 rounded-xl text-xs font-bold border border-red-100 transition-all duration-300">
+                    <button id="clean-tasks-btn" class="hidden flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3.5 py-2 rounded-xl text-xs font-bold border border-red-500/20 transition-all duration-300">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                         <span>Limpiar Biblioteca</span>
                     </button>
 
 
-                    <button id="add-btn" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 transition-all duration-300">
+                    <button id="add-btn" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-blue-900/20 transition-all duration-300">
                         <i data-lucide="plus" class="w-4 h-4"></i>
                         <span class="btn-text">Nuevo Registro</span>
                     </button>
@@ -296,13 +324,13 @@
             </header>
 
             <!-- Mobile Action Bar (Sticky floating buttons on mobile) -->
-            <div class="md:hidden flex items-center justify-between p-4 bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40">
+            <div class="md:hidden flex items-center justify-between p-4 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
                 <div>
-                    <h2 id="view-title-mobile" class="text-lg font-outfit font-black text-slate-800 uppercase tracking-tight">PANEL DE CONTROL</h2>
+                    <h2 id="view-title-mobile" class="text-lg font-outfit font-black text-white capitalize tracking-tight">PANEL DE CONTROL</h2>
                 </div>
                 <div class="flex gap-2">
 
-                    <button id="add-btn-mobile" class="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30">
+                    <button id="add-btn-mobile" class="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-blue-900/20">
                         <i data-lucide="plus" class="w-5 h-5"></i>
                     </button>
                 </div>
@@ -317,27 +345,27 @@
             <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
                 <a href="#" data-view="dashboard" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <img src="Imagenes/RS.png" class="w-4 h-4 object-contain">
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Inicio</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Inicio</span>
                 </a>
                 <a href="#" data-view="calendario" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <i data-lucide="calendar" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Agenda</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Agenda</span>
                 </a>
                 <a href="#" data-view="tareas" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <i data-lucide="clipboard-list" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Tareas</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Tareas</span>
                 </a>
                 <a href="#" data-view="sesiones" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <i data-lucide="play-circle" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Sesión</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Sesión</span>
                 </a>
                 <a href="#" data-view="torneos" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <i data-lucide="trophy" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Torneos</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Torneos</span>
                 </a>
                 <a href="#" data-view="perfil" class="nav-link-mobile flex flex-col items-center gap-1 text-slate-400">
                     <i data-lucide="user" class="w-6 h-6"></i>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Perfil</span>
+                    <span class="text-[10px] font-bold capitalize tracking-widest">Perfil</span>
                 </a>
             </nav>
         </main>
@@ -345,14 +373,14 @@
 
     <!-- Modals Container -->
     <div id="modal-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4 md:p-8">
-        <div id="modal-container" class="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[95vh] transform scale-95 transition-transform duration-300 custom-scrollbar">
+        <div id="modal-container" class="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-y-auto max-h-[95vh] transform scale-95 transition-transform duration-300 custom-scrollbar">
             <!-- Dynamic Modal Content -->
         </div>
     </div>
 
     <!-- Preview Modal Container -->
     <div id="preview-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[150] flex items-center justify-center hidden opacity-0 transition-opacity duration-300 p-4 md:p-12">
-        <div id="preview-container" class="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh] transform scale-95 transition-transform duration-300 custom-scrollbar relative">
+        <div id="preview-container" class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-y-auto max-h-[90vh] transform scale-95 transition-transform duration-300 custom-scrollbar relative">
             <button onclick="window.closePreview()" class="absolute top-6 right-6 p-3 bg-slate-100 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-all z-10">
                 <i data-lucide="x" class="w-4 h-4"></i>
             </button>

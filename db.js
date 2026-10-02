@@ -91,7 +91,7 @@ class CoachDB {
         } catch (e) {
             console.warn("db.getUser check failed or timed out:", e);
         }
-        return { id: 'mock-user-id', email: 'test@rscentro.com' };
+        return null;
     }
 
     async syncRole() {

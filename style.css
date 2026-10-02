@@ -27,7 +27,6 @@ body {
     overflow-x: hidden;
     overflow-y: auto;
     background-color: var(--bg-main);
-    text-transform: uppercase;
     height: 100%;
 }
 
@@ -38,11 +37,13 @@ body {
 }
 
 input, select, textarea {
-    text-transform: uppercase;
+    text-transform: capitalize;
 }
 
-/* Exception for email fields to avoid confusion */
-input[type="email"] {
+/* Exception for specific fields to avoid confusion */
+input[type="email"],
+input[type="url"],
+input[type="password"] {
     text-transform: none !important;
 }
 
@@ -52,20 +53,38 @@ input[type="email"] {
 /* Sidebar */
 .sidebar {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-transform: none;
 }
 
 .nav-link {
     color: var(--text-muted);
+    text-transform: none;
+}
+
+.nav-link span {
+    text-transform: capitalize;
+}
+
+.section-header span {
+    text-transform: capitalize;
 }
 
 .nav-link.active {
-    background-color: var(--primary-extra-light);
-    color: var(--primary);
+    background-color: rgba(37, 99, 235, 0.15); /* light blue translucent */
+    color: #60a5fa; /* blue-400 */
+}
+
+.nav-link.active i, .nav-link.active svg {
+    color: #60a5fa !important;
+}
+
+.nav-link.active span {
+    color: #ffffff !important;
 }
 
 .nav-link:hover:not(.active) {
-    background-color: #f1f5f9;
-    color: var(--text-main);
+    background-color: #1e293b; /* slate-800 */
+    color: #f8fafc; /* slate-50 */
 }
 
 /* Custom Scrollbar */
@@ -167,7 +186,7 @@ input:focus, select:focus, textarea:focus {
     padding: 1rem;
     color: var(--text-muted);
     font-size: 0.75rem;
-    text-transform: uppercase;
+    text-transform: capitalize;
     letter-spacing: 0.05em;
     font-weight: 700;
 }
